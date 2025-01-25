@@ -1,0 +1,15 @@
+[Unit]
+Description=Plex Download Bot
+After=network.target
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/root/scripts/plex-download-bot
+ExecStart=/root/scripts/plex-download-bot/env/bin/python /root/scripts/plex-download-bot/main.py --env live
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+Alias=plex-download-bot.service
