@@ -13,5 +13,5 @@ class Account:
         self.function = functions
 
 
-    async def start(self, update, context) -> None:
+    async def request_account(self, update, context) -> None:
         print(1)

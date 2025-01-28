@@ -61,7 +61,7 @@ class Log:
         self.log_to_file(cleaned_msg, dtype)
 
 
-    async def send_telegram_message(self, msg: str, silent: bool, chat_id:int) -> None:
+    async def send_telegram_message(self, msg: str, silent: bool, chat_id: int) -> None:
         # Send message to Telegram asynchronously.
         try:
             await self.bot.send_message(

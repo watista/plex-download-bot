@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import CallbackContext, ConversationHandler
 
 
 class Help:
@@ -13,8 +13,21 @@ class Help:
         self.function = functions
 
 
+    async def help_command_button(self, update: Update, context: CallbackContext) -> int:
+
+        # Extract callback data and acknowledge the callback
+        callback_data = update.callback_query.data
+        await update.callback_query.answer()
+
+        # run help info function
+        await self.help_command(update, context)
+
+        return ConversationHandler.END
+
+
     async def help_command(self, update: Update, context: CallbackContext) -> None:
 
+        # Senf hepl info
         text = [
         "<pre>Command              Gebruik                        Uitleg                              \n",
         "---------------------------------------------------------------------------------------------\n",

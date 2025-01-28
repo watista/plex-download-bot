@@ -13,5 +13,5 @@ class Movie:
         self.function = functions
 
 
-    async def start(self, update, context) -> None:
+    async def request_movie(self, update, context) -> None:
         print(1)

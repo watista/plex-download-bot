@@ -13,5 +13,5 @@ class Serie:
         self.function = functions
 
 
-    async def start(self, update, context) -> None:
-        print(1)
+    async def request_serie(self, update: Update, context: CallbackContext) -> None:
+        print(" test")
