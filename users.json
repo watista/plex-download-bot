@@ -1,6 +1,6 @@
 {
     "users": {
-        "Wouter": "abc",
+        "Wouter": "test-pwd",
         "Stijn Kr": "abc",
         "Thijs en Tanya": "abc",
         "Idse": "abc",
@@ -43,6 +43,10 @@
         "Yara": "abc"
     },
     "user_id": {
-        "Wouter": 414578726
+        "Wouter": 4145787261,
+        "wouterpaas": 414578726
+    },
+    "blocked_users": {
+        "Wouter": 4145787261
     }
 }

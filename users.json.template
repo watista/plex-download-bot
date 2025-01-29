@@ -1,0 +1,11 @@
+{
+    "users": {
+        "Wouter": "test-pwd",
+    },
+    "user_id": {
+        "Wouter": 123
+    },
+    "blocked_users": {
+        "Wouter": 456
+    }
+}

@@ -2,7 +2,7 @@
 
 import os
 # HIER UITEINDELIJK CHECKEN WAT WEG KAN
-from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, END
+from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, END
 from src.commands.functions import Functions
 from src.commands.help import Help
 from src.commands.start import Start
@@ -24,16 +24,16 @@ from telegram.ext import (
 
 class Bot:
 
-    def __init__(self, logger, plex, arr):
+    def __init__(self, logger, plex, radarr, sonarr):
 
         # Set classes
         self.log = logger
         self.function = Functions(logger)
         self.help = Help(logger, self.function)
-        self.serie = Serie(logger, self.function)
-        self.movie = Movie(logger, self.function)
+        self.serie = Serie(logger, self.function, sonarr)
+        self.movie = Movie(logger, self.function, radarr)
         self.account = Account(logger, self.function)
-        self.start = Start(logger, self.function, self.serie, self.movie, self.account)
+        self.start = Start(logger, self.function)
 
 
         # Create the Application using the new async API
@@ -43,10 +43,12 @@ class Bot:
         self.application.add_handler(ConversationHandler(
             entry_points=[CommandHandler("start", self.start.start_msg)], # Hier later miss nog alle mogelijke berichten als start gebruiken
             states={
+                # HIER OVERAL NOG EXTRA COMMAND HANDLER INBOUWEN MET /CANCEL OM OP ELK MOMENT TE STOPPPEN
                 VERIFY: [
                     CallbackQueryHandler(self.start.verification, pattern="^(movie_request|serie_request|account_request)$"),
                     CallbackQueryHandler(self.help.help_command_button, pattern='^info$')
                 ],
+                VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
                 REQUEST_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.movie.request_movie)],
                 REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_serie)]
