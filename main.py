@@ -34,7 +34,7 @@ if __name__ == '__main__':
     sonarr = Sonarr(logger)
 
     # Start the bot
-    Bot(logger, plex, radarr, sonarr)
+    Bot(args, logger, plex, radarr, sonarr)
 
     # # Init bot
     # async def main() -> None:

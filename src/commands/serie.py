@@ -8,9 +8,10 @@ from telegram.ext import CallbackContext, ConversationHandler
 
 class Serie:
 
-    def __init__(self, logger, functions, sonarr):
+    def __init__(self, args, logger, functions, sonarr):
 
         # Set default values
+        self.args = args
         self.log = logger
         self.function = functions
         self.sonarr = sonarr

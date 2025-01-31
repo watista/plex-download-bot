@@ -2,7 +2,7 @@
 
 import os
 # HIER UITEINDELIJK CHECKEN WAT WEG KAN
-from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, END
+from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION
 from src.commands.functions import Functions
 from src.commands.help import Help
 from src.commands.start import Start
@@ -24,14 +24,15 @@ from telegram.ext import (
 
 class Bot:
 
-    def __init__(self, logger, plex, radarr, sonarr):
+    def __init__(self, args, logger, plex, radarr, sonarr):
 
         # Set classes
+        self.args = args
         self.log = logger
         self.function = Functions(logger)
         self.help = Help(logger, self.function)
-        self.serie = Serie(logger, self.function, sonarr)
-        self.movie = Movie(logger, self.function, radarr)
+        self.serie = Serie(args, logger, self.function, sonarr)
+        self.movie = Movie(args, logger, self.function, radarr)
         self.account = Account(logger, self.function)
         self.start = Start(logger, self.function)
 
@@ -51,7 +52,14 @@ class Bot:
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
                 REQUEST_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.movie.request_movie)],
-                REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_serie)]
+                REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_serie)],
+                MOVIE_OPTION: [
+                    CallbackQueryHandler(self.movie.movie_option, pattern="0"),
+                    CallbackQueryHandler(self.movie.movie_option, pattern="1"),
+                    CallbackQueryHandler(self.movie.movie_option, pattern="2"),
+                    CallbackQueryHandler(self.movie.movie_option, pattern="3"),
+                    CallbackQueryHandler(self.movie.movie_option, pattern="4")
+                ]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)]
             )
