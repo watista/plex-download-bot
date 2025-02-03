@@ -42,11 +42,11 @@ class Radarr:
     async def post(self, url_string: str, payload): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
 
         # Build request URL
-        url = self.radarr_url + url_string + "&" + self.token
+        url = self.radarr_url + url_string + "&apikey=" + self.token
 
         # Make the request
         try:
-            response = requests.request("POST", url, headers={'Authorization': f'Bearer {self.token}', 'Content-Type': 'application/json'}, data=payload)
+            response = requests.request("POST", url, headers={'Content-Type': 'application/json'}, json=payload)
 
             # Log and send Telegram message if request was unsuccesfull
             if not response.ok:
@@ -68,8 +68,53 @@ class Radarr:
 
         # Check if return value is empty
         if not lookup:
-            await self.log.logger(f"❌ *Error while fetching movie list for term {movie_name}\. Check the error log for more information\. ❌", False, "error")
+            await self.log.logger(f"❌ *Error while fetching movie list for term {movie_name}.* Check the error log for more information\. ❌", False, "error")
             return {}
 
         # Return the data
         return lookup.json()
+
+
+    async def get_disk_space(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+
+        # Build url_string and make the request
+        disks = await self.get(f"/diskspace?")
+
+        # Check if return value is empty
+        if not disks:
+            await self.log.logger(f"❌ *Error while fetching movie diskspace information.* Check the error log for more information. ❌", False, "error")
+            return {}
+
+        # Return the data
+        return disks.json()
+
+
+    async def queue_download(self, payload): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+
+        # Build url_string and make the request
+        response = await self.post(f"/movie?", payload)
+
+        # Check if return value is empty
+        if not response:
+            await self.log.logger(f"❌ *Error while queueing download.* Check the error log for more information. ❌", False, "error")
+            return {}
+
+        # Return the data
+        return response.json()
+
+
+    async def scan_missing_movies(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+
+        # Set payload
+        payload = {"name":"missingMoviesSearch","filterKey":"monitored","filterValue":"true"}
+
+        # Build url_string and make the request
+        response = await self.post(f"/command?", payload)
+
+        # Check if return value is empty
+        if not response:
+            await self.log.logger(f"❌ *Error while scanning for missing movies.* Check the error log for more information. ❌", False, "warning")
+            return {}
+
+        # Return the data
+        return response.json()

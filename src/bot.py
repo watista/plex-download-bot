@@ -2,7 +2,7 @@
 
 import os
 # HIER UITEINDELIJK CHECKEN WAT WEG KAN
-from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION
+from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY
 from src.commands.functions import Functions
 from src.commands.help import Help
 from src.commands.start import Start
@@ -54,11 +54,11 @@ class Bot:
                 REQUEST_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.movie.request_movie)],
                 REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_serie)],
                 MOVIE_OPTION: [
-                    CallbackQueryHandler(self.movie.movie_option, pattern="0"),
-                    CallbackQueryHandler(self.movie.movie_option, pattern="1"),
-                    CallbackQueryHandler(self.movie.movie_option, pattern="2"),
-                    CallbackQueryHandler(self.movie.movie_option, pattern="3"),
-                    CallbackQueryHandler(self.movie.movie_option, pattern="4")
+                    CallbackQueryHandler(self.movie.movie_option, pattern="^(0|1|2|3|4)$")
+                ],
+                MOVIE_NOTIFY:[
+                    CallbackQueryHandler(self.movie.stay_notified, pattern="movie_ja"),
+                    CallbackQueryHandler(self.movie.stay_notified, pattern="movie_nee")
                 ]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)]
@@ -75,12 +75,12 @@ class Bot:
         self.application.run_polling(allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
 
 
-    # Function for unexpted errors
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
+        """ Function for unexpted errors """
         await self.log.logger(f"Error happened with Telegram dispatcher\nError: {context.error}", False, "error")
 
 
-    # Cancel command
     async def cancel(self, update: Update, context: CallbackContext) -> int:
+        """ Cancel command """
         await self.function.send_message(f"Oke gestopt. Stuur /start om opnieuw te beginnen.", update, context)
         return ConversationHandler.END

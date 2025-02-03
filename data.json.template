@@ -7,5 +7,8 @@
     },
     "blocked_users": {
         "Wouter": 456
+    },
+    "notify_list": {
+        "123": 123
     }
 }

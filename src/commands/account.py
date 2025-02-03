@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+import asyncio
+
 from telegram import Update
 from telegram.ext import CallbackContext
 
@@ -14,4 +16,4 @@ class Account:
 
 
     async def request_account(self, update, context) -> None:
-        print(1)
+        return ConversationHandler.END

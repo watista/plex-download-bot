@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os
+import re
 import logging
 from telegram import Bot
 from telegram.error import TelegramError
@@ -45,6 +46,7 @@ class Log:
 
 
     async def logger(self, msg: str, silent=False, dtype="debug", telegram=True, chat_id=None) -> None:
+        """ Send the log message to telegram and/or the log file """
 
         # Set chat_id
         if chat_id is None:
@@ -52,6 +54,7 @@ class Log:
 
         # Send telegram message
         if telegram:
+            msg = self.escape_markdown(msg)
             await self.send_telegram_message(msg, silent, chat_id)
 
         # Prettify log message for file logging
@@ -62,7 +65,7 @@ class Log:
 
 
     async def send_telegram_message(self, msg: str, silent: bool, chat_id: int) -> None:
-        # Send message to Telegram asynchronously.
+        """ Send message to Telegram """
         try:
             await self.bot.send_message(
                 chat_id=chat_id,
@@ -76,14 +79,16 @@ class Log:
         except Exception as e:
             logging.error(f"Unexpected error while sending Telegram message: {e}", exc_info=True)
 
+
     def clean_message(self, msg: str) -> str:
-        # Sanitize the log message to avoid formatting issues.
+        """ Sanitize the log message to avoid formatting issues """
         msg = msg.encode('ascii', 'ignore').decode('ascii')
         msg = msg.replace("\n", " - ").replace("*", "").replace("`", "").replace("  ", " ").strip()
         return msg
 
+
     def log_to_file(self, msg: str, dtype: str) -> None:
-        # Log messages to a file synchronously based on the type.
+        """ Log messages to a file based on the type """
         match dtype:
             case "error":
                 logging.error(msg)
@@ -93,3 +98,9 @@ class Log:
                 logging.info(msg)
             case _:
                 logging.debug(msg)
+
+
+    def escape_markdown(self, text: str) -> str:
+        """ Escape reserverd characters for Markdown V2 """
+        special_chars = r'_\[\]()~`>#+-=|{}.!'
+        return re.sub(f"([{re.escape(special_chars)}])", r"\\\1", text)

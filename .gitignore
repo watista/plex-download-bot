@@ -6,7 +6,7 @@ log/*
 *.db-shm
 *.db-wal
 *.db
-users.json
+data.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

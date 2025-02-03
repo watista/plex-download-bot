@@ -47,17 +47,18 @@ class Start:
         await update.callback_query.answer()
 
         # Load JSON file
-        with open("users.json", "r") as file:
+        with open("data.json", "r") as file:
             json_data = json.load(file)
 
         # Check if user is blocked
-        if update.effective_chat.id in json_data["blocked_users"].values():
+        if update.effective_user.id in json_data["blocked_users"].values():
             await self.function.send_message(f"Je bent geblokkeerd om deze bot te gebruiken, als je denkt dat dit een fout is kan je contact opnemen met de serverbeheerder.", update, context)
+            await self.log.logger(f"Geblokkeerde gebruiker probeerde in te loggen\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
             # Finish the conversation
             return ConversationHandler.END
 
         # Check if user_id is already known and verified
-        if update.effective_chat.id in json_data["user_id"].values():
+        if update.effective_user.id in json_data["user_id"].values():
             # Return to the next state
             return await self.parse_request(update, context)
         else:
@@ -74,7 +75,7 @@ class Start:
     async def verify_pwd(self, update: Update, context: CallbackContext) -> int:
 
         # Load JSON file
-        with open("users.json", "r") as file:
+        with open("data.json", "r") as file:
             json_data = json.load(file)
 
         # Check if given password is known in json
@@ -82,31 +83,32 @@ class Start:
             if value == update.message.text:
                 await self.function.send_message(f"Je wachtwoord klopt!\n\nJe bent nu ingelogd als gebruiker: {key}", update, context)
                 await asyncio.sleep(1)
-                await self.function.send_message(f"Oke, terug naar waar we gebleven waren... 😁", update, context)
-                await asyncio.sleep(1)
 
                 # Write user_id to json
-                json_data["user_id"][update.effective_chat["username"]] = update.effective_chat.id
-                with open("users.json", "w") as file:
+                json_data["user_id"][update.effective_user.first_name] = update.effective_user.id
+                with open("data.json", "w") as file:
                     json.dump(json_data, file, indent=4)
 
                 # Return to the next state
                 return await self.parse_request(update, context)
             else:
-                # Wrong password
-                await self.function.send_message(f"Het opgegeven wachtwoord is onjuist, je hebt in totaal 3 pogingen, voordat je toegang wordt geblokkeerd.", update, context)
 
                 # Bump wrong login tries
                 self.login_tries += 1
 
                 # add user to blocked_json
                 if self.login_tries >= 3:
+                    # Send message and add to blocklist
+                    await self.log.logger(f"Gebruiker is geblokkeerd\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
                     await self.function.send_message(f"Je hebt 3 keer het verkeeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
-                    json_data["blocked_users"][update.effective_chat["username"]] = update.effective_chat.id
-                    with open("users.json", "w") as file:
+                    json_data["blocked_users"][update.effective_user.first_name] = update.effective_user.id
+                    with open("data.json", "w") as file:
                         json.dump(json_data, file, indent=4)
                     # Finish the conversation
                     return ConversationHandler.END
+
+                # Wrong password
+                await self.function.send_message(f"Het opgegeven wachtwoord is onjuist, je hebt nog {3 - self.login_tries} pogingen voordat je toegang wordt geblokkeerd.", update, context)
 
                 # Return and retry the verify_pwd state
                 await asyncio.sleep(1)
@@ -129,5 +131,5 @@ class Start:
         else:
             # Send msg to user + logging
             await self.function.send_message(f"*😵 *Oeps, daar ging iets fout*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
-            await self.log.logger(f"Error happened during query data parsing", False, "error", True)
+            await self.log.logger(f"Error happened during request type query data parsing", False, "error", True)
             return ConversationHandler.END
