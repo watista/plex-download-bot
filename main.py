@@ -6,9 +6,12 @@ import asyncio
 
 from src.log import Log
 from src.bot import Bot
-from src.plex import Plex
-from src.radarr import Radarr
-from src.sonarr import Sonarr
+
+
+def main() -> None:
+    """ Run the bot """
+
+    Bot(args, logger)
 
 
 if __name__ == '__main__':
@@ -29,15 +32,6 @@ if __name__ == '__main__':
 
     # Init classes
     logger = Log(args)
-    plex = Plex(logger)
-    radarr = Radarr(logger)
-    sonarr = Sonarr(logger)
 
     # Start the bot
-    Bot(args, logger, plex, radarr, sonarr)
-
-    # # Init bot
-    # async def main() -> None:
-    #     Bot(logger, plex, radarr)
-
-    # asyncio.run(main())
+    main()

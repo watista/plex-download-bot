@@ -1,4 +1,0 @@
-#!/usr/bin/python3
-
-# Define chat states
-VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY = range(7)

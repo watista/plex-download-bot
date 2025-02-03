@@ -6,7 +6,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD
 
 
 class Start:
@@ -91,29 +91,28 @@ class Start:
 
                 # Return to the next state
                 return await self.parse_request(update, context)
-            else:
 
-                # Bump wrong login tries
-                self.login_tries += 1
+        # Bump wrong login tries
+        self.login_tries += 1
 
-                # add user to blocked_json
-                if self.login_tries >= 3:
-                    # Send message and add to blocklist
-                    await self.log.logger(f"Gebruiker is geblokkeerd\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-                    await self.function.send_message(f"Je hebt 3 keer het verkeeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
-                    json_data["blocked_users"][update.effective_user.first_name] = update.effective_user.id
-                    with open("data.json", "w") as file:
-                        json.dump(json_data, file, indent=4)
-                    # Finish the conversation
-                    return ConversationHandler.END
+        # add user to blocked_json
+        if self.login_tries >= 3:
+            # Send message and add to blocklist
+            await self.log.logger(f"Gebruiker is geblokkeerd\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            await self.function.send_message(f"Je hebt 3 keer het verkeeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
+            json_data["blocked_users"][update.effective_user.first_name] = update.effective_user.id
+            with open("data.json", "w") as file:
+                json.dump(json_data, file, indent=4)
+            # Finish the conversation
+            return ConversationHandler.END
 
-                # Wrong password
-                await self.function.send_message(f"Het opgegeven wachtwoord is onjuist, je hebt nog {3 - self.login_tries} pogingen voordat je toegang wordt geblokkeerd.", update, context)
+        # Wrong password
+        await self.function.send_message(f"Het opgegeven wachtwoord is onjuist, je hebt nog {3 - self.login_tries} pogingen voordat je toegang wordt geblokkeerd.", update, context)
 
-                # Return and retry the verify_pwd state
-                await asyncio.sleep(1)
-                await self.function.send_message(f"Voer nu je wachtwoord in:", update, context)
-                return VERIFY_PWD
+        # Return and retry the verify_pwd state
+        await asyncio.sleep(1)
+        await self.function.send_message(f"Voer nu je wachtwoord in:", update, context)
+        return VERIFY_PWD
 
 
     async def parse_request(self, update, context) -> int:

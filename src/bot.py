@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 
 import os
+import traceback
 # HIER UITEINDELIJK CHECKEN WAT WEG KAN
-from src.commands.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY
-from src.commands.functions import Functions
+
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY
+from src.functions import Functions
 from src.commands.help import Help
 from src.commands.start import Start
 from src.commands.serie import Serie
@@ -24,17 +26,17 @@ from telegram.ext import (
 
 class Bot:
 
-    def __init__(self, args, logger, plex, radarr, sonarr):
+    def __init__(self, args, logger):
 
         # Set classes
         self.args = args
         self.log = logger
         self.function = Functions(logger)
         self.help = Help(logger, self.function)
-        self.serie = Serie(args, logger, self.function, sonarr)
-        self.movie = Movie(args, logger, self.function, radarr)
-        self.account = Account(logger, self.function)
         self.start = Start(logger, self.function)
+        self.serie = Serie(args, logger, self.function)
+        self.movie = Movie(args, logger, self.function)
+        self.account = Account(logger, self.function)
 
 
         # Create the Application using the new async API
@@ -51,15 +53,12 @@ class Bot:
                 ],
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
-                REQUEST_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.movie.request_movie)],
-                REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_serie)],
-                MOVIE_OPTION: [
-                    CallbackQueryHandler(self.movie.movie_option, pattern="^(0|1|2|3|4)$")
-                ],
-                MOVIE_NOTIFY:[
-                    CallbackQueryHandler(self.movie.stay_notified, pattern="movie_ja"),
-                    CallbackQueryHandler(self.movie.stay_notified, pattern="movie_nee")
-                ]
+                REQUEST_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.movie.request_media)],
+                REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_media)],
+                MOVIE_OPTION: [CallbackQueryHandler(self.movie.media_option, pattern="^(0|1|2|3|4)$")],
+                MOVIE_NOTIFY: [CallbackQueryHandler(self.movie.stay_notified, pattern="^(film_yes|film_no)$")],
+                SERIE_OPTION: [CallbackQueryHandler(self.serie.media_option, pattern="^(0|1|2|3|4)$")],
+                SERIE_NOTIFY: [CallbackQueryHandler(self.serie.stay_notified, pattern="^(serie_yes|serie_no)$")]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)]
             )
@@ -77,7 +76,8 @@ class Bot:
 
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
         """ Function for unexpted errors """
-        await self.log.logger(f"Error happened with Telegram dispatcher\nError: {context.error}", False, "error")
+        error_message = "".join(traceback.format_exception(None, context.error, context.error.__traceback__))
+        await self.log.logger(f"Error happened with Telegram dispatcher\n{error_message}", False, "error")
 
 
     async def cancel(self, update: Update, context: CallbackContext) -> int:
