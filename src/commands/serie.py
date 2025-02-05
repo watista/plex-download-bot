@@ -8,7 +8,7 @@ from transmission_rpc import Client
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.states import SERIE_OPTION, SERIE_NOTIFY
+from src.states import SERIE_OPTION, SERIE_NOTIFY, SERIE_UPGRADE, SERIE_UPGRADE_OPTION
 from src.commands.media import Media
 from src.services.sonarr import Sonarr
 
@@ -20,7 +20,7 @@ class Serie(Media):
         super().__init__(args, logger, functions, Sonarr(logger), "serie", os.getenv('SERIE_FOLDERS'), SERIE_OPTION)
 
 
-    async def get_media_states(self):
+    async def get_media_states(self) -> dict:
         """ Function that defines the states """
 
         return {
@@ -31,35 +31,78 @@ class Serie(Media):
                 "next_state": SERIE_NOTIFY
             },
             "not_available": {
-                "condition": lambda serie, _: serie.get("serieFileId") == 0 and not serie.get("monitored") and serie.get("status") != "released",
+                "condition": lambda serie, _: not serie.get("path") and serie.get("status") == "upcoming",
+                "size_check": True,
                 "message": "Op dit moment is {title} nog niet downloadbaar, hij is toegevoegd aan de te-downloaden-lijst. Zodra {title} gedownload kan worden gebeurt dit automatisch.",
                 "action": "start_download",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
-            "not_available": {
-                "condition": lambda serie, _: serie.get("serieFileId") == 0 and serie.get("monitored") and serie.get("status") != "released",
+            "not_available_already_requested": {
+                "condition": lambda serie, _: serie.get("path") and serie.get("status") == "upcoming",
                 "message": "Op dit moment is {title} nog niet downloadbaar, hij is toegevoegd aan de te-downloaden-lijst. Zodra {title} gedownload kan worden gebeurt dit automatisch.",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
             "available_to_download": {
-                "condition": lambda serie, _: serie.get("serieFileId") == 0 and not serie.get("monitored") and serie.get("status") == "released",
+                "condition": lambda serie, _: not serie.get("path") and serie.get("status") != "upcoming",
+                "size_check": True,
                 "message": "De download voor {title} is nu gestart, het kan even duren voordat deze online staat, nog even geduld 😄",
                 "action": "start_download",
                 "extra_action": "scan_missing_media",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
-            "available_to_download_but": {
-                "condition": lambda serie, _: serie.get("serieFileId") == 0 and serie.get("monitored") and serie.get("status") == "released",
-                "message": "Zo te zien is {title} wel al downloadbaar, alleen is er al een tijdje geen download-match gevonden. Misschien wordt er nog een download-match gevonden maar het kan ook zijn dat dit nog lang gaat duren of helemaal niet meer. Wil je deze serie echt super graag, dan kan je contact opnemen met de serverbeheerder om te kijken of de serie toch handmatig gedownload kan worden.",
+            "unmonitored": {
+                "condition": lambda serie, _: not serie.get("monitored"),
+                "message": "{title} staat op dit moment aangemerkt als 'niet downloaden', dit kan verschillende redenen hebben. De serverbeheerder is op de hoogte gesteld van de aanvraag en zal deze beoordelen en er bij je op terug komen.",
+                "inform_unmonitored": True,
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
             "already_downloaded": {
-                "condition": lambda serie, _: serie.get("serieFileId") != 0 and serie.get("monitored"),
-                "message": "{title} is al gedownload en staat online op Plex.",
-                "next_state": ConversationHandler.END
+                "condition": lambda serie, _: serie.get("path"),
+                "next_state": SERIE_UPGRADE
             },
         }
+
+
+    async def create_download_payload(self, data, folder: str): # HIER NOG TYPE HINTS GEVEN VOOR JSON
+        """ Generates the download payload for Radarr """
+
+        payload = {
+            "title": data['title'],
+            "qualityProfileId": 7,
+            "monitored": True,
+            "tvdbId": data['tvdbId'],
+            "rootFolderPath": folder
+        }
+
+        return payload
+
+
+    async def media_upgrade(self, update: Update, context: CallbackContext) -> int:
+        """ Handles if the user wants the media to be quality upgraded """
+
+        # Answer query
+        await update.callback_query.answer()
+
+        # Finish conversation if chosen
+        if update.callback_query.data == f"serie_upgrade_no":
+            await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
+            return ConversationHandler.END
+        else:
+            # Aks question which season/episode needs to be upgrade
+            await self.function.send_message(f"Oke, kan je aangeven om welk seizoen en/of episode het gaat? (bijvoorbeeld seizoen 1, episode 4 of episode 1 t/m 8 van seizoen 3)", update, context)
+            return SERIE_UPGRADE_OPTION
+
+
+    async def media_upgrade_option(self, update: Update, context: CallbackContext) -> int:
+        """ Handles the answer for which season/episode the serie should be upgraded """
+
+        # Send the confirmation message and notify option
+        await self.log.logger(f"Gebruiker heeft kwaliteits-aanvraag gedaan voor {self.media_data['title']} ({self.media_data['tmdbId']}) met de seizoen/episode: {update.message.text}.\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geupgrade.", update, context)
+        await asyncio.sleep(1)
+        await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
+        return SERIE_NOTIFY

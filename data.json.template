@@ -1,14 +1,6 @@
 {
-    "users": {
-        "Wouter": "test-pwd",
-    },
-    "user_id": {
-        "Wouter": 123
-    },
-    "blocked_users": {
-        "Wouter": 456
-    },
-    "notify_list": {
-        "123": 123
-    }
+    "users": {},
+    "user_id": {},
+    "blocked_users": {},
+    "notify_list": {}
 }

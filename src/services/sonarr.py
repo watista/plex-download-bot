@@ -18,7 +18,7 @@ class Sonarr(Arr):
         """ Function that does a serie lookup """
 
         # Build url_string and make the request
-        lookup = await self.get(f"/serie/lookup?term={serie_name}")
+        lookup = await self.get(f"/series/lookup?term={serie_name}")
 
         # Check if return value is empty
         if not lookup:
@@ -33,7 +33,7 @@ class Sonarr(Arr):
         """ Function that starts a download """
 
         # Build url_string and make the request
-        response = await self.post(f"/serie?", payload)
+        response = await self.post(f"/series?", payload)
 
         # Check if return value is empty
         if not response:
@@ -48,7 +48,7 @@ class Sonarr(Arr):
         """ Function that scans for missing monitored series """
 
         # Set payload
-        payload = {"name":"missingSeriesSearch","filterKey":"monitored","filterValue":"true"}
+        payload = {"name":"MissingEpisodeSearch","filterKey":"monitored","filterValue":"true"}
 
         # Build url_string and make the request
         response = await self.post(f"/command?", payload)

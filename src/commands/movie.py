@@ -8,7 +8,7 @@ from transmission_rpc import Client
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.states import MOVIE_OPTION, MOVIE_NOTIFY
+from src.states import MOVIE_OPTION, MOVIE_NOTIFY, MOVIE_UPGRADE
 from src.commands.media import Media
 from src.services.radarr import Radarr
 
@@ -30,14 +30,14 @@ class Movie(Media):
                 "state_message": True,
                 "next_state": MOVIE_NOTIFY
             },
-            "not_available": {
+            "not_available_not_monitored": {
                 "condition": lambda movie, _: movie.get("movieFileId") == 0 and not movie.get("monitored") and movie.get("status") != "released",
                 "message": "Op dit moment is {title} nog niet downloadbaar, hij is toegevoegd aan de te-downloaden-lijst. Zodra {title} gedownload kan worden gebeurt dit automatisch.",
                 "action": "start_download",
                 "state_message": True,
                 "next_state": MOVIE_NOTIFY
             },
-            "not_available": {
+            "not_available_already_requested": {
                 "condition": lambda movie, _: movie.get("movieFileId") == 0 and movie.get("monitored") and movie.get("status") != "released",
                 "message": "Op dit moment is {title} nog niet downloadbaar, hij is toegevoegd aan de te-downloaden-lijst. Zodra {title} gedownload kan worden gebeurt dit automatisch.",
                 "state_message": True,
@@ -59,7 +59,38 @@ class Movie(Media):
             },
             "already_downloaded": {
                 "condition": lambda movie, _: movie.get("movieFileId") != 0 and movie.get("monitored"),
-                "message": "{title} is al gedownload en staat online op Plex.",
-                "next_state": ConversationHandler.END
+                "next_state": MOVIE_UPGRADE
             },
         }
+
+
+    async def create_download_payload(self, data, folder: str): # HIER NOG TYPE HINTS GEVEN VOOR JSON
+        """ Generates the download payload for Radarr """
+
+        payload = {
+            "qualityProfileId": 7,
+            "monitored": True,
+            "tmdbId": data['tmdbId'],
+            "rootFolderPath": folder
+        }
+
+        return payload
+
+
+    async def media_upgrade(self, update: Update, context: CallbackContext) -> int:
+        """ Handles if the user wants the media to be quality upgraded """
+
+        # Answer query
+        await update.callback_query.answer()
+
+        if update.callback_query.data == f"film_upgrade_no":
+            # Finish conversation if chosen
+            await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
+            return ConversationHandler.END
+        else:
+            # Send the confirmation message and notify option
+            await self.log.logger(f"Gebruiker heeft kwaliteits-aanvraag gedaan voor {self.media_data['title']} ({self.media_data['tmdbId']}).\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            await self.function.send_message(f"Duidelijk! De film zal worden geupgrade.", update, context)
+            await asyncio.sleep(1)
+            await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
+            return MOVIE_NOTIFY

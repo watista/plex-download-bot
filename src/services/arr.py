@@ -2,7 +2,7 @@
 
 import requests
 import json
-import os
+import traceback
 
 from abc import ABC, abstractmethod
 
@@ -20,19 +20,19 @@ class Arr(ABC):
 
 
     @abstractmethod
-    async def lookup_by_name(self, media_name: str):
+    async def lookup_by_name(self, media_name: str): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
         """ Abstract method that does a media lookup in the subclass """
         pass
 
 
     @abstractmethod
-    async def queue_download(self, payload):
+    async def queue_download(self, payload): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
         """ Abstract method that starts a download in the subclass """
         pass
 
 
     @abstractmethod
-    async def scan_missing_media(self):
+    async def scan_missing_media(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
         """ Abstract method that scans for missing monitored media in the subclass """
         pass
 
@@ -57,7 +57,7 @@ class Arr(ABC):
 
         # Log and send Telegram message if anything went wrong
         except Exception as e:
-            await self.log.logger(f"Fout opgetreden tijdens een {self.label} api GET. Error: {' '.join(e.args)} - Url: {url}", False, "error", False)
+            await self.log.logger(f"Fout opgetreden tijdens een {self.label} api GET. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
             return False
 
 
@@ -81,7 +81,7 @@ class Arr(ABC):
 
         # Log and send Telegram message if anything went wrong
         except Exception as e:
-            await self.log.logger(f"Fout opgetreden tijdens een {self.label} api POST. Error: {' '.join(e.args)} - Url: {url}", False, "error", False)
+            await self.log.logger(f"Fout opgetreden tijdens een {self.label} api POST. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
             return False
 
 

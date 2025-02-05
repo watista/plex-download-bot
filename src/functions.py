@@ -3,7 +3,6 @@
 import re
 import html
 
-
 class Functions:
 
     def __init__(self, logger):
@@ -13,7 +12,7 @@ class Functions:
 
 
     # Send standard text message
-    async def send_message(self, text, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
+    async def send_message(self, text: str, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
         await context.bot.send_message(
             chat_id=update.effective_user.id,
             text=self.escape_markdown(text, parse_mode),
@@ -26,7 +25,7 @@ class Functions:
 
 
     # Send message with GIF
-    async def send_gif(self, caption, animation, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
+    async def send_gif(self, caption: str, animation, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
         await context.bot.send_animation(
             chat_id=update.effective_user.id,
             caption=self.escape_markdown(caption, parse_mode),
@@ -40,7 +39,7 @@ class Functions:
 
 
     # Send message with image
-    async def send_image(self, caption, photo, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
+    async def send_image(self, caption: str, photo, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
         await context.bot.send_photo(
             chat_id=update.effective_user.id,
             caption=self.escape_markdown(caption, parse_mode)[:1024],
@@ -56,7 +55,7 @@ class Functions:
     # Escape reserverd characters for Markdown V2
     def escape_markdown(self, text: str, parse_mode: str) -> str:
         if parse_mode == "MarkdownV2":
-            special_chars = r'_\[\]()~`>#+-=|{}.!'
+            special_chars = r'\[\]()~`>#+-=|{}.!'
             return re.sub(f"([{re.escape(special_chars)}])", r"\\\1", text)
         else:
             return text

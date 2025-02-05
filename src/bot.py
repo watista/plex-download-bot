@@ -2,9 +2,8 @@
 
 import os
 import traceback
-# HIER UITEINDELIJK CHECKEN WAT WEG KAN
 
-from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION
 from src.functions import Functions
 from src.commands.help import Help
 from src.commands.start import Start
@@ -12,13 +11,12 @@ from src.commands.serie import Serie
 from src.commands.movie import Movie
 from src.commands.account import Account
 
-from telegram import Update, ForceReply
+from telegram import Update
 from telegram.ext import (
     CommandHandler,
     filters,
     CallbackContext,
     CallbackQueryHandler,
-    ApplicationBuilder,
     MessageHandler,
     Application,
     ConversationHandler
@@ -44,23 +42,29 @@ class Bot:
 
         # Add conversation handler with different states
         self.application.add_handler(ConversationHandler(
-            entry_points=[CommandHandler("start", self.start.start_msg)], # Hier later miss nog alle mogelijke berichten als start gebruiken
+            entry_points=[CommandHandler("start", self.start.start_msg), MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
-                # HIER OVERAL NOG EXTRA COMMAND HANDLER INBOUWEN MET /CANCEL OM OP ELK MOMENT TE STOPPPEN
                 VERIFY: [
-                    CallbackQueryHandler(self.start.verification, pattern="^(movie_request|serie_request|account_request)$"),
+                    CallbackQueryHandler(self.start.verification, pattern="^(movie_request|serie_request)$"),
+                    CallbackQueryHandler(self.start.parse_request, pattern="^account_request$"),
                     CallbackQueryHandler(self.help.help_command_button, pattern='^info$')
                 ],
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
+                REQUEST_ACCOUNT_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_email)],
+                REQUEST_ACCOUNT_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_phone)],
+                REQUEST_ACCOUNT_REFER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_refer)],
                 REQUEST_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.movie.request_media)],
                 REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_media)],
                 MOVIE_OPTION: [CallbackQueryHandler(self.movie.media_option, pattern="^(0|1|2|3|4)$")],
-                MOVIE_NOTIFY: [CallbackQueryHandler(self.movie.stay_notified, pattern="^(film_yes|film_no)$")],
                 SERIE_OPTION: [CallbackQueryHandler(self.serie.media_option, pattern="^(0|1|2|3|4)$")],
-                SERIE_NOTIFY: [CallbackQueryHandler(self.serie.stay_notified, pattern="^(serie_yes|serie_no)$")]
+                MOVIE_NOTIFY: [CallbackQueryHandler(self.movie.stay_notified, pattern="^(film_notify_yes|film_notify_no)$")],
+                SERIE_NOTIFY: [CallbackQueryHandler(self.serie.stay_notified, pattern="^(serie_notify_yes|serie_notify_no)$")],
+                MOVIE_UPGRADE: [CallbackQueryHandler(self.movie.media_upgrade, pattern="^(film_upgrade_yes|film_upgrade_no)$")],
+                SERIE_UPGRADE: [CallbackQueryHandler(self.serie.media_upgrade, pattern="^(serie_upgrade_yes|serie_upgrade_no)$")],
+                SERIE_UPGRADE_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.media_upgrade_option)]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)]
+            fallbacks=[CommandHandler("stop", self.stop)]
             )
         )
 
@@ -80,7 +84,7 @@ class Bot:
         await self.log.logger(f"Error happened with Telegram dispatcher\n{error_message}", False, "error")
 
 
-    async def cancel(self, update: Update, context: CallbackContext) -> int:
+    async def stop(self, update: Update, context: CallbackContext) -> None:
         """ Cancel command """
         await self.function.send_message(f"Oke gestopt. Stuur /start om opnieuw te beginnen.", update, context)
         return ConversationHandler.END

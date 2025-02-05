@@ -1,6 +1,11 @@
 BOT_TOKEN=123:abc
+RADARR_URL=https://radarr.example.com/
 RADARR_API=123
+SONARR_URL=https://sonarr.example.com/
 SONARR_API=123
+PLEX_URL=https://plex.example.com/
+PLEX_API=123
+PLEX_ID=123
 CHAT_ID_GROUP=-123
 CHAT_ID_WOUTER=456
 CHAT_ID_STIJN=789
