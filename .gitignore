@@ -7,7 +7,12 @@ log/*
 *.db-wal
 *.db
 data.json
+data.dev.json
 stats.json
+stats.dev.json
+test/
+test/*
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

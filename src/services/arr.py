@@ -3,7 +3,7 @@
 import requests
 import json
 import traceback
-
+from typing import Union
 from abc import ABC, abstractmethod
 
 
@@ -20,24 +20,24 @@ class Arr(ABC):
 
 
     @abstractmethod
-    async def lookup_by_name(self, media_name: str): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def lookup_by_name(self, media_name: str) -> Union[list[dict], dict]:
         """ Abstract method that does a media lookup in the subclass """
         pass
 
 
     @abstractmethod
-    async def queue_download(self, payload): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def queue_download(self, payload: dict) -> Union[list[dict], dict]:
         """ Abstract method that starts a download in the subclass """
         pass
 
 
     @abstractmethod
-    async def scan_missing_media(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def scan_missing_media(self) -> Union[list[dict], dict]:
         """ Abstract method that scans for missing monitored media in the subclass """
         pass
 
 
-    async def get(self, url_string: str): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def get(self, url_string: str) -> Union[requests.Response, bool]:
         """ Handles the GET requests """
 
         # Build request URL
@@ -57,11 +57,11 @@ class Arr(ABC):
 
         # Log and send Telegram message if anything went wrong
         except Exception as e:
-            await self.log.logger(f"Fout opgetreden tijdens een {self.label} api GET. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
+            await self.log.logger(f"Error during a {self.label} api GET request. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
             return False
 
 
-    async def post(self, url_string: str, payload): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def post(self, url_string: str, payload: dict) -> Union[requests.Response, bool]:
         """ Handles the POST requests """
 
         # Build request URL
@@ -81,11 +81,11 @@ class Arr(ABC):
 
         # Log and send Telegram message if anything went wrong
         except Exception as e:
-            await self.log.logger(f"Fout opgetreden tijdens een {self.label} api POST. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
+            await self.log.logger(f"Error during a {self.label} api POST request. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
             return False
 
 
-    async def get_disk_space(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def get_disk_space(self) -> Union[list[dict], dict]:
         """ Makes a GET request to get the disk space """
 
         # Build url_string and make the request
@@ -98,3 +98,21 @@ class Arr(ABC):
 
         # Return the data
         return disks.json()
+
+
+    async def lookup_by_tmdbid(self, tmdbid: str) -> Union[list[dict], dict]:
+        """ Function that does a movie lookup by The Movie Database ID """
+
+        # Create the correct url label
+        url_label = "series" if self.label == "serie" else "movie"
+
+        # Build url_string and make the request
+        lookup = await self.get(f"/{url_label}/lookup?term=tmdb:{tmdbid}")
+
+        # Check if return value is empty
+        if not lookup:
+            await self.log.logger(f"❌ *Error while fetching {self.label} with TMDB ID {tmdbid}.* Check the error log for more information. ❌", False, "error")
+            return {}
+
+        # Return the data
+        return lookup.json()

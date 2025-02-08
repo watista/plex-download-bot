@@ -12,9 +12,13 @@ class Functions:
 
 
     # Send standard text message
-    async def send_message(self, text: str, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
+    async def send_message(self, text: str, update, context, reply_markup=None, parse_mode='MarkdownV2', regular=True) -> None:
+
+        # Check if the user_id is regular or special
+        chat_id = update.effective_user.id if regular else update
+
         await context.bot.send_message(
-            chat_id=update.effective_user.id,
+            chat_id=chat_id,
             text=self.escape_markdown(text, parse_mode),
             parse_mode=parse_mode,
             reply_markup=reply_markup

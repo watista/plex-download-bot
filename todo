@@ -1,4 +1,4 @@
 - elke x periode kijken of film gedownload is en mensen uit data.json[notify_list] bericht sturen
-- account aanvragen
-- alle niet gebruiker logs naar engels zetten + emoticons eenduidig doen
-- log regels nalopen op severity
+    - check op live
+- script testen in een groep ipv alleen tegen bot
+- check of alle imports nodig zijn

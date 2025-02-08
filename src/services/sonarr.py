@@ -3,7 +3,7 @@
 import requests
 import json
 import os
-
+from typing import Union
 from src.services.arr import Arr
 
 
@@ -11,10 +11,10 @@ class Sonarr(Arr):
     """ Specific class for the Radarr API """
 
     def __init__(self, logger):
-        super().__init__(logger, os.getenv('SONARR_API'), "https://sonarr.wouterpaas.nl/api/v3", "serie")
+        super().__init__(logger, os.getenv('SONARR_API'), os.getenv('SONARR_URL'), "serie")
 
 
-    async def lookup_by_name(self, serie_name: str): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def lookup_by_name(self, serie_name: str) -> Union[list[dict], dict]:
         """ Function that does a serie lookup """
 
         # Build url_string and make the request
@@ -29,7 +29,7 @@ class Sonarr(Arr):
         return lookup.json()
 
 
-    async def queue_download(self, payload): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def queue_download(self, payload: dict) -> Union[list[dict], dict]:
         """ Function that starts a download """
 
         # Build url_string and make the request
@@ -44,7 +44,7 @@ class Sonarr(Arr):
         return response.json()
 
 
-    async def scan_missing_media(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def scan_missing_media(self) -> Union[list[dict], dict]:
         """ Function that scans for missing monitored series """
 
         # Set payload

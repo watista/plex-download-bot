@@ -41,3 +41,4 @@ class Help:
         await self.function.send_message("Je kan altijd tijdens het gebruik van deze bot stoppen door /stop te sturen. Wil je de bot weer beginnen? Stuur dan /start", update, context)
         await asyncio.sleep(1)
         await self.function.send_message("Heb je nog andere vragen? Stuur dan een bericht naar de serverbeheerder via Telegram of Whatsapp.", update, context)
+        await self.log.logger(f"*ℹ️ User invoked the /help command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")

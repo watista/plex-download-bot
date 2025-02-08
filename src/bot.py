@@ -10,6 +10,7 @@ from src.commands.start import Start
 from src.commands.serie import Serie
 from src.commands.movie import Movie
 from src.commands.account import Account
+from src.commands.schedule import Schedule
 
 from telegram import Update
 from telegram.ext import (
@@ -31,11 +32,11 @@ class Bot:
         self.log = logger
         self.function = Functions(logger)
         self.help = Help(logger, self.function)
-        self.start = Start(logger, self.function)
+        self.start = Start(args, logger, self.function)
         self.serie = Serie(args, logger, self.function)
         self.movie = Movie(args, logger, self.function)
         self.account = Account(logger, self.function)
-
+        self.schedule = Schedule(args, logger, self.function)
 
         # Create the Application using the new async API
         self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build()
@@ -64,7 +65,8 @@ class Bot:
                 SERIE_UPGRADE: [CallbackQueryHandler(self.serie.media_upgrade, pattern="^(serie_upgrade_yes|serie_upgrade_no)$")],
                 SERIE_UPGRADE_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.media_upgrade_option)]
             },
-            fallbacks=[CommandHandler("stop", self.stop)]
+            fallbacks=[CommandHandler("stop", self.stop)],
+            conversation_timeout=86400
             )
         )
 
@@ -73,6 +75,10 @@ class Bot:
 
         # Add error handler
         self.application.add_error_handler(self.error_handler)
+
+        # Enable the Schedule Job Queue
+        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=7200, first=0)
+        self.application.job_queue.run_repeating(self.schedule.check_timestamp, interval=604800, first=0)
 
         # Start the bot
         self.application.run_polling(allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)

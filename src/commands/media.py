@@ -5,11 +5,10 @@ import os
 import json
 import traceback
 import time
-
 from datetime import datetime
 from transmission_rpc import Client
+from typing import Optional
 from abc import ABC, abstractmethod
-
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, ConversationHandler
 
@@ -31,26 +30,29 @@ class Media(ABC):
         self.option_state = option_state
         self.plex = Plex(self.log)
 
+        # Set data.json/stats.json file based on live/dev arg
+        self.data_json = "data.json" if args.env == "live" else "data.dev.json"
+        self.stats_json = "stats.json" if args.env == "live" else "stats.dev.json"
 
     @abstractmethod
-    async def get_media_states(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def get_media_states(self) -> dict:
         """ Abstract method that defines the states in the subclasses """
         pass
 
 
     @abstractmethod
-    async def create_download_payload(self, media_data, folder): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def create_download_payload(self, media_data: dict, folder: str) -> dict:
         """ Abstract method that generates the download payload for Radarr/Sonarr """
         pass
 
 
     @abstractmethod
-    async def media_upgrade(self, update: Update, context: CallbackContext) -> int: # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def media_upgrade(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles if the user wants the media to be quality upgraded """
         pass
 
 
-    async def request_media(self, update: Update, context: CallbackContext) -> int:
+    async def request_media(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the parsing of the chosen media and gives the options for which one the user wants """
 
         # Send start message
@@ -113,7 +115,7 @@ class Media(ABC):
         return self.option_state
 
 
-    async def media_option(self, update: Update, context: CallbackContext) -> int:
+    async def media_option(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the specific user media choice and downloads it """
 
         # Answer query and set media_data based on option number
@@ -122,12 +124,12 @@ class Media(ABC):
 
         # Make transmission connection and get active torrent list
         try:
-            ip = "0.0.0.0" if getattr(self.args, 'env', 'dev') == "live" else "192.168.1.111"
-            client = Client(host=ip, port=9091, username="wouter", password=os.getenv('TRANSMISSION_PWD'))
+            ip = "0.0.0.0" if getattr(self.args, 'env', 'dev') == "live" else os.getenv('TRANSMISSION_IP')
+            client = Client(host=ip, port=os.getenv('TRANSMISSION_PORT'), username=os.getenv('TRANSMISSION_USER'), password=os.getenv('TRANSMISSION_PWD'))
             active_torrents = client.get_torrents(arguments=["name"])
         except Exception as e:
             await self.function.send_message(f"*😵 Er ging iets fout tijdens het maken van verbinding met de download client*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
-            await self.log.logger(f"Fout opgetreden tijdens verbinding maken met Transmission. Error: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error", True)
+            await self.log.logger(f"There has been an error during the Transmission connection. Error: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error", True)
             return ConversationHandler.END  # Quit if connection fails
 
         # Get the media states
@@ -148,7 +150,7 @@ class Media(ABC):
                         await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
 
                         # Info log
-                        await self.log.logger(f"Gebruiker heeft {self.media_data['title']} ({self.media_data['tmdbId']}) aangevraagd met {self.media_data['statistics']['seasonCount']} seizoenen.\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                        await self.log.logger(f"*ℹ️ User has requested {self.media_data['title']} ({self.media_data['tmdbId']}) with {self.media_data['statistics']['seasonCount']} seasons ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                         # Write to stats file
                         await self.write_to_stats(update)
@@ -168,7 +170,7 @@ class Media(ABC):
 
                 # Inform owner about unmonitored series if defined
                 if "inform_unmonitored" in details:
-                    await self.log.logger(f"Gebruiker heeft {self.media_data['title']} aangevraagd terwijl deze op unmonitored staat\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
+                    await self.log.logger(f"User has requested {self.media_data['title']} which has been marked as unmonitored\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
 
                 # Send the message if defined
                 if "message" in details:
@@ -193,7 +195,7 @@ class Media(ABC):
                     await self.write_to_stats(update)
 
                     # Send log
-                    await self.log.logger(f"Gebruiker heeft {self.media_data['title']} - ({self.media_data['tmdbId']}) aangevraagd terwijl deze al gedownload is.\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                    await self.log.logger(f"*ℹ️ User has requested {self.media_data['title']} - ({self.media_data['tmdbId']}) while it's already downloaded ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                     # Return the next specific state
                     return details["next_state"]
@@ -205,7 +207,7 @@ class Media(ABC):
                     await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
 
                 # Info log
-                await self.log.logger(f"Gebruiker heeft {self.media_data['title']} - ({self.media_data['tmdbId']}) aangevraagd \nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                await self.log.logger(f"*ℹ️ User has requested {self.media_data['title']} - ({self.media_data['tmdbId']}) ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                 # Write to stats file
                 await self.write_to_stats(update)
@@ -235,7 +237,7 @@ class Media(ABC):
         await self.function.send_message(msg, update, context, reply_markup)
 
 
-    async def stay_notified(self, update: Update, context: CallbackContext) -> int:
+    async def stay_notified(self, update: Update, context: CallbackContext) -> None:
         """ Handles if the user wants te be updated about the requested media """
 
         # Answer query
@@ -247,7 +249,7 @@ class Media(ABC):
             return ConversationHandler.END
 
         # Add media_id + user_id to JSON
-        with open("data.json", "r+") as file:
+        with open(self.data_json, "r+") as file:
             json_data = json.load(file)
 
             # Check if user already has entry in the notify list, otherwise create it
@@ -280,7 +282,7 @@ class Media(ABC):
         # Check if enough space is left
         if not download_folder:
             await self.function.send_message(f"*😵 Er is op dit moment een probleem met de opslag van de Plex server*\n\nDe serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
-            await self.log.logger(f"Fout opgetreden tijdens de controle van de diskspace.", False, "error", True)
+            await self.log.logger(f"Error happened during the check of the diskspace", False, "error", True)
             return False
 
         # Create the download payload
@@ -297,7 +299,7 @@ class Media(ABC):
         return True
 
 
-    async def check_disk_space(self): # HIER NOG TYPE HINT MEEGEVEN, IS HET EEN JSON OF DICT OFZO?
+    async def check_disk_space(self) -> Optional[str]:
         """ Checks if the disk given in de .env file have enough space left """
 
         # Get list of disks and diskspace
@@ -327,7 +329,7 @@ class Media(ABC):
 
         # Add media download requests to the stats
         try:
-            with open("stats.json", "r+") as file:
+            with open(self.stats_json, "r+") as file:
                 data = json.load(file)
                 data[f"{update.effective_user.id}"][f"{self.label}_requests"][datetime.now().strftime("%d-%m-%Y %H:%M:%S")] = self.media_data['title']
                 file.seek(0)

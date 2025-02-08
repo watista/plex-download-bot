@@ -3,7 +3,7 @@
 import json
 import asyncio
 from datetime import datetime
-
+from typing import Union, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
@@ -12,11 +12,15 @@ from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VE
 
 class Start:
 
-    def __init__(self, logger, functions):
+    def __init__(self, args, logger, functions):
 
         # Set default values
         self.log = logger
         self.function = functions
+
+        # Set data.json/stats.json file based on live/dev arg
+        self.data_json = "data.json" if args.env == "live" else "data.dev.json"
+        self.stats_json = "stats.json" if args.env == "live" else "stats.dev.json"
 
 
     async def start_msg(self, update: Update, context: CallbackContext) -> int:
@@ -41,20 +45,20 @@ class Start:
         # Return to the next state
         return VERIFY
 
-    async def verification(self, update: Update, context: CallbackContext) -> int:
+    async def verification(self, update: Update, context: CallbackContext) -> Optional[int]:
 
         # Extract callback data and acknowledge the callback
         self.callback_data = update.callback_query.data
         await update.callback_query.answer()
 
         # Load JSON file
-        with open("data.json", "r") as file:
+        with open(self.data_json, "r") as file:
             json_data = json.load(file)
 
         # Check if user is blocked
         if str(update.effective_user.id) in json_data["blocked_users"]:
             await self.function.send_message(f"Je bent geblokkeerd om deze bot te gebruiken, als je denkt dat dit een fout is kan je contact opnemen met de serverbeheerder.", update, context)
-            await self.log.logger(f"Geblokkeerde gebruiker probeerde in te loggen\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            await self.log.logger(f"*ℹ️ A blocked user tried to login ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
             # Finish the conversation
             return ConversationHandler.END
 
@@ -62,7 +66,7 @@ class Start:
         if str(update.effective_user.id) in json_data["user_id"]:
 
             # Add login entry to the stats
-            with open("stats.json", "r+") as file:
+            with open(self.stats_json, "r+") as file:
                 data = json.load(file)
                 data[f"{update.effective_user.id}"]["logins"][datetime.now().strftime("%d-%m-%Y %H:%M:%S")] = update.effective_user.first_name
                 file.seek(0)
@@ -82,26 +86,26 @@ class Start:
             return VERIFY_PWD
 
 
-    async def verify_pwd(self, update: Update, context: CallbackContext) -> int:
+    async def verify_pwd(self, update: Update, context: CallbackContext) -> Optional[int]:
 
         # Load JSON file
-        with open("data.json", "r") as file:
+        with open(self.data_json, "r") as file:
             json_data = json.load(file)
 
         # Check if given password is known in json
         for key, value in json_data["users"].items():
             if value == update.message.text:
-                await self.log.logger(f"Gebruiker is voor het eerst ingelogd\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                await self.log.logger(f"*ℹ️ First time login for user ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
                 await self.function.send_message(f"Je wachtwoord klopt!\n\nJe bent nu ingelogd als gebruiker: {key}", update, context)
                 await asyncio.sleep(1)
 
                 # Write user_id to json
                 json_data["user_id"][update.effective_user.id] = update.effective_user.first_name
-                with open("data.json", "w") as file:
+                with open(self.data_json, "w") as file:
                     json.dump(json_data, file, indent=4)
 
                 # Create user in stats.json
-                with open("stats.json", "r+") as file:
+                with open(self.stats_json, "r+") as file:
                     data = json.load(file)
                     data[f"{update.effective_user.id}"] = {
                         "logins": {datetime.now().strftime("%d-%m-%Y %H:%M:%S"): update.effective_user.first_name},
@@ -121,10 +125,10 @@ class Start:
         # add user to blocked_json
         if self.login_tries >= 3:
             # Send message and add to blocklist
-            await self.log.logger(f"Gebruiker is geblokkeerd\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            await self.log.logger(f"*ℹ️ User has been blocked ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
             await self.function.send_message(f"Je hebt 3 keer het verkeeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
             json_data["blocked_users"][update.effective_user.id] = update.effective_user.first_name
-            with open("data.json", "w") as file:
+            with open(self.data_json, "w") as file:
                 json.dump(json_data, file, indent=4)
             # Finish the conversation
             return ConversationHandler.END
@@ -138,9 +142,9 @@ class Start:
         return VERIFY_PWD
 
 
-    async def parse_request(self, update, context) -> int:
+    async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        if update.callback_query.data == "account_request":
+        if self.callback_data == "account_request":
             await update.callback_query.answer()
             await self.function.send_message(f"Leuk dat je interesse hebt in Plex. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)

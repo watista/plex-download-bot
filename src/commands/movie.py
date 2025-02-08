@@ -4,7 +4,7 @@ import asyncio
 import os
 import json
 from transmission_rpc import Client
-
+from typing import Optional
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, ConversationHandler
 
@@ -64,7 +64,7 @@ class Movie(Media):
         }
 
 
-    async def create_download_payload(self, data, folder: str): # HIER NOG TYPE HINTS GEVEN VOOR JSON
+    async def create_download_payload(self, data: dict, folder: str) -> dict:
         """ Generates the download payload for Radarr """
 
         payload = {
@@ -77,7 +77,7 @@ class Movie(Media):
         return payload
 
 
-    async def media_upgrade(self, update: Update, context: CallbackContext) -> int:
+    async def media_upgrade(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles if the user wants the media to be quality upgraded """
 
         # Answer query
@@ -89,7 +89,7 @@ class Movie(Media):
             return ConversationHandler.END
         else:
             # Send the confirmation message and notify option
-            await self.log.logger(f"Gebruiker heeft kwaliteits-aanvraag gedaan voor {self.media_data['title']} ({self.media_data['tmdbId']}).\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            await self.log.logger(f"*ℹ️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
             await self.function.send_message(f"Duidelijk! De film zal worden geupgrade.", update, context)
             await asyncio.sleep(1)
             await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")

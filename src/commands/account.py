@@ -16,7 +16,7 @@ class Account:
         self.function = functions
 
 
-    async def request_account(self, update, context) -> None:
+    async def request_account(self, update, context) -> int:
         """ Handles the first_name question for the account request """
 
         # Create a dict to store the information
@@ -33,7 +33,7 @@ class Account:
         return REQUEST_ACCOUNT_EMAIL
 
 
-    async def request_account_email(self, update, context) -> None:
+    async def request_account_email(self, update, context) -> int:
         """ Handles the email question for the account request """
 
         # Add info to dict
@@ -48,7 +48,7 @@ class Account:
         return REQUEST_ACCOUNT_PHONE
 
 
-    async def request_account_phone(self, update, context) -> None:
+    async def request_account_phone(self, update, context) -> int:
         """ Handles the email question for the account request """
 
         # Add info to dict
@@ -87,7 +87,7 @@ class Account:
         await self.function.send_message(f"Veel kijkplezier alvast! 😎", update, context)
 
         # Send the request info
-        await self.log.logger(f"*🎉 Nieuw account aangevraagd 🎉*\n\nNaam: {self.info_dict['first_name']}\nEmail: {self.info_dict['email']}\nTelefoon: {self.info_dict['phone']}\nVia: {self.info_dict['referrer']}", False, "info")
+        await self.log.logger(f"*🎉 New account requested 🎉*\n\nName: {self.info_dict['first_name']}\nEmail: {self.info_dict['email']}\nPhone: {self.info_dict['phone']}\nVia: {self.info_dict['referrer']}", False, "info")
 
         # End the conversation
         return ConversationHandler.END

@@ -18,8 +18,9 @@ class Log:
         logging.root.handlers = []
         log_level = os.getenv('LOG_TYPE', 'INFO').upper()
 
-        # set higher logging level for httpx to avoid all GET and POST requests being logged
+        # set higher logging level for httpx to avoid all GET and POST requests being logged and apscheduler to avoid every executed schedule task
         logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("apscheduler").setLevel(logging.WARNING)
         fmt = "%(asctime)s:%(levelname)s:%(name)s - %(message)s"
         if log_level == "DEBUG":
             logging.getLogger("httpx").setLevel(logging.INFO)
@@ -42,15 +43,14 @@ class Log:
 
         # Set chat_id
         env_type = getattr(args, 'env', 'dev')
-        self.own_chatid = os.getenv('CHAT_ID_GROUP') if env_type == "live" else os.getenv('CHAT_ID_WOUTER')
+        self.own_chatid = os.getenv('CHAT_ID_GROUP') if env_type == "live" else os.getenv('CHAT_ID_ADMIN')
 
 
     async def logger(self, msg: str, silent=False, dtype="debug", telegram=True, chat_id=None) -> None:
         """ Send the log message to telegram and/or the log file """
 
         # Set chat_id
-        if chat_id is None:
-            chat_id = self.own_chatid
+        chat_id = self.own_chatid if chat_id is None else chat_id
 
         # Send telegram message
         if telegram:
