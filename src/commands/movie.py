@@ -2,10 +2,8 @@
 
 import asyncio
 import os
-import json
-from transmission_rpc import Client
 from typing import Optional
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update
 from telegram.ext import CallbackContext, ConversationHandler
 
 from src.states import MOVIE_OPTION, MOVIE_NOTIFY, MOVIE_UPGRADE

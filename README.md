@@ -1,12 +1,13 @@
-# Plex download Telegram bot
-This projects uses Plex, Sonarr, Radarr and Transmission to automate download requests for your Plex server.
-
 [![GPLv3 License](https://img.shields.io/badge/License-GPL%20v3-yellow.svg)](https://opensource.org/licenses/)
 ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
 
+# Plex download Telegram bot
+This projects uses Plex, Sonarr, Radarr and Transmission to automate download requests for your Plex server.
+
+
 ## Getting started
 ### Environment variables and tokens
-Copy the dot-env.template to the root folder with the name `dot-env` and fill in the variables
+Copy the `dot-env.template` to the root folder with the name `dot-env` and fill in the variables
 ```
 BOT_TOKEN: The token of your Telegram Bot
 RADARR_URL: Your Radarr url (including port)
@@ -28,7 +29,15 @@ SERIE_FOLDERS: One or multiple paths of the serie folders attached to your Plex 
 ```
 
 ### Create JSON files
-Copy the contents of `data.json.template` to `data.json` and the contents of `stats.json.template` to `stats.json`
+```
+cd ~./plex-download-bot/
+tee data.json data.dev.json < data.json.template
+tee stats.json stats.dev.json < stats.json.template
+```
+
+In the `data.json` file you'll find 4 dict's, only the first one called `users` has to be filled manually. The key can be a name or username corresponding with the value, which should be a password which users can use to login with the bot.
+The rest of the dicts are used and filled by the script. This is also the case for `stats.json`.
+The `*.dev.json` file are the same, the only difference is that the `dev` file is used when the argument `--env dev` is given.
 
 ## Setup the environment
 Create the python environment and install required packages

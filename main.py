@@ -2,7 +2,6 @@
 
 from dotenv import load_dotenv
 import argparse
-import asyncio
 
 from src.log import Log
 from src.bot import Bot

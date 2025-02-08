@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 
-import requests
 import json
 import os
 from typing import Union

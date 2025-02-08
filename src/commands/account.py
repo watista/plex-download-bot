@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 
 import asyncio
-
 from telegram import Update
 from telegram.ext import CallbackContext, ConversationHandler
 
 from src.states import REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER
+
 
 class Account:
 
@@ -16,7 +16,7 @@ class Account:
         self.function = functions
 
 
-    async def request_account(self, update, context) -> int:
+    async def request_account(self, update: Update, context: CallbackContext) -> int:
         """ Handles the first_name question for the account request """
 
         # Create a dict to store the information
@@ -33,7 +33,7 @@ class Account:
         return REQUEST_ACCOUNT_EMAIL
 
 
-    async def request_account_email(self, update, context) -> int:
+    async def request_account_email(self, update: Update, context: CallbackContext) -> int:
         """ Handles the email question for the account request """
 
         # Add info to dict
@@ -48,7 +48,7 @@ class Account:
         return REQUEST_ACCOUNT_PHONE
 
 
-    async def request_account_phone(self, update, context) -> int:
+    async def request_account_phone(self, update: Update, context: CallbackContext) -> int:
         """ Handles the email question for the account request """
 
         # Add info to dict
@@ -63,7 +63,7 @@ class Account:
         return REQUEST_ACCOUNT_REFER
 
 
-    async def request_account_refer(self, update, context) -> None:
+    async def request_account_refer(self, update: Update, context: CallbackContext) -> None:
         """ Handles the email question for the account request """
 
         # Add info to dict

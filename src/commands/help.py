@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 import asyncio
-
 from telegram import Update
 from telegram.ext import CallbackContext, ConversationHandler
 

@@ -3,9 +3,7 @@
 import json
 import time
 from pathlib import Path
-
-from telegram import Update
-from telegram.ext import CallbackContext, ConversationHandler
+from telegram.ext import CallbackContext
 
 from src.services.radarr import Radarr
 from src.services.sonarr import Sonarr
@@ -42,7 +40,6 @@ class Schedule:
                 for media_id, timestamp in list(media_types[media_type].items()):
                     # Get JSON data for the media ID
                     media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
-                    print(media_json)
                     media_folder = Path(media_json[0]["path"])
                     # Check if media_folder exists
                     if media_folder.is_dir():
@@ -76,5 +73,5 @@ class Schedule:
                 # Iterate through all media ID's
                 for media_id, timestamp in list(media_types[media_type].items()):
                     waiting_time = round(time.time()) - timestamp
-                    if waiting_time > 1:
+                    if waiting_time > 2678400:
                         await self.log.logger(f"*ℹ️ The {media_type} with ID {media_id} hasn't been downloaded in the past 31 days ℹ️*\nRequest by user ID: {user_id}", False, "info")

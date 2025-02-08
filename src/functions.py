@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import re
-import html
+
 
 class Functions:
 
