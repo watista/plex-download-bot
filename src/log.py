@@ -3,6 +3,7 @@
 import os
 import re
 import logging
+from pathlib import Path
 from telegram import Bot
 from telegram.error import TelegramError
 
@@ -25,6 +26,10 @@ class Log:
         if log_level == "DEBUG":
             logging.getLogger("httpx").setLevel(logging.INFO)
             fmt += " - {%(pathname)s:%(module)s:%(funcName)s:%(lineno)d}"
+
+        # Create the log file and folder if not exist
+        Path("log").mkdir(parents=True, exist_ok=True)
+        Path("log/plex-download-bot.log").touch(exist_ok=True)
 
         # Setup the logging config
         logging.basicConfig(

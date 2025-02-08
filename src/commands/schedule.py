@@ -48,11 +48,11 @@ class Schedule:
                             # Send message
                             media_plex_url = await self.plex.get_media_url(media_json, media_type)
                             if not media_plex_url:
-                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json['title']}, staat nu online op Plex!", user_id, context, None, "MarkdownV2", False)
+                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json[0]['title']}, staat nu online op Plex!", user_id, context, None, "MarkdownV2", False)
                             else:
-                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json['title']}, staat nu online op Plex!\n\n🌐 <a href='{media_plex_url[0]}'>Bekijk {media_json['title']} in de browser</a>", user_id, context, None, "HTML", False)
+                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json[0]['title']}, staat nu online op Plex!\n\n🌐 <a href='{media_plex_url[0]}'>Bekijk {media_json[0]['title']} in de browser</a>", user_id, context, None, "HTML", False)
                             # Write to log
-                            await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {media_json['title']} is online ℹ️*\nUser ID: {user_id}", False, "info")
+                            await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {media_json[0]['title']} is online ℹ️*\nUser ID: {user_id}", False, "info")
                             # Delete the entry and write to data.json
                             del data["notify_list"][user_id][media_type][media_id]
                             with open(self.data_json, "w") as file:

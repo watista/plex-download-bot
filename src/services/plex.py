@@ -23,7 +23,7 @@ class Plex:
         section = "Movies" if media_type == "film" else "TV Shows"
 
         # Get movie by name from Plex
-        media = self.plex.library.section(section).search(title=media_data['title'])
+        media = self.plex.library.section(section).search(title=media_data[0]['title'])
 
         # Create URL's if there is a match, otherwise throw error and return empty list
         try:
