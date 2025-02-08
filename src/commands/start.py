@@ -144,7 +144,7 @@ class Start:
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        if self.callback_data == "account_request":
+        if not hasattr(self, 'callback_data'):
             await update.callback_query.answer()
             await self.function.send_message(f"Leuk dat je interesse hebt in Plex. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)

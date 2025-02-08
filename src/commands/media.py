@@ -129,7 +129,8 @@ class Media(ABC):
             active_torrents = client.get_torrents(arguments=["name"])
         except Exception as e:
             await self.function.send_message(f"*😵 Er ging iets fout tijdens het maken van verbinding met de download client*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
-            await self.log.logger(f"There has been an error during the Transmission connection. Error: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error", True)
+            await self.log.logger(f"There has been an error during the Transmission connection. See the logs for more info.\n\nError: {' '.join(e.args)}", False, "error", False)
+            await self.log.logger(f"There has been an error during the Transmission connection. Error: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error")
             return ConversationHandler.END  # Quit if connection fails
 
         # Get the media states

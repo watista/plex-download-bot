@@ -47,8 +47,7 @@ class Log:
             logging.getLogger("").addHandler(console)
 
         # Set chat_id
-        env_type = getattr(args, 'env', 'dev')
-        self.own_chatid = os.getenv('CHAT_ID_GROUP') if env_type == "live" else os.getenv('CHAT_ID_ADMIN')
+        self.own_chatid = os.getenv('CHAT_ID_GROUP') if getattr(args, 'env', 'dev') == "live" else os.getenv('CHAT_ID_ADMIN')
 
 
     async def logger(self, msg: str, silent=False, dtype="debug", telegram=True, chat_id=None) -> None:
