@@ -40,7 +40,12 @@ class Schedule:
                 for media_id, timestamp in list(media_types[media_type].items()):
                     # Get JSON data for the media ID
                     media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
-                    media_folder = Path(media_json[0]["path"])
+
+                    # Check if media_data is a list or dict
+                    if isinstance(media_json, list):
+                        media_json = media_json[0]
+
+                    media_folder = Path(media_json["path"])
                     # Check if media_folder exists
                     if media_folder.is_dir():
                         # Check if media_folder contains any files or subdirectories
@@ -48,11 +53,11 @@ class Schedule:
                             # Send message
                             media_plex_url = await self.plex.get_media_url(media_json, media_type)
                             if not media_plex_url:
-                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json[0]['title']}, staat nu online op Plex!", user_id, context, None, "MarkdownV2", False)
+                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json['title']}, staat nu online op Plex!", user_id, context, None, "MarkdownV2", False)
                             else:
-                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json[0]['title']}, staat nu online op Plex!\n\n🌐 <a href='{media_plex_url[0]}'>Bekijk {media_json[0]['title']} in de browser</a>", user_id, context, None, "HTML", False)
+                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {media_json['title']}, staat nu online op Plex!\n\n🌐 <a href='{media_plex_url[0]}'>Bekijk {media_json['title']} in de browser</a>", user_id, context, None, "HTML", False)
                             # Write to log
-                            await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {media_json[0]['title']} is online ℹ️*\nUser ID: {user_id}", False, "info")
+                            await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {media_json['title']} is online ℹ️*\nUser ID: {user_id}", False, "info")
                             # Delete the entry and write to data.json
                             del data["notify_list"][user_id][media_type][media_id]
                             with open(self.data_json, "w") as file:

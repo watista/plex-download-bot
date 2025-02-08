@@ -22,8 +22,16 @@ class Plex:
         # Set media type
         section = "Movies" if media_type == "film" else "TV Shows"
 
+        # Check if media_data is a list or dict
+        if isinstance(media_data, list):
+            media_data = media_data[0]
+        elif isinstance(media_data, dict):
+            media_data = media_data
+        else:
+            return []
+
         # Get movie by name from Plex
-        media = self.plex.library.section(section).search(title=media_data[0]['title'])
+        media = self.plex.library.section(section).search(title=media_data['title'])
 
         # Create URL's if there is a match, otherwise throw error and return empty list
         try:
