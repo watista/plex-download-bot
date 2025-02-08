@@ -43,7 +43,7 @@ class Movie(Media):
             },
             "available_to_download": {
                 "condition": lambda movie, _: movie.get("movieFileId") == 0 and not movie.get("monitored") and movie.get("status") == "released",
-                "message": "De download voor {title} is nu gestart, het kan even duren voordat deze online staat, nog even geduld 😄",
+                "message": "De download voor {title} is nu gestart, gemiddeld duurt het 1 uur voordat een film online staat, nog even geduld 😄",
                 "action": "start_download",
                 "extra_action": "scan_missing_media",
                 "state_message": True,

@@ -43,7 +43,8 @@ class Bot:
 
         # Add conversation handler with different states
         self.application.add_handler(ConversationHandler(
-            entry_points=[CommandHandler("start", self.start.start_msg), MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
+            entry_points=[CommandHandler("start", self.start.start_msg)],
+            # entry_points=[CommandHandler("start", self.start.start_msg), MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
                     CallbackQueryHandler(self.start.verification, pattern="^(movie_request|serie_request)$"),

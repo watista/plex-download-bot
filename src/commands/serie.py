@@ -45,7 +45,7 @@ class Serie(Media):
             "available_to_download": {
                 "condition": lambda serie, _: not serie.get("path") and serie.get("status") != "upcoming",
                 "size_check": True,
-                "message": "De download voor {title} is nu gestart, het kan even duren voordat deze online staat, nog even geduld 😄",
+                "message": "De download voor {title} is nu gestart, gemiddeld duurt het 1 uur voordat een serie online staat, nog even geduld 😄",
                 "action": "start_download",
                 "extra_action": "scan_missing_media",
                 "state_message": True,

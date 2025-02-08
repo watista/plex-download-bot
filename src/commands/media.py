@@ -208,7 +208,7 @@ class Media(ABC):
                     await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
 
                 # Info log
-                await self.log.logger(f"*ℹ️ User has requested {self.media_data['title']} - ({self.media_data['tmdbId']}) ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                await self.log.logger(f"*ℹ️ User has requested the {self.label} {self.media_data['title']} - ({self.media_data['tmdbId']}) ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                 # Write to stats file
                 await self.write_to_stats(update)
@@ -245,7 +245,7 @@ class Media(ABC):
         await update.callback_query.answer()
 
         # Finish conversation if chosen
-        if update.callback_query.data == f"{self.label}_no":
+        if update.callback_query.data == f"{self.label}_notify_no":
             await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
             return ConversationHandler.END
 
