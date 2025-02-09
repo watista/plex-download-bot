@@ -258,8 +258,9 @@ class Media(ABC):
                 json_data["notify_list"][f"{update.effective_user.id}"] = {}
 
             # Check if serie/film block exists, otherwise create it
-            if self.label not in json_data["notify_list"][f"{update.effective_user.id}"]:
-                json_data["notify_list"][f"{update.effective_user.id}"][f"{self.label}"] = {}
+            for media_type in ["serie", "film"]:
+                if media_type not in json_data["notify_list"][f"{update.effective_user.id}"]:
+                    json_data["notify_list"][f"{update.effective_user.id}"][f"{media_type}"] = {}
 
             # Add media to notify_list
             json_data["notify_list"][f"{update.effective_user.id}"][f"{self.label}"][self.media_data["tmdbId"]] = round(time.time())
