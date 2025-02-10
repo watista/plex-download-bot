@@ -39,7 +39,7 @@ class Bot:
         self.schedule = Schedule(args, logger, self.function)
 
         # Create the Application using the new async API
-        self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build()
+        self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build() if args.env == "live" else Application.builder().token(os.getenv('BOT_TOKEN_DEV')).concurrent_updates(False).read_timeout(300).build()
 
         # Add conversation handler with different states
         self.application.add_handler(ConversationHandler(

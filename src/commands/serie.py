@@ -99,7 +99,7 @@ class Serie(Media):
         """ Handles the answer for which season/episode the serie should be upgraded """
 
         # Send the confirmation message and notify option
-        await self.log.logger(f"*ℹ️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) with season/episode: {update.message.text} ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.log.logger(f"*ℹ️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) with season/episode: {self.function.sanitize_text(update.message.text)} ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geupgrade.", update, context)
         await asyncio.sleep(1)
         await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")

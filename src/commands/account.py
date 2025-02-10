@@ -20,10 +20,10 @@ class Account:
         """ Handles the first_name question for the account request """
 
         # Create a dict to store the information
-        self.info_dict = {"first_name": update.message.text}
+        self.info_dict = {"first_name": self.function.sanitize_text(update.message.text)}
 
         # Send messages
-        await self.function.send_message(f"Leuk je te ontmoeten {update.message.text} 😀", update, context)
+        await self.function.send_message(f"Leuk je te ontmoeten {self.function.sanitize_text(update.message.text)} 😀", update, context)
         await asyncio.sleep(1)
         await self.function.send_message(f"Om toegang te krijgen tot Plex, heb je een Plex account nodig die ik aan mijn server kan toevoegen. Een Plex account kan je aanmaken via <a href='https://plex.tv'>plex.tv</a>.", update, context, None, "HTML")
         await asyncio.sleep(1)
@@ -52,7 +52,7 @@ class Account:
         """ Handles the email question for the account request """
 
         # Add info to dict
-        self.info_dict["phone"] = update.message.text
+        self.info_dict["phone"] = self.function.sanitize_text(update.message.text)
 
         # Send messages
         await self.function.send_message(f"Check ✅", update, context)
@@ -67,7 +67,7 @@ class Account:
         """ Handles the email question for the account request """
 
         # Add info to dict
-        self.info_dict["referrer"] = update.message.text
+        self.info_dict["referrer"] = self.function.sanitize_text(update.message.text)
 
         # Send messages
         await self.function.send_message(f"Got it!", update, context)

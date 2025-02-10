@@ -63,3 +63,8 @@ class Functions:
             return re.sub(f"([{re.escape(special_chars)}])", r"\\\1", text)
         else:
             return text
+
+
+    # Sanitize text and remove _ and *
+    def sanitize_text(self, text: str) -> str:
+        return text.replace("*", "").replace("_", "")

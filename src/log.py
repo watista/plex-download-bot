@@ -13,7 +13,7 @@ class Log:
     def __init__(self, args=False):
 
         # Init Telegram bot
-        self.bot = Bot(os.getenv('BOT_TOKEN'))
+        self.bot = Bot(os.getenv('BOT_TOKEN')) if args.env == "live" else Bot(os.getenv('BOT_TOKEN_DEV'))
 
         # Set logging format and config
         logging.root.handlers = []

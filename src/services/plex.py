@@ -39,4 +39,5 @@ class Plex:
         except Exception as e:
             await self.log.logger(f"❌ *Error while creating a Plex link* ❌\n\nCheck the error log for more information.", False, "error")
             await self.log.logger(f"Error during the creating of the Plex link. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()}", False, "error", False)
+            await self.log.logger(f"Full JSON output: {media_data}", False, "error", False)
             return []
