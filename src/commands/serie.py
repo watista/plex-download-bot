@@ -73,7 +73,12 @@ class Serie(Media):
             "qualityProfileId": 7,
             "monitored": True,
             "tvdbId": data['tvdbId'],
-            "rootFolderPath": folder
+            "rootFolderPath": folder,
+            "addOptions": {
+                "ignoreEpisodesWithFiles": False,
+                "ignoreEpisodesWithoutFiles": False,
+                "searchForMissingEpisodes": True
+            }
         }
 
         return payload
