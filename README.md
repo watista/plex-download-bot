@@ -20,6 +20,7 @@ PLEX_ID: Your Plex server ID
 CHAT_ID_GROUP: The Telegram Chat ID
 CHAT_ID_ADMIN: User telegram ID
 LOG_TYPE: Log severity (Options are: ERROR, WARNING, INFO, DEBUG)
+LOG_FOLDER: Folder to write logs to
 TRANSMISSION_IP: The external IP of your Transmission instance
 TRANSMISSION_PORT: Transmission port
 TRANSMISSION_USER: Transmission user

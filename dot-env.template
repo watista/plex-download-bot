@@ -1,4 +1,5 @@
 BOT_TOKEN=123:abc
+LOG_FOLDER=log
 RADARR_URL=https://radarr.example.com/
 RADARR_API=123
 SONARR_URL=https://sonarr.example.com/

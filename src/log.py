@@ -3,6 +3,7 @@
 import os
 import re
 import logging
+import time
 from pathlib import Path
 from telegram import Bot
 from telegram.error import TelegramError
@@ -22,28 +23,33 @@ class Log:
         # set higher logging level for httpx to avoid all GET and POST requests being logged and apscheduler to avoid every executed schedule task
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("apscheduler").setLevel(logging.WARNING)
-        fmt = "%(asctime)s:%(levelname)s:%(name)s - %(message)s"
+        fmt = "%(asctime)s - %(levelname)s - %(name)s: %(message)s"
         if log_level == "DEBUG":
             logging.getLogger("httpx").setLevel(logging.INFO)
-            fmt += " - {%(pathname)s:%(module)s:%(funcName)s:%(lineno)d}"
+            fmt += " - {%(pathname)s - %(module)s - %(funcName)s - %(lineno)d}"
 
-        # Create the log file and folder if not exist
-        Path("log").mkdir(parents=True, exist_ok=True)
-        Path("log/plex-download-bot.log").touch(exist_ok=True)
+        # Set name and create the log file and folder if not exist
+        log_folder = os.getenv("LOG_FOLDER", "log")
+        log_file = f"{log_folder}/plex-download-bot-{time.strftime('%Y-%m-%d')}.log"
+        Path(log_folder).mkdir(parents=True, exist_ok=True)
+        Path(log_file).touch(exist_ok=True)
+
+        # Set logging level
+        logging_level = getattr(logging, log_level, logging.INFO)
 
         # Setup the logging config
         logging.basicConfig(
-            filename='log/plex-download-bot.log',
-            level=getattr(logging, log_level, logging.INFO),
+            filename=log_file,
+            level=logging_level,
             format=fmt,
             datefmt='%d-%m-%Y %H:%M:%S'
         )
 
         # Set console logging
-        if args.verbose and getattr(args, 'verbose', False):
+        if args.verbose:
             console = logging.StreamHandler()
-            console.setLevel(getattr(logging, log_level, logging.INFO))
-            console.setFormatter(logging.Formatter('%(levelname)s:%(name)s:%(asctime)s - %(message)s'))
+            console.setLevel(logging_level)
+            console.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
             logging.getLogger("").addHandler(console)
 
         # Set chat_id

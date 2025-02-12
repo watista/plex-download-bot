@@ -5,3 +5,4 @@ asyncio
 requests
 transmission_rpc
 plexapi
+aiofiles
