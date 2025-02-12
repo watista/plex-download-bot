@@ -3,10 +3,10 @@
 import json
 import os
 from typing import Union
-from src.services.arr import Arr
+from src.services.arr import ArrApiHandler
 
 
-class Radarr(Arr):
+class Radarr(ArrApiHandler):
     """ Specific class for the Radarr API """
 
     def __init__(self, logger):
@@ -17,15 +17,15 @@ class Radarr(Arr):
         """ Function that does a movie lookup """
 
         # Build url_string and make the request
-        lookup = await self.get(f"/movie/lookup?term={movie_name}")
+        response = await self.get(f"/movie/lookup?term={movie_name}")
 
         # Check if return value is empty
-        if not lookup:
+        if not response:
             await self.log.logger(f"❌ *Error while fetching movie list for term {movie_name}.* Check the error log for more information. ❌", False, "error")
             return {}
 
         # Return the data
-        return lookup.json()
+        return response
 
 
     async def queue_download(self, payload: dict) -> Union[list[dict], dict]:
@@ -40,7 +40,7 @@ class Radarr(Arr):
             return {}
 
         # Return the data
-        return response.json()
+        return response
 
 
     async def scan_missing_media(self) -> Union[list[dict], dict]:
@@ -58,4 +58,4 @@ class Radarr(Arr):
             return {}
 
         # Return the data
-        return response.json()
+        return response

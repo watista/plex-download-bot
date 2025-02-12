@@ -2,7 +2,7 @@ python-dotenv
 python-telegram-bot
 python-telegram-bot[job-queue]
 asyncio
-requests
 transmission_rpc
 plexapi
 aiofiles
+aiohttp

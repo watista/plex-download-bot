@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 
-import requests
+import aiohttp
 import json
 import traceback
 from typing import Union
 from abc import ABC, abstractmethod
 
 
-class Arr(ABC):
+class ArrApiHandler(ABC):
     """ Base class for usage of the Radarr/Sonarr API """
 
     def __init__(self, logger, token, base_url, label):
@@ -37,51 +37,59 @@ class Arr(ABC):
         pass
 
 
-    async def get(self, url_string: str) -> Union[requests.Response, bool]:
-        """ Handles the GET requests """
+    async def get(self, url_string: str) -> Union[dict, bool]:
+        """ Handles the GET requests asynchronously using aiohttp """
 
         # Build request URL
-        url = self.base_url + url_string + "&apikey=" + self.token
+        url = f"{self.base_url}{url_string}&apikey={self.token}"
 
-        # Make the request
+        # Make the async request
         try:
-            response = requests.request("GET", url, headers={}, data={})
-
-            # Log and send Telegram message if request was unsuccesfull
-            if not response.ok:
-                await self.log.logger(f"Not OK response for {self.label} api GET. Error: {response.status_code} {response.reason} {response.text} - Url: {url}", False, "error", False)
-                return False
-
-            # Return the response if request was succesfull
-            return response
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    # Log and send Telegram message if request was unsuccesfull
+                    if response.status != 200:
+                        await self.log.logger(
+                            f"Not OK response for {self.label} API GET. Error: {response.status} {response.reason} {await response.text()} - URL: {url}",
+                            False, "error", False
+                        )
+                        return False
+                    return await response.json()
 
         # Log and send Telegram message if anything went wrong
         except Exception as e:
-            await self.log.logger(f"Error during a {self.label} api GET request. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
+            await self.log.logger(
+                f"Error during {self.label} API GET request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url}",
+                False, "error", False
+            )
             return False
 
 
-    async def post(self, url_string: str, payload: dict) -> Union[requests.Response, bool]:
-        """ Handles the POST requests """
+    async def post(self, url_string: str, payload: dict) -> Union[dict, bool]:
+        """ Handles the POST requests asynchronously using aiohttp """
 
         # Build request URL
-        url = self.base_url + url_string + "&apikey=" + self.token
+        url = f"{self.base_url}{url_string}&apikey={self.token}"
 
-        # Make the request
+        # Make the async request
         try:
-            response = requests.request("POST", url, headers={'Content-Type': 'application/json'}, json=payload)
-
-            # Log and send Telegram message if request was unsuccesfull
-            if not response.ok:
-                await self.log.logger(f"Not OK response for {self.label} api POST. Error: {response.status_code} {response.reason} {response.text} - Url: {url}", False, "error", False)
-                return False
-
-            # Return the response if request was succesfull
-            return response
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers={'Content-Type': 'application/json'}) as response:
+                    # Log and send Telegram message if request was unsuccesfull
+                    if response.status != 200:
+                        await self.log.logger(
+                            f"Not OK response for {self.label} API POST. Error: {response.status} {response.reason} {await response.text()} - URL: {url}",
+                            False, "error", False
+                        )
+                        return False
+                    return await response.json()
 
         # Log and send Telegram message if anything went wrong
         except Exception as e:
-            await self.log.logger(f"Error during a {self.label} api POST request. Error: {' '.join(e.args)} - Traceback: {traceback.format_exc()} - Url: {url}", False, "error", False)
+            await self.log.logger(
+                f"Error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url}",
+                False, "error", False
+            )
             return False
 
 
@@ -97,7 +105,7 @@ class Arr(ABC):
             return {}
 
         # Return the data
-        return disks.json()
+        return disks
 
 
     async def lookup_by_tmdbid(self, tmdbid: str) -> Union[list[dict], dict]:
@@ -115,4 +123,4 @@ class Arr(ABC):
             return {}
 
         # Return the data
-        return lookup.json()
+        return lookup
