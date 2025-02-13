@@ -62,12 +62,12 @@ class Movie(Media):
         }
 
 
-    async def create_download_payload(self, data: dict, folder: str) -> dict:
+    async def create_download_payload(self, data: dict, folder: str, monitor: bool) -> dict:
         """ Generates the download payload for Radarr """
 
         payload = {
             "qualityProfileId": 7,
-            "monitored": True,
+            "monitored": monitor,
             "tmdbId": data['tmdbId'],
             "rootFolderPath": folder
         }
@@ -87,7 +87,7 @@ class Movie(Media):
             return ConversationHandler.END
         else:
             # Send the confirmation message and notify option
-            await self.log.logger(f"*ℹ️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            await self.log.logger(f"*⚠️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ⚠️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
             await self.function.send_message(f"Duidelijk! De film zal worden geupgrade.", update, context)
             await asyncio.sleep(1)
             await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")

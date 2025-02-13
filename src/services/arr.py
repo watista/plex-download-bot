@@ -48,7 +48,7 @@ class ArrApiHandler(ABC):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     # Log and send Telegram message if request was unsuccesfull
-                    if response.status != 200:
+                    if not response.ok:
                         await self.log.logger(
                             f"Not OK response for {self.label} API GET. Error: {response.status} {response.reason} {await response.text()} - URL: {url}",
                             False, "error", False
@@ -76,7 +76,7 @@ class ArrApiHandler(ABC):
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers={'Content-Type': 'application/json'}) as response:
                     # Log and send Telegram message if request was unsuccesfull
-                    if response.status != 200:
+                    if not response.ok:
                         await self.log.logger(
                             f"Not OK response for {self.label} API POST. Error: {response.status} {response.reason} {await response.text()} - URL: {url}",
                             False, "error", False

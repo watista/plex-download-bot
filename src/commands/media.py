@@ -34,6 +34,9 @@ class Media(ABC):
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
         self.stats_json = "stats.json" if args.env == "live" else "stats.dev.json"
 
+        # Set default
+        self.set_monitored = True
+
     @abstractmethod
     async def get_media_states(self) -> dict:
         """ Abstract method that defines the states in the subclasses """
@@ -155,11 +158,17 @@ class Media(ABC):
                         await self.function.send_message(f"Je hebt een serie aangevraagd die meer dan 6 seizoenen heeft, omdat de server opslag beperkt is zal deze aanvraag handmatig beoordeeld worden.", update, context)
                         await asyncio.sleep(1)
 
+                        # Do action but unmonitor serie
+                        self.set_monitored = False
+                        success = await getattr(self, details["action"])(update, context)
+                        if not success:
+                            return ConversationHandler.END
+
                         # Send the notify message
                         await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.sanitize_title} online staat?")
 
                         # Info log
-                        await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} ({self.media_data['tmdbId']}) with {self.media_data['statistics']['seasonCount']} seasons ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                        await self.log.logger(f"*⚠️ User has requested {self.sanitize_title} ({self.media_data['tmdbId']}) with {self.media_data['statistics']['seasonCount']} seasons ⚠️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                         # Write to stats file
                         await self.write_to_stats(update)
@@ -169,9 +178,9 @@ class Media(ABC):
 
                 # Do actions if defined
                 if "action" in details:
-                    success = await getattr(self, details["action"])()
+                    success = await getattr(self, details["action"])(update, context)
                     if not success:
-                        return ConversationHandler.END  # Quit if download fails
+                        return ConversationHandler.END
 
                 # Do extra action if defined
                 if "extra_action" in details:
@@ -283,7 +292,7 @@ class Media(ABC):
         return ConversationHandler.END
 
 
-    async def start_download(self) -> bool:
+    async def start_download(self, update: Update, context: CallbackContext) -> bool:
         """ Starts the download in Radarr or Sonarr """
 
         # Get folder to download to
@@ -296,7 +305,7 @@ class Media(ABC):
             return False
 
         # Create the download payload
-        payload = await self.create_download_payload(self.media_data, download_folder)
+        payload = await self.create_download_payload(self.media_data, download_folder, self.set_monitored)
 
         # Queue download
         response = await self.media_handler.queue_download(payload)
