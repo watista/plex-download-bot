@@ -194,7 +194,7 @@ class Media(ABC):
                     if not media_plex_url:
                         await self.function.send_message(f"Zo te zien is {self.sanitize_title} al gedownload.", update, context)
                     else:
-                        await self.function.send_message(f"Zo te zien is {self.sanitize_title} al gedownload.\n\n🌐 <a href='{media_plex_url[0]}'>Bekijk {self.sanitize_title} in de browser</a>", update, context, None, "HTML")
+                        await self.function.send_message(f"Zo te zien is {self.sanitize_title} al gedownload.\n\n🌐 <a href='{media_plex_url}'>Bekijk {self.sanitize_title} in de browser</a>", update, context, None, "HTML")
 
                     # Send the notify message
                     await asyncio.sleep(1)

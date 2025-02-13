@@ -59,7 +59,7 @@ class Schedule:
                             if not media_plex_url:
                                 await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {sanitize_title}, staat nu online op Plex!", user_id, context, None, "MarkdownV2", False)
                             else:
-                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {sanitize_title}, staat nu online op Plex!\n\n🌐 <a href='{media_plex_url[0]}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
+                                await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {sanitize_title}, staat nu online op Plex!\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
                             # Write to log
                             await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {sanitize_title} is online ℹ️*\nUser ID: {user_id}", False, "info")
                             # Delete the entry and write to data.json

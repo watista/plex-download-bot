@@ -22,7 +22,7 @@ class Radarr(ArrApiHandler):
         # Check if return value is empty
         if not response:
             await self.log.logger(f"❌ *Error while fetching movie list for term {movie_name}.* Check the error log for more information. ❌", False, "error")
-            return {}
+            return None
 
         # Return the data
         return response
@@ -37,7 +37,7 @@ class Radarr(ArrApiHandler):
         # Check if return value is empty
         if not response:
             await self.log.logger(f"❌ *Error while queueing movie download.* Check the error log for more information. ❌", False, "error")
-            return {}
+            return None
 
         # Return the data
         return response
@@ -55,7 +55,7 @@ class Radarr(ArrApiHandler):
         # Check if return value is empty
         if not response:
             await self.log.logger(f"❌ *Error while scanning for missing movies.* Check the error log for more information. ❌", False, "warning")
-            return {}
+            return None
 
         # Return the data
         return response
