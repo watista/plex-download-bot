@@ -120,7 +120,7 @@ class ArrApiHandler(ABC):
         # Check if return value is empty
         if not lookup:
             await self.log.logger(f"❌ *Error while fetching {self.label} with TMDB ID {tmdbid}.* Check the error log for more information. ❌", False, "error")
-            return {}
+            return None
 
         # Return the data
         return lookup

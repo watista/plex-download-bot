@@ -2,6 +2,7 @@
 
 import json
 import time
+import aiofiles
 from pathlib import Path
 from telegram.ext import CallbackContext
 
@@ -29,8 +30,8 @@ class Schedule:
         """ Checks if someone needs to be notified from the JSON notify list """
 
         # Load JSON file
-        with open(self.data_json, "r") as file:
-            data = json.load(file)
+        async with aiofiles.open(self.data_json, "r") as file:
+            data = json.loads(await file.read())
 
         # Iterate through notify_list
         for user_id, media_types in data["notify_list"].items():
@@ -38,8 +39,13 @@ class Schedule:
             for media_type in ["serie", "film"]:
                 # Iterate through all media ID's
                 for media_id, timestamp in list(media_types[media_type].items()):
+
                     # Get JSON data for the media ID
                     media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
+
+                    # Check if data is present
+                    if not media_json:
+                        continue
 
                     # Check if media_data is a list or dict
                     if isinstance(media_json, list):
@@ -64,16 +70,19 @@ class Schedule:
                             await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {sanitize_title} is online ℹ️*\nUser ID: {user_id}", False, "info")
                             # Delete the entry and write to data.json
                             del data["notify_list"][user_id][media_type][media_id]
-                            with open(self.data_json, "w") as file:
-                                json.dump(data, file, indent=4)
+                            async with aiofiles.open(self.data_json, "w") as file:
+                                await file.write(json.dumps(data, indent=4))
 
 
     async def check_timestamp(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list """
 
         # Load JSON file
-        with open(self.data_json, "r") as file:
-            data = json.load(file)
+        async with aiofiles.open(self.data_json, "r") as file:
+            data = json.loads(await file.read())
+
+        # Set notify time to 31 days in seconds
+        NOTIFY_THRESHOLD = 31 * 24 * 60 * 60
 
         # Iterate through notify_list
         for user_id, media_types in data["notify_list"].items():
@@ -82,5 +91,5 @@ class Schedule:
                 # Iterate through all media ID's
                 for media_id, timestamp in list(media_types[media_type].items()):
                     waiting_time = round(time.time()) - timestamp
-                    if waiting_time > 2678400:
+                    if waiting_time > NOTIFY_THRESHOLD:
                         await self.log.logger(f"*ℹ️ The {media_type} with ID {media_id} hasn't been downloaded in the past 31 days ℹ️*\nRequest by user ID: {user_id}", False, "info")
