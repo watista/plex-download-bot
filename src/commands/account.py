@@ -15,12 +15,12 @@ class Account:
         self.log = logger
         self.function = functions
 
-
     async def request_account(self, update: Update, context: CallbackContext) -> int:
         """ Handles the first_name question for the account request """
 
         # Create a dict to store the information
-        self.info_dict = {"first_name": self.function.sanitize_text(update.message.text)}
+        self.info_dict = {
+            "first_name": self.function.sanitize_text(update.message.text)}
 
         # Send messages
         await self.function.send_message(f"Leuk je te ontmoeten {self.function.sanitize_text(update.message.text)} 😀", update, context)
@@ -31,7 +31,6 @@ class Account:
 
         # Return to next state
         return REQUEST_ACCOUNT_EMAIL
-
 
     async def request_account_email(self, update: Update, context: CallbackContext) -> int:
         """ Handles the email question for the account request """
@@ -47,12 +46,12 @@ class Account:
         # Return to next state
         return REQUEST_ACCOUNT_PHONE
 
-
     async def request_account_phone(self, update: Update, context: CallbackContext) -> int:
         """ Handles the email question for the account request """
 
         # Add info to dict
-        self.info_dict["phone"] = self.function.sanitize_text(update.message.text)
+        self.info_dict["phone"] = self.function.sanitize_text(
+            update.message.text)
 
         # Send messages
         await self.function.send_message(f"Check ✅", update, context)
@@ -62,12 +61,12 @@ class Account:
         # Return to next state
         return REQUEST_ACCOUNT_REFER
 
-
     async def request_account_refer(self, update: Update, context: CallbackContext) -> None:
         """ Handles the email question for the account request """
 
         # Add info to dict
-        self.info_dict["referrer"] = self.function.sanitize_text(update.message.text)
+        self.info_dict["referrer"] = self.function.sanitize_text(
+            update.message.text)
 
         # Send messages
         await self.function.send_message(f"Got it!", update, context)

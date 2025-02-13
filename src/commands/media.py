@@ -42,18 +42,15 @@ class Media(ABC):
         """ Abstract method that defines the states in the subclasses """
         pass
 
-
     @abstractmethod
     async def create_download_payload(self, media_data: dict, folder: str) -> dict:
         """ Abstract method that generates the download payload for Radarr/Sonarr """
         pass
 
-
     @abstractmethod
     async def media_upgrade(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles if the user wants the media to be quality upgraded """
         pass
-
 
     async def request_media(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the parsing of the chosen media and gives the options for which one the user wants """
@@ -122,7 +119,6 @@ class Media(ABC):
         # Return to the next state
         return self.option_state
 
-
     async def media_option(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the specific user media choice and downloads it """
 
@@ -132,8 +128,10 @@ class Media(ABC):
 
         # Make transmission connection and get active torrent list
         try:
-            ip = "0.0.0.0" if getattr(self.args, 'env', 'dev') == "live" else os.getenv('TRANSMISSION_IP')
-            client = Client(host=ip, port=os.getenv('TRANSMISSION_PORT'), username=os.getenv('TRANSMISSION_USER'), password=os.getenv('TRANSMISSION_PWD'))
+            ip = "0.0.0.0" if getattr(
+                self.args, 'env', 'dev') == "live" else os.getenv('TRANSMISSION_IP')
+            client = Client(host=ip, port=os.getenv('TRANSMISSION_PORT'), username=os.getenv(
+                'TRANSMISSION_USER'), password=os.getenv('TRANSMISSION_PWD'))
             active_torrents = client.get_torrents(arguments=["name"])
         except Exception as e:
             await self.function.send_message(f"*😵 Er ging iets fout tijdens het maken van verbinding met de download client*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
@@ -149,7 +147,8 @@ class Media(ABC):
             if details["condition"](self.media_data, active_torrents):
 
                 # Sanitize title and set a var
-                self.sanitize_title = self.function.sanitize_text(self.media_data['title'])
+                self.sanitize_title = self.function.sanitize_text(
+                    self.media_data['title'])
 
                 # Do serie season size check if defined
                 if "size_check" in details:
@@ -239,7 +238,6 @@ class Media(ABC):
         await self.log.logger(f"Media JSON:\n{self.media_data}", False, "error", False)
         return ConversationHandler.END
 
-
     async def ask_notify_question(self, update: Update, context: CallbackContext, type: str, msg: str) -> None:
         """ Asks if the user want to stay notified about the download """
 
@@ -253,7 +251,6 @@ class Media(ABC):
 
         # Send the notify message
         await self.function.send_message(msg, update, context, reply_markup)
-
 
     async def stay_notified(self, update: Update, context: CallbackContext) -> None:
         """ Handles if the user wants te be updated about the requested media """
@@ -291,7 +288,6 @@ class Media(ABC):
         await self.function.send_message(f"Oke, je ontvangt een melding als {self.sanitize_title} beschikbaar is. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
         return ConversationHandler.END
 
-
     async def start_download(self, update: Update, context: CallbackContext) -> bool:
         """ Starts the download in Radarr or Sonarr """
 
@@ -317,7 +313,6 @@ class Media(ABC):
 
         return True
 
-
     async def check_disk_space(self) -> Optional[str]:
         """ Checks if the disk given in de .env file have enough space left """
 
@@ -341,7 +336,6 @@ class Media(ABC):
 
         # Return if no disks have more then 100gb left
         return None
-
 
     async def write_to_stats(self, update: Update) -> None:
         """ Writes stats to the stats.json file """

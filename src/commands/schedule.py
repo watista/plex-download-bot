@@ -25,7 +25,6 @@ class Schedule:
         # Set data.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
 
-
     async def check_notify_list(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list """
 
@@ -60,7 +59,8 @@ class Schedule:
                             media_plex_url = await self.plex.get_media_url(media_json, media_type)
 
                             # Sanitize title and set a var
-                            sanitize_title = self.function.sanitize_text(media_json['title'])
+                            sanitize_title = self.function.sanitize_text(
+                                media_json['title'])
 
                             if not media_plex_url:
                                 await self.function.send_message(f"Goed nieuws! De {media_type} die je hebt aangevraagd, {sanitize_title}, staat nu online op Plex!", user_id, context, None, "MarkdownV2", False)
@@ -72,7 +72,6 @@ class Schedule:
                             del data["notify_list"][user_id][media_type][media_id]
                             async with aiofiles.open(self.data_json, "w") as file:
                                 await file.write(json.dumps(data, indent=4))
-
 
     async def check_timestamp(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list """

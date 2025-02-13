@@ -15,8 +15,8 @@ class Serie(Media):
     """ Specific class for serie handling """
 
     def __init__(self, args, logger, functions):
-        super().__init__(args, logger, functions, Sonarr(logger), "serie", os.getenv('SERIE_FOLDERS'), SERIE_OPTION)
-
+        super().__init__(args, logger, functions, Sonarr(logger),
+                         "serie", os.getenv('SERIE_FOLDERS'), SERIE_OPTION)
 
     async def get_media_states(self) -> dict:
         """ Function that defines the states """
@@ -64,7 +64,6 @@ class Serie(Media):
             }
         }
 
-
     async def create_download_payload(self, data: dict, folder: str, monitor: bool) -> dict:
         """ Generates the download payload for Radarr """
 
@@ -83,7 +82,6 @@ class Serie(Media):
 
         return payload
 
-
     async def media_upgrade(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles if the user wants the media to be quality upgraded """
 
@@ -98,7 +96,6 @@ class Serie(Media):
             # Aks question which season/episode needs to be upgrade
             await self.function.send_message(f"Oke, kan je aangeven om welk seizoen en/of episode het gaat? (bijvoorbeeld seizoen 1, episode 4 of episode 1 t/m 8 van seizoen 3)", update, context)
             return SERIE_UPGRADE_OPTION
-
 
     async def media_upgrade_option(self, update: Update, context: CallbackContext) -> int:
         """ Handles the answer for which season/episode the serie should be upgraded """

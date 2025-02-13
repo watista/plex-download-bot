@@ -5,8 +5,8 @@ import traceback
 from typing import Optional
 from plexapi.server import PlexServer
 
-class Plex:
 
+class Plex:
 
     def __init__(self, logger):
 
@@ -14,7 +14,6 @@ class Plex:
         self.log = logger
         self.plex_server_id = os.getenv('PLEX_ID')
         self.plex = PlexServer(os.getenv('PLEX_URL'), os.getenv('PLEX_API'))
-
 
     async def get_media_url(self, media_data: dict, media_type: str) -> Optional[str]:
         """ Create's a Plex link to the media """

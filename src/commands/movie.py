@@ -15,8 +15,8 @@ class Movie(Media):
     """ Specific class for movie handling """
 
     def __init__(self, args, logger, functions):
-        super().__init__(args, logger, functions, Radarr(logger), "film", os.getenv('MOVIE_FOLDERS'), MOVIE_OPTION)
-
+        super().__init__(args, logger, functions, Radarr(logger),
+                         "film", os.getenv('MOVIE_FOLDERS'), MOVIE_OPTION)
 
     async def get_media_states(self) -> dict:
         """ Function that defines the states """
@@ -61,7 +61,6 @@ class Movie(Media):
             },
         }
 
-
     async def create_download_payload(self, data: dict, folder: str, monitor: bool) -> dict:
         """ Generates the download payload for Radarr """
 
@@ -73,7 +72,6 @@ class Movie(Media):
         }
 
         return payload
-
 
     async def media_upgrade(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles if the user wants the media to be quality upgraded """

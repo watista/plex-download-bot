@@ -23,7 +23,6 @@ class Start:
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
         self.stats_json = "stats.json" if args.env == "live" else "stats.dev.json"
 
-
     async def start_msg(self, update: Update, context: CallbackContext) -> int:
 
         # Create the options keyboard
@@ -33,7 +32,8 @@ class Start:
                 InlineKeyboardButton("📺 Serie", callback_data="serie_request")
             ],
             [
-                InlineKeyboardButton("🆕 Nieuw account", callback_data="account_request")
+                InlineKeyboardButton(
+                    "🆕 Nieuw account", callback_data="account_request")
             ],
             [
                 InlineKeyboardButton("💁 Informatie", callback_data="info")
@@ -68,8 +68,10 @@ class Start:
 
             async with aiofiles.open(self.stats_json, "r+") as file:
                 data = json.loads(await file.read())
-                data.setdefault(str(update.effective_user.id), {"logins": {}, "film_requests": {}, "serie_requests": {}})
-                data[str(update.effective_user.id)]["logins"][datetime.now().strftime("%d-%m-%Y %H:%M:%S")] = update.effective_user.first_name
+                data.setdefault(str(update.effective_user.id), {
+                                "logins": {}, "film_requests": {}, "serie_requests": {}})
+                data[str(update.effective_user.id)]["logins"][datetime.now().strftime(
+                    "%d-%m-%Y %H:%M:%S")] = update.effective_user.first_name
                 await file.seek(0)
                 await file.write(json.dumps(data, indent=4))
                 await file.truncate()
@@ -86,7 +88,6 @@ class Start:
         # Return to the next state
         return VERIFY_PWD
 
-
     async def verify_pwd(self, update: Update, context: CallbackContext) -> Optional[int]:
 
         # Load JSON file
@@ -101,7 +102,8 @@ class Start:
                 await asyncio.sleep(1)
 
                 # Write user_id to json
-                json_data["user_id"][str(update.effective_user.id)] = update.effective_user.first_name
+                json_data["user_id"][str(
+                    update.effective_user.id)] = update.effective_user.first_name
                 async with aiofiles.open(self.data_json, "w") as file:
                     await file.write(json.dumps(json_data, indent=4))
 
@@ -128,7 +130,8 @@ class Start:
             # Send message and add to blocklist
             await self.log.logger(f"*ℹ️ User has been blocked ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
             await self.function.send_message(f"Je hebt 3 keer het verkeeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
-            json_data["blocked_users"][str(update.effective_user.id)] = update.effective_user.first_name
+            json_data["blocked_users"][str(
+                update.effective_user.id)] = update.effective_user.first_name
             async with aiofiles.open(self.data_json, "w") as file:
                 await file.write(json.dumps(json_data, indent=4))
             # Finish the conversation
@@ -141,7 +144,6 @@ class Start:
         await asyncio.sleep(1)
         await self.function.send_message(f"Voer nu je wachtwoord in:", update, context)
         return VERIFY_PWD
-
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 

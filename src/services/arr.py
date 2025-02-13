@@ -18,24 +18,20 @@ class ArrApiHandler(ABC):
         self.base_url = base_url
         self.label = label
 
-
     @abstractmethod
     async def lookup_by_name(self, media_name: str) -> Union[list[dict], dict]:
         """ Abstract method that does a media lookup in the subclass """
         pass
-
 
     @abstractmethod
     async def queue_download(self, payload: dict) -> Union[list[dict], dict]:
         """ Abstract method that starts a download in the subclass """
         pass
 
-
     @abstractmethod
     async def scan_missing_media(self) -> Union[list[dict], dict]:
         """ Abstract method that scans for missing monitored media in the subclass """
         pass
-
 
     async def get(self, url_string: str) -> Union[dict, bool]:
         """ Handles the GET requests asynchronously using aiohttp """
@@ -64,7 +60,6 @@ class ArrApiHandler(ABC):
             )
             return False
 
-
     async def post(self, url_string: str, payload: dict) -> Union[dict, bool]:
         """ Handles the POST requests asynchronously using aiohttp """
 
@@ -92,7 +87,6 @@ class ArrApiHandler(ABC):
             )
             return False
 
-
     async def get_disk_space(self) -> Union[list[dict], dict]:
         """ Makes a GET request to get the disk space """
 
@@ -106,7 +100,6 @@ class ArrApiHandler(ABC):
 
         # Return the data
         return disks
-
 
     async def lookup_by_tmdbid(self, tmdbid: str) -> Union[list[dict], dict]:
         """ Function that does a movie lookup by The Movie Database ID """

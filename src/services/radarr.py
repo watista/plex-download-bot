@@ -12,7 +12,6 @@ class Radarr(ArrApiHandler):
     def __init__(self, logger):
         super().__init__(logger, os.getenv('RADARR_API'), os.getenv('RADARR_URL'), "movie")
 
-
     async def lookup_by_name(self, movie_name: str) -> Union[list[dict], dict]:
         """ Function that does a movie lookup """
 
@@ -26,7 +25,6 @@ class Radarr(ArrApiHandler):
 
         # Return the data
         return response
-
 
     async def queue_download(self, payload: dict) -> Union[list[dict], dict]:
         """ Function that starts a download """
@@ -42,12 +40,12 @@ class Radarr(ArrApiHandler):
         # Return the data
         return response
 
-
     async def scan_missing_media(self) -> Union[list[dict], dict]:
         """ Function that scans for missing monitored movies """
 
         # Set payload
-        payload = {"name":"missingMoviesSearch","filterKey":"monitored","filterValue":"true"}
+        payload = {"name": "missingMoviesSearch",
+                   "filterKey": "monitored", "filterValue": "true"}
 
         # Build url_string and make the request
         response = await self.post(f"/command?", payload)

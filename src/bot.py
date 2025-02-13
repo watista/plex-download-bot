@@ -23,6 +23,7 @@ from telegram.ext import (
     ConversationHandler
 )
 
+
 class Bot:
 
     def __init__(self, args, logger):
@@ -39,17 +40,22 @@ class Bot:
         self.schedule = Schedule(args, logger, self.function)
 
         # Create the Application using the new async API
-        self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build() if args.env == "live" else Application.builder().token(os.getenv('BOT_TOKEN_DEV')).concurrent_updates(False).read_timeout(300).build()
+        self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build(
+        ) if args.env == "live" else Application.builder().token(os.getenv('BOT_TOKEN_DEV')).concurrent_updates(False).read_timeout(300).build()
 
         # Add conversation handler with different states
         self.application.add_handler(ConversationHandler(
             # entry_points=[CommandHandler("start", self.start.start_msg)],
-            entry_points=[CommandHandler("start", self.start.start_msg), MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
+            entry_points=[CommandHandler("start", self.start.start_msg), MessageHandler(
+                filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
-                    CallbackQueryHandler(self.start.verification, pattern="^(movie_request|serie_request)$"),
-                    CallbackQueryHandler(self.start.parse_request, pattern="^account_request$"),
-                    CallbackQueryHandler(self.help.help_command_button, pattern='^info$')
+                    CallbackQueryHandler(
+                        self.start.verification, pattern="^(movie_request|serie_request)$"),
+                    CallbackQueryHandler(
+                        self.start.parse_request, pattern="^account_request$"),
+                    CallbackQueryHandler(
+                        self.help.help_command_button, pattern='^info$')
                 ],
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
@@ -68,28 +74,31 @@ class Bot:
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=86400
-            )
+        )
         )
 
         # Add stand-alone handlers
-        self.application.add_handler(CommandHandler("help", self.help.help_command))
+        self.application.add_handler(
+            CommandHandler("help", self.help.help_command))
 
         # Add error handler
         self.application.add_error_handler(self.error_handler)
 
         # Enable the Schedule Job Queue
-        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=7200, first=0)
-        self.application.job_queue.run_repeating(self.schedule.check_timestamp, interval=604800, first=0)
+        self.application.job_queue.run_repeating(
+            self.schedule.check_notify_list, interval=7200, first=0)
+        self.application.job_queue.run_repeating(
+            self.schedule.check_timestamp, interval=604800, first=0)
 
         # Start the bot
-        self.application.run_polling(allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
-
+        self.application.run_polling(
+            allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
 
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
         """ Function for unexpted errors """
-        error_message = "".join(traceback.format_exception(None, context.error, context.error.__traceback__))
+        error_message = "".join(traceback.format_exception(
+            None, context.error, context.error.__traceback__))
         await self.log.logger(f"Error happened with Telegram dispatcher\n{error_message}", False, "error")
-
 
     async def stop(self, update: Update, context: CallbackContext) -> None:
         """ Cancel command """

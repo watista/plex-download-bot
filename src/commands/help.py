@@ -13,7 +13,6 @@ class Help:
         self.log = logger
         self.function = functions
 
-
     async def help_command_button(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
@@ -24,7 +23,6 @@ class Help:
         await self.help_command(update, context)
 
         return ConversationHandler.END
-
 
     async def help_command(self, update: Update, context: CallbackContext) -> None:
 
