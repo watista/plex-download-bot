@@ -50,7 +50,7 @@ class Log:
             console = logging.StreamHandler()
             console.setLevel(logging_level)
             console.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
-            logging.getLogger("").addHandler(console)
+            logging.getLogger("plex-download-bot").addHandler(console)
 
         # Set chat_id
         self.own_chatid = os.getenv('CHAT_ID_GROUP') if getattr(args, 'env', 'dev') == "live" else os.getenv('CHAT_ID_ADMIN')

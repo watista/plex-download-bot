@@ -19,8 +19,8 @@ class Sonarr(ArrApiHandler):
         response = await self.get(f"/series/lookup?term={serie_name}")
 
         # Check if return value is empty
-        if not response:
-            await self.log.logger(f"❌ *Error while fetching serie list for term {serie_name}.* Check the error log for more information. ❌", False, "error")
+        if response is False:
+            await self.log.logger(f"❌ *Error while fetching serie list for term {serie_name}.*\nCheck the error log for more information. ❌", False, "error")
             return None
 
         # Return the data
@@ -33,8 +33,8 @@ class Sonarr(ArrApiHandler):
         response = await self.post(f"/series?", payload)
 
         # Check if return value is empty
-        if not response:
-            await self.log.logger(f"❌ *Error while queueing serie download.* Check the error log for more information. ❌", False, "error")
+        if response is False:
+            await self.log.logger(f"❌ *Error while queueing serie download.*\nCheck the error log for more information. ❌", False, "error")
             return None
 
         # Return the data
@@ -51,8 +51,8 @@ class Sonarr(ArrApiHandler):
         response = await self.post(f"/command?", payload)
 
         # Check if return value is empty
-        if not response:
-            await self.log.logger(f"❌ *Error while scanning for missing series.* Check the error log for more information. ❌", False, "warning")
+        if response is False:
+            await self.log.logger(f"❌ *Error while scanning for missing series.*\nCheck the error log for more information. ❌", False, "warning")
             return None
 
         # Return the data

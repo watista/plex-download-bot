@@ -187,7 +187,7 @@ class Media(ABC):
 
                 # Inform owner about unmonitored series if defined
                 if "inform_unmonitored" in details:
-                    await self.log.logger(f"User has requested {self.sanitize_title} which has been marked as unmonitored\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
+                    await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} which has been marked as unmonitored ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
 
                 # Send the message if defined
                 if "message" in details:

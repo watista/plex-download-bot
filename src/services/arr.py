@@ -95,7 +95,7 @@ class ArrApiHandler(ABC):
 
         # Check if return value is empty
         if not disks:
-            await self.log.logger(f"❌ *Error while fetching {self.label} diskspace information.* Check the error log for more information. ❌", False, "error")
+            await self.log.logger(f"❌ *Error while fetching {self.label} diskspace information.*\nCheck the error log for more information. ❌", False, "error")
             return None
 
         # Return the data
@@ -112,7 +112,7 @@ class ArrApiHandler(ABC):
 
         # Check if return value is empty
         if not lookup:
-            await self.log.logger(f"❌ *Error while fetching {self.label} with TMDB ID {tmdbid}.* Check the error log for more information. ❌", False, "error")
+            await self.log.logger(f"❌ *Error while fetching {self.label} with TMDB ID {tmdbid}.*\nCheck the error log for more information. ❌", False, "error")
             return None
 
         # Return the data

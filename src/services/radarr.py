@@ -19,8 +19,8 @@ class Radarr(ArrApiHandler):
         response = await self.get(f"/movie/lookup?term={movie_name}")
 
         # Check if return value is empty
-        if not response:
-            await self.log.logger(f"❌ *Error while fetching movie list for term {movie_name}.* Check the error log for more information. ❌", False, "error")
+        if response is False:
+            await self.log.logger(f"❌ *Error while fetching movie list for term {movie_name}.*\nCheck the error log for more information. ❌", False, "error")
             return None
 
         # Return the data
@@ -33,8 +33,8 @@ class Radarr(ArrApiHandler):
         response = await self.post(f"/movie?", payload)
 
         # Check if return value is empty
-        if not response:
-            await self.log.logger(f"❌ *Error while queueing movie download.* Check the error log for more information. ❌", False, "error")
+        if response is False:
+            await self.log.logger(f"❌ *Error while queueing movie download.*\nCheck the error log for more information. ❌", False, "error")
             return None
 
         # Return the data
@@ -51,8 +51,8 @@ class Radarr(ArrApiHandler):
         response = await self.post(f"/command?", payload)
 
         # Check if return value is empty
-        if not response:
-            await self.log.logger(f"❌ *Error while scanning for missing movies.* Check the error log for more information. ❌", False, "warning")
+        if response is False:
+            await self.log.logger(f"❌ *Error while scanning for missing movies.*\nCheck the error log for more information. ❌", False, "warning")
             return None
 
         # Return the data

@@ -33,13 +33,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plex Download Bot')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable console logging')
-    parser.add_argument('-e', '--env', help='Environment value: live / dev')
+    parser.add_argument('-e', '--env', choices=["live", "dev"], help='Environment value: live / dev', required=True)
     args = parser.parse_args()
-
-    # Env var is live/dev
-    if args.env not in ["live", "dev"]:
-        parser.error(
-            "Environment value --env/-e required.\nPossible values: live / dev")
 
     # Load .env file
     path = Path(
