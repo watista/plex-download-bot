@@ -3,7 +3,7 @@
 import os
 import traceback
 
-from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, HELP_CHOICE, HELP_OTHER
 from src.functions import Functions
 from src.commands.help import Help
 from src.commands.start import Start
@@ -46,8 +46,9 @@ class Bot:
         # Add conversation handler with different states
         self.application.add_handler(ConversationHandler(
             # entry_points=[CommandHandler("start", self.start.start_msg)],
-            entry_points=[CommandHandler("start", self.start.start_msg), MessageHandler(
-                filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
+            entry_points=[CommandHandler("start", self.start.start_msg),
+                        CommandHandler("help", self.help.help_command),
+                        MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
                     CallbackQueryHandler(
@@ -55,7 +56,7 @@ class Bot:
                     CallbackQueryHandler(
                         self.start.parse_request, pattern="^account_request$"),
                     CallbackQueryHandler(
-                        self.help.help_command_button, pattern='^info$')
+                        self.help.help_command_button, pattern="^info$")
                 ],
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
@@ -70,7 +71,15 @@ class Bot:
                 SERIE_NOTIFY: [CallbackQueryHandler(self.serie.stay_notified, pattern="^(serie_notify_yes|serie_notify_no)$")],
                 MOVIE_UPGRADE: [CallbackQueryHandler(self.movie.media_upgrade, pattern="^(film_upgrade_yes|film_upgrade_no)$")],
                 SERIE_UPGRADE: [CallbackQueryHandler(self.serie.media_upgrade, pattern="^(serie_upgrade_yes|serie_upgrade_no)$")],
-                SERIE_UPGRADE_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.media_upgrade_option)]
+                SERIE_UPGRADE_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.media_upgrade_option)],
+                HELP_CHOICE: [
+                    CallbackQueryHandler(self.help.usage, pattern="^help_use$"),
+                    CallbackQueryHandler(self.help.faq, pattern="^help_faq$"),
+                    CallbackQueryHandler(self.help.new_account, pattern="^help_new_account$"),
+                    CallbackQueryHandler(self.help.quality, pattern="^help_quality$"),
+                    CallbackQueryHandler(self.help.other, pattern="^help_other$")
+                ],
+                HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)]
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=86400

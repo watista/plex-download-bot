@@ -81,7 +81,7 @@ class Account:
         await asyncio.sleep(1)
         await self.function.send_message(f"Heb je vragen over het gebruik van Plex (en dan vooral de App)? Lees dan even de <a href='https://docs.wouterpaas.nl/'>documentatie</a> door die ik heb opgesteld.", update, context, None, "HTML")
         await asyncio.sleep(1)
-        await self.function.send_message(f"Dat was alles, zoals gezegd zal ik je toevoegen aan de server en je hierover een seintje geven op je telefoonnummer, als je nog vragen hebt kan je die dan via Whatsapp aan me stellen.", update, context)
+        await self.function.send_message(f"Dat was alles, zoals gezegd zal ik je toevoegen aan de server en je hierover een seintje geven op je telefoonnummer, als je nog vragen hebt kan je /help naar deze bot sturen voor antwoorden op veelgestelde vragen of je kan je vraag via Whatsapp aan me stellen.", update, context)
         await asyncio.sleep(1)
         await self.function.send_message(f"Veel kijkplezier alvast! 😎", update, context)
 

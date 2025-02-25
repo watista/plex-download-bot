@@ -41,7 +41,7 @@ class Start:
         ])
 
         # Send the message with the keyboard options
-        await self.function.send_gif(f"*🔥 Plex Telegram Download Bot 🔥*\n\nWaar kan ik je vandaag mee helpen?\n\n_Stuur /stop op elk moment om de bot te stoppen_", open("files/plex-gif.gif", "rb"), update, context, reply_markup)
+        await self.function.send_gif(f"*🔥🤖 Plex Telegram Download Bot 🤖🔥*\n\nWaar kan ik je vandaag mee helpen?\n\n_Stuur /stop op elk moment om de bot te stoppen_", open("files/plex-gif.gif", "rb"), update, context, reply_markup)
 
         # Return to the next state
         return VERIFY

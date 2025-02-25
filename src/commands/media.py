@@ -153,8 +153,8 @@ class Media(ABC):
                 # Do serie season size check if defined
                 if "size_check" in details:
                     # Check if there are more than 6 seasons
-                    if self.media_data["statistics"]["seasonCount"] > 6:
-                        await self.function.send_message(f"Je hebt een serie aangevraagd die meer dan 6 seizoenen heeft, omdat de server opslag beperkt is zal deze aanvraag handmatig beoordeeld worden.", update, context)
+                    if self.media_data["statistics"]["seasonCount"] > 5:
+                        await self.function.send_message(f"Je hebt een serie aangevraagd die meer dan 5 seizoenen heeft, omdat de server opslag beperkt is zal deze aanvraag handmatig beoordeeld worden. Er bestaat een reële kans dat de serie hierdoor niet gedownload zal worden. Wil je de serie echt super super graag op Plex zien? Stuur dan een bericht door /help te sturen en te kiezen voor de optie *📍 Anders*", update, context)
                         await asyncio.sleep(1)
 
                         # Do action but unmonitor serie
