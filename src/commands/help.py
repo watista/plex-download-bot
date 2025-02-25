@@ -17,7 +17,6 @@ class Help:
     async def help_command_button(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
-        callback_data = update.callback_query.data
         await update.callback_query.answer()
 
         # Create the options keyboard
@@ -77,7 +76,6 @@ class Help:
     async def usage(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
-        callback_data = update.callback_query.data
         await update.callback_query.answer()
 
         # Log
@@ -103,7 +101,6 @@ class Help:
     async def faq(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
-        callback_data = update.callback_query.data
         await update.callback_query.answer()
 
         # Log
@@ -135,7 +132,6 @@ class Help:
     async def new_account(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
-        callback_data = update.callback_query.data
         await update.callback_query.answer()
 
         # Log
@@ -155,7 +151,6 @@ class Help:
     async def quality(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
-        callback_data = update.callback_query.data
         await update.callback_query.answer()
 
         # Log
@@ -173,7 +168,6 @@ class Help:
     async def other(self, update: Update, context: CallbackContext) -> int:
 
         # Extract callback data and acknowledge the callback
-        callback_data = update.callback_query.data
         await update.callback_query.answer()
 
         # Log

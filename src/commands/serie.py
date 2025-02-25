@@ -3,10 +3,10 @@
 import asyncio
 import os
 from typing import Optional
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.states import SERIE_OPTION, SERIE_NOTIFY, SERIE_UPGRADE, SERIE_UPGRADE_OPTION
+from src.states import SERIE_OPTION, SERIE_NOTIFY, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, SERIE_UPGRADE_INFO
 from src.commands.media import Media
 from src.services.sonarr import Sonarr
 
@@ -93,15 +93,46 @@ class Serie(Media):
             await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
             return ConversationHandler.END
         else:
-            # Aks question which season/episode needs to be upgrade
-            await self.function.send_message(f"Oke, kan je aangeven om welk seizoen en/of episode het gaat? (bijvoorbeeld seizoen 1, episode 4 of episode 1 t/m 8 van seizoen 3)", update, context)
-            return SERIE_UPGRADE_OPTION
+            # Ask for specific info about quality
+            reply_markup = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Slechte kwaliteit (bijv. 720p)", callback_data="quality")
+                ],
+                [
+                    InlineKeyboardButton("Ingebrande (chinese) ondertiteling", callback_data="subs")
+                ],
+                [
+                    InlineKeyboardButton("Reclame/Logo's in het scherm", callback_data="ads")
+                ],
+                [
+                    InlineKeyboardButton("Overig", callback_data="other")
+                ]
+            ])
+
+            # Send the message with the keyboard options
+            await self.function.send_message(f"Kan je aangeven wat er precies mis is met de kwaliteit van de serie?", update, context, reply_markup)
+
+            # Return to the next state
+            return SERIE_UPGRADE_INFO
+
+
+    async def media_upgrade_info(self, update: Update, context: CallbackContext) -> Optional[int]:
+        """ Handles the specific info about the media upgrade """
+
+        # Answer query
+        self.callback_data = update.callback_query.data
+        await update.callback_query.answer()
+
+        # Aks question which season/episode needs to be upgrade
+        await self.function.send_message(f"Check, en kan je aangeven om welk seizoen en/of episode het gaat? (bijvoorbeeld seizoen 1, episode 4 of episode 1 t/m 8 van seizoen 3)", update, context)
+        return SERIE_UPGRADE_OPTION
+
 
     async def media_upgrade_option(self, update: Update, context: CallbackContext) -> int:
         """ Handles the answer for which season/episode the serie should be upgraded """
 
         # Send the confirmation message and notify option
-        await self.log.logger(f"*⚠️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) with season/episode: {self.function.sanitize_text(update.message.text)} ⚠️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.log.logger(f"*⚠️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {self.callback_data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geupgrade.", update, context)
         await asyncio.sleep(1)
         await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")

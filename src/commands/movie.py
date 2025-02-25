@@ -3,10 +3,10 @@
 import asyncio
 import os
 from typing import Optional
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.states import MOVIE_OPTION, MOVIE_NOTIFY, MOVIE_UPGRADE
+from src.states import MOVIE_OPTION, MOVIE_NOTIFY, MOVIE_UPGRADE, MOVIE_UPGRADE_INFO
 from src.commands.media import Media
 from src.services.radarr import Radarr
 
@@ -84,9 +84,38 @@ class Movie(Media):
             await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
             return ConversationHandler.END
         else:
-            # Send the confirmation message and notify option
-            await self.log.logger(f"*⚠️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ⚠️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-            await self.function.send_message(f"Duidelijk! De film zal worden geupgrade.", update, context)
-            await asyncio.sleep(1)
-            await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
-            return MOVIE_NOTIFY
+            # Ask for specific info about quality
+            reply_markup = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Slechte kwaliteit (bijv. 720p)", callback_data="quality")
+                ],
+                [
+                    InlineKeyboardButton("Ingebrande (chinese) ondertiteling", callback_data="subs")
+                ],
+                [
+                    InlineKeyboardButton("Reclame/Logo's in het scherm", callback_data="ads")
+                ],
+                [
+                    InlineKeyboardButton("Overig", callback_data="other")
+                ]
+            ])
+
+            # Send the message with the keyboard options
+            await self.function.send_message(f"Kan je aangeven wat er precies mis is met de kwaliteit van de film?", update, context, reply_markup)
+
+            # Return to the next state
+            return MOVIE_UPGRADE_INFO
+
+
+    async def media_upgrade_info(self, update: Update, context: CallbackContext) -> Optional[int]:
+        """ Handles the specific info about the media upgrade """
+
+        # Answer query
+        await update.callback_query.answer()
+
+        # Send the confirmation message and notify option
+        await self.log.logger(f"*⚠️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ⚠️*\nReason: {update.callback_query.data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.function.send_message(f"Duidelijk! De film zal worden geupgrade.", update, context)
+        await asyncio.sleep(1)
+        await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
+        return MOVIE_NOTIFY
