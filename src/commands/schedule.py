@@ -40,7 +40,7 @@ class Schedule:
                 for media_id, timestamp in list(media_types[media_type].items()):
 
                     # Get JSON data for the media ID
-                    media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
+                    media_json = await self.sonarr.lookup_by_tmdbid(f"tmdb:{media_id}") if media_type == "serie" else await self.radarr.lookup_by_tmdbid(f"tmdb:{media_id}")
 
                     # Check if data is present
                     if not media_json:
@@ -53,6 +53,14 @@ class Schedule:
                     media_folder = Path(media_json["path"])
                     # Check if media_folder exists
                     if media_folder.is_dir():
+
+                        # Check if all episodes are downloaded
+                        if media_type == "serie":
+                            total_seasons = media_json.get("statistics", {}).get("seasonCount", 0)
+                            existing_folders = len([d for d in media_folder.iterdir() if d.is_dir()])
+                            if existing_folders < total_episodes:
+                                continue
+
                         # Check if media_folder contains any files or subdirectories
                         if any(media_folder.iterdir()):
                             # Send message
@@ -72,6 +80,7 @@ class Schedule:
                             del data["notify_list"][user_id][media_type][media_id]
                             async with aiofiles.open(self.data_json, "w") as file:
                                 await file.write(json.dumps(data, indent=4))
+
 
     async def check_timestamp(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list """

@@ -52,6 +52,11 @@ class Media(ABC):
         """ Handles if the user wants the media to be quality upgraded """
         pass
 
+    @abstractmethod
+    async def media_upgrade_info(self, update: Update, context: CallbackContext) -> Optional[int]:
+        """ Handles the specific info about the media upgrade """
+        pass
+
     async def request_media(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the parsing of the chosen media and gives the options for which one the user wants """
 
