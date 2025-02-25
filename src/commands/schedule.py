@@ -58,7 +58,7 @@ class Schedule:
                         if media_type == "serie":
                             total_seasons = media_json.get("statistics", {}).get("seasonCount", 0)
                             existing_folders = len([d for d in media_folder.iterdir() if d.is_dir()])
-                            if existing_folders < total_episodes:
+                            if existing_folders < total_seasons:
                                 continue
 
                         # Check if media_folder contains any files or subdirectories
