@@ -47,8 +47,8 @@ class Bot:
         self.application.add_handler(ConversationHandler(
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
-                        CommandHandler("help", self.help.help_command),
-                        MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
+                          CommandHandler("help", self.help.help_command),
+                          MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
                     CallbackQueryHandler(
@@ -75,11 +75,16 @@ class Bot:
                 SERIE_UPGRADE_INFO: [CallbackQueryHandler(self.serie.media_upgrade_info, pattern="^(quality|subs|ads|other)$")],
                 SERIE_UPGRADE_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.media_upgrade_option)],
                 HELP_CHOICE: [
-                    CallbackQueryHandler(self.help.usage, pattern="^help_use$"),
-                    CallbackQueryHandler(self.help.faq, pattern="^help_faq$"),
-                    CallbackQueryHandler(self.help.new_account, pattern="^help_new_account$"),
-                    CallbackQueryHandler(self.help.quality, pattern="^help_quality$"),
-                    CallbackQueryHandler(self.help.other, pattern="^help_other$")
+                    CallbackQueryHandler(
+                        self.help.usage, pattern="^help_use$"),
+                    CallbackQueryHandler(
+                        self.help.faq, pattern="^help_faq$"),
+                    CallbackQueryHandler(
+                        self.help.new_account, pattern="^help_new_account$"),
+                    CallbackQueryHandler(
+                        self.help.quality, pattern="^help_quality$"),
+                    CallbackQueryHandler(
+                        self.help.other, pattern="^help_other$")
                 ],
                 HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)]
             },

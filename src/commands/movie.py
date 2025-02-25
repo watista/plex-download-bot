@@ -87,13 +87,16 @@ class Movie(Media):
             # Ask for specific info about quality
             reply_markup = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("Slechte kwaliteit (bijv. 720p)", callback_data="quality")
+                    InlineKeyboardButton(
+                        "Slechte kwaliteit (bijv. 720p)", callback_data="quality")
                 ],
                 [
-                    InlineKeyboardButton("Ingebrande (chinese) ondertiteling", callback_data="subs")
+                    InlineKeyboardButton(
+                        "Ingebrande (chinese) ondertiteling", callback_data="subs")
                 ],
                 [
-                    InlineKeyboardButton("Reclame/Logo's in het scherm", callback_data="ads")
+                    InlineKeyboardButton(
+                        "Reclame/Logo's in het scherm", callback_data="ads")
                 ],
                 [
                     InlineKeyboardButton("Overig", callback_data="other")
@@ -106,8 +109,7 @@ class Movie(Media):
             # Return to the next state
             return MOVIE_UPGRADE_INFO
 
-
-    async def media_upgrade_info(self, update: Update, context: CallbackContext) -> Optional[int]:
+    async def media_upgrade_info(self, update: Update, context: CallbackContext) -> None:
         """ Handles the specific info about the media upgrade """
 
         # Answer query
@@ -115,7 +117,5 @@ class Movie(Media):
 
         # Send the confirmation message and notify option
         await self.log.logger(f"*⚠️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ⚠️*\nReason: {update.callback_query.data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-        await self.function.send_message(f"Duidelijk! De film zal worden geupgrade.", update, context)
-        await asyncio.sleep(1)
-        await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.media_data['title']} online staat?")
-        return MOVIE_NOTIFY
+        await self.function.send_message(f"Duidelijk! De film zal worden geupgrade, dit duurt meestal ongeveer 1 dag.", update, context)
+        return ConversationHandler.END

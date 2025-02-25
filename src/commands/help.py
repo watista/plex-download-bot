@@ -22,16 +22,20 @@ class Help:
         # Create the options keyboard
         reply_markup = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🤖 Hoe gebruik je deze bot?", callback_data="help_use")
+                InlineKeyboardButton(
+                    "🤖 Hoe gebruik je deze bot?", callback_data="help_use")
             ],
             [
-                InlineKeyboardButton("❓ Veelgestelde vragen", callback_data="help_faq")
+                InlineKeyboardButton(
+                    "❓ Veelgestelde vragen", callback_data="help_faq")
             ],
             [
-                InlineKeyboardButton("🆕 Nieuw account aanvragen", callback_data="help_new_account")
+                InlineKeyboardButton(
+                    "🆕 Nieuw account aanvragen", callback_data="help_new_account")
             ],
             [
-                InlineKeyboardButton("📺 Kwaliteit van een serie of film", callback_data="help_quality")
+                InlineKeyboardButton(
+                    "📺 Kwaliteit van een serie of film", callback_data="help_quality")
             ],
             [
                 InlineKeyboardButton("📍 Anders", callback_data="help_other")
@@ -43,23 +47,26 @@ class Help:
 
         # Return to the next state
         return HELP_CHOICE
-
 
     async def help_command(self, update: Update, context: CallbackContext) -> int:
 
         # Create the options keyboard
         reply_markup = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🤖 Hoe gebruik je deze bot?", callback_data="help_use")
+                InlineKeyboardButton(
+                    "🤖 Hoe gebruik je deze bot?", callback_data="help_use")
             ],
             [
-                InlineKeyboardButton("❓ Veelgestelde vragen", callback_data="help_faq")
+                InlineKeyboardButton(
+                    "❓ Veelgestelde vragen", callback_data="help_faq")
             ],
             [
-                InlineKeyboardButton("🆕 Nieuw account aanvragen", callback_data="help_new_account")
+                InlineKeyboardButton(
+                    "🆕 Nieuw account aanvragen", callback_data="help_new_account")
             ],
             [
-                InlineKeyboardButton("📺 Kwaliteit van een serie of film", callback_data="help_quality")
+                InlineKeyboardButton(
+                    "📺 Kwaliteit van een serie of film", callback_data="help_quality")
             ],
             [
                 InlineKeyboardButton("📍 Anders", callback_data="help_other")
@@ -71,7 +78,6 @@ class Help:
 
         # Return to the next state
         return HELP_CHOICE
-
 
     async def usage(self, update: Update, context: CallbackContext) -> None:
 
@@ -96,7 +102,6 @@ class Help:
 
         # End convo
         return ConversationHandler.END
-
 
     async def faq(self, update: Update, context: CallbackContext) -> None:
 
@@ -128,7 +133,6 @@ class Help:
         # End convo
         return ConversationHandler.END
 
-
     async def new_account(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
@@ -147,7 +151,6 @@ class Help:
         # End convo
         return ConversationHandler.END
 
-
     async def quality(self, update: Update, context: CallbackContext) -> None:
 
         # Extract callback data and acknowledge the callback
@@ -164,7 +167,6 @@ class Help:
         # End convo
         return ConversationHandler.END
 
-
     async def other(self, update: Update, context: CallbackContext) -> int:
 
         # Extract callback data and acknowledge the callback
@@ -178,7 +180,6 @@ class Help:
 
         # Next state
         return HELP_OTHER
-
 
     async def other_reply(self, update: Update, context: CallbackContext) -> None:
 

@@ -1,5 +1,3 @@
-- notify bij quality request moet speciaal
 - films/series met een lagere imdb score dan X dubbel check of deze echt gedownload moet worden
 - media met een lagere score dan X op een lager download profiel downloaden
 - uitzoeken waarom sommige series als unmonitored blijven staan
-- make pep8 compliant again

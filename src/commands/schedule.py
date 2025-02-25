@@ -56,8 +56,10 @@ class Schedule:
 
                         # Check if all episodes are downloaded
                         if media_type == "serie":
-                            total_seasons = media_json.get("statistics", {}).get("seasonCount", 0)
-                            existing_folders = len([d for d in media_folder.iterdir() if d.is_dir()])
+                            total_seasons = media_json.get(
+                                "statistics", {}).get("seasonCount", 0)
+                            existing_folders = len(
+                                [d for d in media_folder.iterdir() if d.is_dir()])
                             if existing_folders < total_seasons:
                                 continue
 
@@ -80,7 +82,6 @@ class Schedule:
                             del data["notify_list"][user_id][media_type][media_id]
                             async with aiofiles.open(self.data_json, "w") as file:
                                 await file.write(json.dumps(data, indent=4))
-
 
     async def check_timestamp(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list """
