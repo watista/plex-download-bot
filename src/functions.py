@@ -21,7 +21,8 @@ class Functions:
             chat_id=chat_id,
             text=self.escape_markdown(text, parse_mode),
             parse_mode=parse_mode,
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
         )
 
         # Debug log
