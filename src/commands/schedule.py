@@ -40,7 +40,7 @@ class Schedule:
                 for media_id, timestamp in list(media_types[media_type].items()):
 
                     # Get JSON data for the media ID
-                    media_json = await self.sonarr.lookup_by_tmdbid(f"tmdb:{media_id}") if media_type == "serie" else await self.radarr.lookup_by_tmdbid(f"tmdb:{media_id}")
+                    media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
 
                     # Check if data is present
                     if not media_json:
