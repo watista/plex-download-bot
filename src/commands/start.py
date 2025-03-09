@@ -41,7 +41,7 @@ class Start:
         ])
 
         # Send the message with the keyboard options
-        await self.function.send_gif(f"*🔥🤖 Plex Telegram Download Bot 🤖🔥*\n\nWaar kan ik je vandaag mee helpen?\n\n_Stuur /stop op elk moment om de bot te stoppen_", open("files/plex-gif.gif", "rb"), update, context, reply_markup)
+        await self.function.send_gif(f"*🔥🤖 Wouter Thuis-Server Bot 🤖🔥*\n\nWaar kan ik je vandaag mee helpen?\n\n_Stuur /stop op elk moment om de bot te stoppen_", open("files/watch-serie.gif", "rb"), update, context, reply_markup)
 
         # Return to the next state
         return VERIFY
@@ -80,7 +80,7 @@ class Start:
             return await self.parse_request(update, context)
 
         # Ask for user password
-        await self.function.send_message(f"Zo te zien is dit de eerste keer dat je gebruik maakt van deze bot. Om gebruik te maken van de download service heb je een wachtwoord nodig.\n\nVoer nu je wachtwoord in:", update, context)
+        await self.function.send_message(f"Zo te zien is dit de eerste keer dat je gebruik maakt van deze bot. Om gebruik te maken van de bot heb je een wachtwoord nodig.\n\nVoer nu je wachtwoord in:", update, context)
 
         # Set amount on login tries
         context.user_data["login_tries"] = 0
