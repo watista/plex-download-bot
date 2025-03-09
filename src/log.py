@@ -79,7 +79,7 @@ class Log:
         try:
             await self.bot.send_message(
                 chat_id=chat_id,
-                text=msg,
+                text=msg[:1024],
                 parse_mode="MarkdownV2",
                 disable_web_page_preview=False,
                 disable_notification=silent
