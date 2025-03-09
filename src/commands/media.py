@@ -64,7 +64,7 @@ class Media(ABC):
         sanitize_message = self.function.sanitize_text(update.message.text)
 
         # Send start message
-        await self.function.send_message(f"Oke, je wilt dus graag {sanitize_message} op Plex zien. Even kijken of dat mogelijk is...", update, context)
+        await self.function.send_message(f"Oke, je wilt dus graag {sanitize_message} op Plęx zien. Even kijken of dat mogelijk is...", update, context)
         await asyncio.sleep(1)
 
         # Make the API request
@@ -119,7 +119,7 @@ class Media(ABC):
         ])
 
         # Send the message with the keyboard options
-        await self.function.send_message(f"Welke optie wil je graag op Plex zien?\n\n_Staat je keuze er niet tussen? Stuur dan /stop om opnieuw te beginnen_", update, context, reply_markup)
+        await self.function.send_message(f"Welke optie wil je graag op Plęx zien?\n\n_Staat je keuze er niet tussen? Stuur dan /stop om opnieuw te beginnen_", update, context, reply_markup)
 
         # Return to the next state
         return self.option_state
@@ -139,7 +139,7 @@ class Media(ABC):
                 'TRANSMISSION_USER'), password=os.getenv('TRANSMISSION_PWD'))
             active_torrents = client.get_torrents(arguments=["name"])
         except Exception as e:
-            await self.function.send_message(f"*😵 Er ging iets fout tijdens het maken van verbinding met de download client*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
+            await self.function.send_message(f"*😵 Er ging iets fout tijdens het maken van verbinding met de downløad client*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
             await self.log.logger(f"There has been an error during the Transmission connection. See the logs for more info.\n\nError: {' '.join(e.args)}", False, "error", False)
             await self.log.logger(f"There has been an error during the Transmission connection. Error: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error")
             return ConversationHandler.END  # Quit if connection fails
@@ -159,7 +159,7 @@ class Media(ABC):
                 if "size_check" in details:
                     # Check if there are more than 6 seasons
                     if self.media_data["statistics"]["seasonCount"] > 5:
-                        await self.function.send_message(f"Je hebt een serie aangevraagd die meer dan 5 seizoenen heeft, omdat de server opslag beperkt is zal deze aanvraag handmatig beoordeeld worden. Er bestaat een reële kans dat de serie hierdoor niet gedownload zal worden. Wil je de serie echt super super graag op Plex zien? Stuur dan een bericht door /help te sturen en te kiezen voor de optie *📍 Anders*", update, context)
+                        await self.function.send_message(f"Je hebt een serie aangevraagd die meer dan 5 seizoenen heeft, omdat de server opslag beperkt is zal deze aanvraag handmatig beoordeeld worden. Er bestaat een reële kans dat de serie hierdoor niet gedownløad zal worden. Wil je de serie echt super super graag op Plęx zien? Stuur dan een bericht door /help te sturen en te kiezen voor de optie *📍 Anders*", update, context)
                         await asyncio.sleep(1)
 
                         # Do action but unmonitor serie
@@ -202,12 +202,12 @@ class Media(ABC):
                 # Only if media is already downloaded
                 if state == "already_downloaded":
 
-                    # Get the Plex url of the media
+                    # Get the Plęx url of the media
                     media_plex_url = await self.plex.get_media_url(self.media_data, self.label)
                     if not media_plex_url:
-                        await self.function.send_message(f"Zo te zien is {self.sanitize_title} al gedownload.", update, context)
+                        await self.function.send_message(f"Zo te zien is {self.sanitize_title} al gedownløad.", update, context)
                     else:
-                        await self.function.send_message(f"Zo te zien is {self.sanitize_title} al gedownload.\n\n🌐 <a href='{media_plex_url}'>Bekijk {self.sanitize_title} in de browser</a>", update, context, None, "HTML")
+                        await self.function.send_message(f"Zo te zien is {self.sanitize_title} al gedownløad.\n\n🌐 <a href='{media_plex_url}'>Bekijk {self.sanitize_title} in de browser</a>", update, context, None, "HTML")
 
                     # Send the notify message
                     await asyncio.sleep(1)
@@ -217,7 +217,7 @@ class Media(ABC):
                     await self.write_to_stats(update)
 
                     # Send log
-                    await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} - ({self.media_data['tmdbId']}) while it's already downloaded ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                    await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} - ({self.media_data['tmdbId']}) while it's already downløaded ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                     # Return the next specific state
                     return details["next_state"]
@@ -265,7 +265,7 @@ class Media(ABC):
 
         # Finish conversation if chosen
         if update.callback_query.data == f"{self.label}_notify_no":
-            await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
+            await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
             return ConversationHandler.END
 
         # Add media_id + user_id to JSON
@@ -290,7 +290,7 @@ class Media(ABC):
             file.truncate()
 
         # Send final message
-        await self.function.send_message(f"Oke, je ontvangt een melding als {self.sanitize_title} beschikbaar is. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
+        await self.function.send_message(f"Oke, je ontvangt een melding als {self.sanitize_title} beschikbaar is. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
         return ConversationHandler.END
 
     async def start_download(self, update: Update, context: CallbackContext) -> bool:
@@ -301,7 +301,7 @@ class Media(ABC):
 
         # Check if enough space is left
         if not download_folder:
-            await self.function.send_message(f"*😵 Er is op dit moment een probleem met de opslag van de Plex server*\n\nDe serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
+            await self.function.send_message(f"*😵 Er is op dit moment een probleem met de opslag van de Plęx server*\n\nDe serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
             await self.log.logger(f"Error happened during the check of the diskspace", False, "error", True)
             return False
 
@@ -313,7 +313,7 @@ class Media(ABC):
 
         # Check if download queue was succesfull
         if not response:
-            await self.function.send_message(f"Er ging iets miss bij het starten van de download. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
+            await self.function.send_message(f"Er ging iets miss bij het starten van de downløad. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
             return False
 
         return True

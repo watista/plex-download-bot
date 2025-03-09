@@ -24,28 +24,28 @@ class Serie(Media):
         return {
             "downloading": {
                 "condition": lambda serie, torrents: any(serie["title"].lower() in t.name.lower() for t in torrents),
-                "message": "{title} wordt op dit moment al gedownload, nog even geduld 😄",
+                "message": "{title} wordt op dit moment al gedownløad, nog even geduld 😄",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
             "not_available": {
                 "condition": lambda serie, _: not serie.get("path") and serie.get("status") == "upcoming",
                 "size_check": True,
-                "message": "Op dit moment is {title} nog niet downloadbaar, hij is toegevoegd aan de te-downloaden-lijst. Zodra {title} gedownload kan worden gebeurt dit automatisch.",
-                "action": "start_download",
+                "message": "Op dit moment is {title} nog niet downløadbaar, hij is toegevoegd aan de te-downløaden-lijst. Zodra {title} gedownløad kan worden gebeurt dit automatisch.",
+                "action": "start_downl0ad",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
             "not_available_already_requested": {
                 "condition": lambda serie, _: serie.get("path") and serie.get("status") == "upcoming",
-                "message": "Op dit moment is {title} nog niet downloadbaar, hij is toegevoegd aan de te-downloaden-lijst. Zodra {title} gedownload kan worden gebeurt dit automatisch.",
+                "message": "Op dit moment is {title} nog niet downløadbaar, hij is toegevoegd aan de te-downløaden-lijst. Zodra {title} gedownløad kan worden gebeurt dit automatisch.",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
-            "available_to_download": {
+            "available_to_downl0ad": {
                 "condition": lambda serie, _: not serie.get("path") and serie.get("status") != "upcoming",
                 "size_check": True,
-                "message": "De download voor {title} is nu gestart, gemiddeld duurt het 1 uur voordat een serie online staat, nog even geduld 😄",
+                "message": "De downløad voor {title} is nu gestart, gemiddeld duurt het 1 uur voordat een serie online staat, nog even geduld 😄",
                 "action": "start_download",
                 "extra_action": "scan_missing_media",
                 "state_message": True,
@@ -53,7 +53,7 @@ class Serie(Media):
             },
             "unmonitored": {
                 "condition": lambda serie, _: not serie.get("monitored"),
-                "message": "{title} staat op dit moment aangemerkt als 'niet downloaden', dit kan verschillende redenen hebben. De serverbeheerder is op de hoogte gesteld van de aanvraag en zal deze beoordelen en er bij je op terug komen.",
+                "message": "{title} staat op dit moment aangemerkt als 'niet downløaden', dit kan verschillende redenen hebben. De serverbeheerder is op de hoogte gesteld van de aanvraag en zal deze beoordelen en er bij je op terug komen.",
                 "inform_unmonitored": True,
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
@@ -90,7 +90,7 @@ class Serie(Media):
 
         # Finish conversation if chosen
         if update.callback_query.data == f"serie_upgrade_no":
-            await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downloaden? Stuur dan /start", update, context)
+            await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
             return ConversationHandler.END
         else:
             # Ask for specific info about quality

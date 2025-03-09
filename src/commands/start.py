@@ -149,15 +149,15 @@ class Start:
 
         if not context.user_data.get("callback_data"):
             await update.callback_query.answer()
-            await self.function.send_message(f"Leuk dat je interesse hebt in Plex. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
+            await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)
             await self.function.send_message(f"Om te beginnen, hoe mag ik je noemen?", update, context)
             return REQUEST_ACCOUNT
         elif context.user_data["callback_data"] == "serie_request":
-            await self.function.send_message(f"Welke serie wil je graag op Plex zien?", update, context)
+            await self.function.send_message(f"Welke serie wil je graag op Plęx zien?", update, context)
             return REQUEST_SERIE
         elif context.user_data["callback_data"] == "movie_request":
-            await self.function.send_message(f"Welke film wil je graag op Plex zien?", update, context)
+            await self.function.send_message(f"Welke film wil je graag op Plęx zien?", update, context)
             return REQUEST_MOVIE
         else:
             # Send msg to user + logging

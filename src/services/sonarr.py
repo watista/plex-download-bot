@@ -34,7 +34,7 @@ class Sonarr(ArrApiHandler):
 
         # Check if return value is empty
         if response is False:
-            await self.log.logger(f"❌ *Error while queueing serie download.*\nCheck the error log for more information. ❌", False, "error")
+            await self.log.logger(f"❌ *Error while queueing serie downløad.*\nCheck the error log for more information. ❌", False, "error")
             return None
 
         # Return the data

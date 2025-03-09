@@ -30,7 +30,7 @@ class Log:
 
         # Set name and create the log file and folder if not exist
         log_folder = os.getenv("LOG_FOLDER", "log")
-        log_file = f"{log_folder}/plex-download-bot-{time.strftime('%Y-%m-%d')}.log"
+        log_file = f"{log_folder}/wouter-thuisserver-bot-{time.strftime('%Y-%m-%d')}.log"
         Path(log_folder).mkdir(parents=True, exist_ok=True)
         Path(log_file).touch(exist_ok=True)
 
@@ -50,7 +50,7 @@ class Log:
             console = logging.StreamHandler()
             console.setLevel(logging_level)
             console.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
-            logging.getLogger("plex-download-bot").addHandler(console)
+            logging.getLogger("wouter-thuisserver-bot").addHandler(console)
 
         # Set chat_id
         self.own_chatid = os.getenv('CHAT_ID_GROUP') if getattr(args, 'env', 'dev') == "live" else os.getenv('CHAT_ID_ADMIN')
