@@ -32,7 +32,7 @@ class Serie(Media):
                 "condition": lambda serie, _: not serie.get("path") and serie.get("status") == "upcoming",
                 "size_check": True,
                 "message": "Op dit moment is {title} nog niet downløadbaar, hij is toegevoegd aan de te-downløaden-lijst. Zodra {title} gedownløad kan worden gebeurt dit automatisch.",
-                "action": "start_downl0ad",
+                "action": "start_download",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
