@@ -12,7 +12,7 @@ from src.commands.movie import Movie
 from src.commands.account import Account
 from src.commands.schedule import Schedule
 
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import (
     CommandHandler,
     filters,
@@ -100,6 +100,9 @@ class Bot:
         # Add error handler
         self.application.add_error_handler(self.error_handler)
 
+        # Run the publish command function
+        self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
+
         # Enable the Schedule Job Queue
         self.application.job_queue.run_repeating(
             self.schedule.check_notify_list, interval=7200, first=0)
@@ -109,6 +112,14 @@ class Bot:
         # Start the bot
         self.application.run_polling(
             allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
+
+    async def publish_command_list(self):
+        """ Create and publish command list """
+        command_list = [
+            BotCommand("start", "Commando om de bot te starten"),
+            BotCommand("help", "Krijg alle informatie te zien van deze bot")
+        ]
+        await self.application.bot.set_my_commands(command_list)
 
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
         """ Function for unexpted errors """

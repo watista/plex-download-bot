@@ -2,4 +2,4 @@
 - media met een lagere score dan X op een lager download profiel downloaden
 - uitzoeken waarom sommige series als unmonitored blijven staan
 - auto upgrade bij quality request
--
+- debugging instellen dat elke /start of iets commando gelogt wordt naar aparte logfile

@@ -16,6 +16,9 @@ class Help:
 
     async def help_command_button(self, update: Update, context: CallbackContext) -> None:
 
+        # Debug usage log
+        await self.log.logger(f"User started bot with /start/help - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+
         # Extract callback data and acknowledge the callback
         await update.callback_query.answer()
 
@@ -49,6 +52,9 @@ class Help:
         return HELP_CHOICE
 
     async def help_command(self, update: Update, context: CallbackContext) -> int:
+
+        # Debug usage log
+        await self.log.logger(f"User started bot with /help - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
 
         # Create the options keyboard
         reply_markup = InlineKeyboardMarkup([

@@ -25,6 +25,9 @@ class Start:
 
     async def start_msg(self, update: Update, context: CallbackContext) -> int:
 
+        # Debug usage log
+        await self.log.logger(f"User started bot with /start - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+
         # Create the options keyboard
         reply_markup = InlineKeyboardMarkup([
             [
