@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 
-import asyncio
 import os
 from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup

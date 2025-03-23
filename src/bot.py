@@ -5,6 +5,7 @@ import traceback
 
 from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER
 from src.functions import Functions
+from src.commands.privacy import Privacy
 from src.commands.help import Help
 from src.commands.start import Start
 from src.commands.serie import Serie
@@ -32,6 +33,7 @@ class Bot:
         self.args = args
         self.log = logger
         self.function = Functions(logger)
+        self.privacy = Privacy(logger, self.function)
         self.help = Help(logger, self.function)
         self.start = Start(args, logger, self.function)
         self.serie = Serie(args, logger, self.function)
@@ -96,6 +98,8 @@ class Bot:
         # Add stand-alone handlers
         self.application.add_handler(
             CommandHandler("help", self.help.help_command))
+        self.application.add_handler(
+            CommandHandler("privacy", self.privacy.privacy_command))
 
         # Add error handler
         self.application.add_error_handler(self.error_handler)
@@ -117,7 +121,8 @@ class Bot:
         """ Create and publish command list """
         command_list = [
             BotCommand("start", "Commando om de bot te starten"),
-            BotCommand("help", "Krijg alle informatie te zien van deze bot")
+            BotCommand("help", "Krijg alle informatie te zien van deze bot"),
+            BotCommand("privacy", "Toont de privacy policy van de bot")
         ]
         await self.application.bot.set_my_commands(command_list)
 

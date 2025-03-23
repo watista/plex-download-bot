@@ -14,7 +14,7 @@ class Help:
         self.log = logger
         self.function = functions
 
-    async def help_command_button(self, update: Update, context: CallbackContext) -> None:
+    async def help_command_button(self, update: Update, context: CallbackContext) -> int:
 
         # Debug usage log
         await self.log.logger(f"User started bot with /start/help - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)

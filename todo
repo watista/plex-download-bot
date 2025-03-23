@@ -2,4 +2,10 @@
 - media met een lagere score dan X op een lager download profiel downloaden
 - uitzoeken waarom sommige series als unmonitored blijven staan
 - auto upgrade bij quality request
-- debugging instellen dat elke /start of iets commando gelogt wordt naar aparte logfile
+- inform dat serie online staat gebeurt nu alleen bij complete seizoenen, bij lopende series al eerder melding geven als alle beschikbare afleveringen er zijn
+- set eigen username in data.json bij eerste keer inlog
+- optie om een bericht te sturen naar alle bekende gebruikers
+- /privacy maken (https://telegram.org/tos/bot-developers#4-privacy)
+- boven elke functie zo'n ```functie tekst``` plaatsen
+- in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
+- nalopen welke imports niet gebruikt worden

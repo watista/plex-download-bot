@@ -4,6 +4,7 @@ import os
 import argparse
 from dotenv import load_dotenv
 from pathlib import Path
+from setproctitle import setproctitle
 
 from src.log import Log
 from src.bot import Bot
@@ -28,6 +29,9 @@ def main(args, logger) -> None:
 
 
 if __name__ == '__main__':
+
+    # Set the custom process name
+    setproctitle("plex-download-bot")
 
     # Parse arguments
     parser = argparse.ArgumentParser(description='Plex Download Bot')
