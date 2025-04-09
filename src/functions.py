@@ -17,23 +17,46 @@ class Functions:
 
         # Check if the user_id is regular or special
         chat_id = update.effective_user.id if regular else update
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=self.escape_markdown(text, parse_mode)[:1024],
-                parse_mode=parse_mode,
-                reply_markup=reply_markup,
-                disable_web_page_preview=True
-            )
-        except RetryAfter as e:
-            await asyncio.sleep(e.retry_after)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=self.escape_markdown(text, parse_mode)[:1024],
-                parse_mode=parse_mode,
-                reply_markup=reply_markup,
-                disable_web_page_preview=True
-            )
+
+        # Split all words on spaces
+        words = text.split(' ')
+        messages = []
+        current_chunk = ""
+
+        # Loop through all words to create chunks
+        for word in words:
+            if len(current_chunk) + len(word) + 1 > 1024:
+                messages.append(current_chunk)
+                # Start a new chunk
+                current_chunk = word
+            else:
+                # Append word to current chunk
+                current_chunk += (" " if current_chunk else "") + word
+
+        # Add last chunk if not empty
+        if current_chunk:
+            messages.append(current_chunk)
+
+        for message in messages:
+            while True:
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=self.escape_markdown(message, parse_mode),
+                        parse_mode=parse_mode,
+                        reply_markup=reply_markup,
+                        disable_web_page_preview=True
+                    )
+                    break
+                except RetryAfter as e:
+                    await asyncio.sleep(e.retry_after)
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=self.escape_markdown(message, parse_mode),
+                        parse_mode=parse_mode,
+                        reply_markup=reply_markup,
+                        disable_web_page_preview=True
+                    )
 
         # Debug log
         await self.log.logger(text, False, "debug", False)
