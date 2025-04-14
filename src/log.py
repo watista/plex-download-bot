@@ -76,18 +76,50 @@ class Log:
 
     async def send_telegram_message(self, msg: str, silent: bool, chat_id: int) -> None:
         """ Send message to Telegram """
-        try:
-            await self.bot.send_message(
-                chat_id=chat_id,
-                text=msg[:1024],
-                parse_mode="MarkdownV2",
-                disable_web_page_preview=False,
-                disable_notification=silent
-            )
-        except TelegramError as e:
-            logging.error(f"Telegram API error: {e}", exc_info=True)
-        except Exception as e:
-            logging.error(f"Unexpected error while sending Telegram message: {e}", exc_info=True)
+
+        # Split all words on spaces
+        words = msg.split(' ')
+        messages = []
+        current_chunk = ""
+
+        # Loop through all words to create chunks
+        for word in words:
+            if len(current_chunk) + len(word) + 1 > 1024:
+                messages.append(current_chunk)
+                # Start a new chunk
+                current_chunk = word
+            else:
+                # Append word to current chunk
+                current_chunk += (" " if current_chunk else "") + word
+
+        # Add last chunk if not empty
+        if current_chunk:
+            messages.append(current_chunk)
+
+        for message in messages:
+            while True:
+                try:
+                    await self.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode="MarkdownV2",
+                        disable_web_page_preview=False,
+                        disable_notification=silent
+                    )
+                    break
+                except RetryAfter as e:
+                    await asyncio.sleep(e.retry_after)
+                    await self.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode="MarkdownV2",
+                        disable_web_page_preview=False,
+                        disable_notification=silent
+                    )
+                except TelegramError as e:
+                    logging.error(f"Telegram API error: {e}", exc_info=True)
+                except Exception as e:
+                    logging.error(f"Unexpected error while sending Telegram message: {e}", exc_info=True)
 
 
     def clean_message(self, msg: str) -> str:
