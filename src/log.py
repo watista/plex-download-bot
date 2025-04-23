@@ -6,7 +6,7 @@ import logging
 import time
 from pathlib import Path
 from telegram import Bot
-from telegram.error import TelegramError
+from telegram.error import TelegramError, RetryAfter
 
 
 class Log:
