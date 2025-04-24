@@ -105,8 +105,7 @@ class Start:
                 await asyncio.sleep(1)
 
                 # Write user_id to json
-                json_data["user_id"][str(
-                    update.effective_user.id)] = update.effective_user.first_name
+                json_data["user_id"][str(update.effective_user.id)] = f"{key}, {update.effective_user.first_name}"
                 async with aiofiles.open(self.data_json, "w") as file:
                     await file.write(json.dumps(json_data, indent=4))
 
