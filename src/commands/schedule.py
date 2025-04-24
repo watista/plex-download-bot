@@ -50,7 +50,6 @@ class Schedule:
                     if isinstance(media_json, list):
                         media_json = media_json[0]
                         
-                    await self.log.logger(media_id, False, "info", False)
                     media_folder = Path(media_json["path"])
                     # Check if media_folder exists
                     if media_folder.is_dir():
