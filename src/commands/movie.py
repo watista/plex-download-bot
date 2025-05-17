@@ -115,6 +115,6 @@ class Movie(Media):
         await update.callback_query.answer()
 
         # Send the confirmation message and notify option
-        await self.log.logger(f"*⚠️ User did a quality request for {self.media_data['title']} ({self.media_data['tmdbId']}) ⚠️*\nReason: {update.callback_query.data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.log.logger(f"*⚠️ User did a quality request for {self.function.sanitize_text(self.media_data['title'])} ({self.media_data['tmdbId']}) ⚠️*\nReason: {update.callback_query.data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         await self.function.send_message(f"Duidelijk! De film zal worden geupgrade, dit duurt meestal ongeveer 1 dag.", update, context)
         return ConversationHandler.END
