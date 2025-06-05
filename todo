@@ -9,4 +9,5 @@
 - in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
 - bij eigen melding dat user is geinformeerd dat download klaar is, ook de username bij zetten die in data.json wordt opgeslagen
 - if main disk is bijna vol, bij nieuwe download niet meteen search naar missing doen
--
+- optie geven om melding te krijgen bij elke nieuwe aflevering
+- bij serie/film aanvraag als er geen hit bij de lijst zit, knop bouwen om meteen nieuwe search te doen
