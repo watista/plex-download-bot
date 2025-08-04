@@ -72,6 +72,9 @@ class Schedule:
                             sanitize_title = self.function.sanitize_text(
                                 media_json['title'])
 
+                            print(user_id)
+                            print(media_json['title'])
+
                             if not media_plex_url:
                                 await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, *{sanitize_title}*, staat nu online op Plęx. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
                             else:
