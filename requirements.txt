@@ -1,5 +1,5 @@
 aiofiles==24.1.0
-aiohttp==3.11.12
+aiohttp>=3.12.14
 asyncio==3.4.3
 PlexAPI==4.16.1
 python-dotenv==1.0.1
