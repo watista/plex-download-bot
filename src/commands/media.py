@@ -338,9 +338,7 @@ class Media(ABC):
             for disk in disk_space:
                 await self.log.logger(folder, False, "error", True)
                 await self.log.logger(f"2", False, "error", True)
-                await self.log.logger(disk, False, "error", True)
-                await self.log.logger(f"2.5", False, "error", True)
-                await self.log.logger(disk["freeSpace"], False, "error", True)
+                await self.log.logger(f"{str(disk['freeSpace'])}", False, "error", True)
                 await self.log.logger(f"3", False, "error", True)
                 await self.log.logger(disk["path"], False, "error", True)
                 if disk["path"] == folder:
