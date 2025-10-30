@@ -327,6 +327,7 @@ class Media(ABC):
 
         # Check retrieve diskspace succesfull
         if not disk_space:
+            await self.log.logger(f"Hier?", False, "error", True)
             return None
 
         # 100GB to bytes
@@ -335,6 +336,9 @@ class Media(ABC):
         # Check each folder in JSON, return folder name if more then 100gb space left
         for folder in disk_list:
             for disk in disk_space:
+                await self.log.logger(folder, False, "error", True)
+                await self.log.logger(disk["freeSpace"], False, "error", True)
+                await self.log.logger(disk["path"], False, "error", True)
                 if disk["path"] == folder:
                     if disk["freeSpace"] > GB_100:
                         return disk["path"]
