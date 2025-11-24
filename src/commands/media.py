@@ -327,6 +327,7 @@ class Media(ABC):
 
         # Check retrieve diskspace succesfull
         if not disk_space:
+            await self.log.logger(f"Hier?", False, "error", True)
             return None
 
         # 100GB to bytes
