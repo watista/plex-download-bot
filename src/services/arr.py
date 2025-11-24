@@ -40,25 +40,46 @@ class ArrApiHandler(ABC):
         url = f"{self.base_url}{url_string}&apikey={self.token}"
 
         # Make the async request
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    # Log and send Telegram message if request was unsuccesfull
-                    if not response.ok:
+        for attempt in range(1, 3 + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as response:
+
+                        # Continue if ok
+                        if response.ok:
+                            return await response.json()
+
+                        # Retry if 5xx
+                        if response.status in (500, 502, 503, 504):
+                            if attempt < 3:
+                                await asyncio.sleep(3)
+                                continue
+                            else:
+                                await self.log.logger(
+                                    f"Not OK response for {self.label} API GET after 3 retries. Last error: {response.status} {response.reason} {await response.text()} - URL: {url}",
+                                    True, "error", False
+                                )
+                                return False
+
+                        # Return false in other cases not OK
                         await self.log.logger(
                             f"Not OK response for {self.label} API GET. Error: {response.status} {response.reason} {await response.text()} - URL: {url}",
                             False, "error", False
                         )
                         return False
-                    return await response.json()
 
-        # Log and send Telegram message if anything went wrong
-        except Exception as e:
-            await self.log.logger(
-                f"Error during {self.label} API GET request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url}",
-                False, "error", False
-            )
-            return False
+            # Log and send Telegram message if anything went wrong
+            except Exception as e:
+
+                if attempt < 3:
+                    await asyncio.sleep(3)
+                    continue
+
+                await self.log.logger(
+                    f"Error during {self.label} API GET request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url}",
+                    False, "error", False
+                )
+                return False
 
     async def post(self, url_string: str, payload: dict) -> Union[dict, bool]:
         """ Handles the POST requests asynchronously using aiohttp """
