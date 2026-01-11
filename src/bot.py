@@ -52,7 +52,7 @@ class Bot:
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
-                          CommandHandler("message", self.message.message_start, filters.User(os.getenv('CHAT_ID_ADMIN')))
+                          CommandHandler("message", self.message.message_start, filters.User(os.getenv('CHAT_ID_ADMIN'))),
                           MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
@@ -93,7 +93,7 @@ class Bot:
                 ],
                 HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)],
                 MESSAGE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_id)],
-                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)]
+                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.other_reply)]
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=86400
