@@ -3,7 +3,7 @@
 import os
 import traceback
 
-from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE
 from src.functions import Functions
 from src.commands.privacy import Privacy
 from src.commands.help import Help
@@ -12,6 +12,7 @@ from src.commands.serie import Serie
 from src.commands.movie import Movie
 from src.commands.account import Account
 from src.commands.schedule import Schedule
+from src.commands.message import Message
 
 from telegram import Update, BotCommand
 from telegram.ext import (
@@ -40,6 +41,7 @@ class Bot:
         self.movie = Movie(args, logger, self.function)
         self.account = Account(logger, self.function)
         self.schedule = Schedule(args, logger, self.function)
+        self.message = Message(args, logger, self.function)
 
         # Create the Application using the new async API
         self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build(
@@ -50,6 +52,7 @@ class Bot:
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
+                          CommandHandler("message", self.message.message_start, filters.User(os.getenv('CHAT_ID_ADMIN')))
                           MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
@@ -88,7 +91,9 @@ class Bot:
                     CallbackQueryHandler(
                         self.help.other, pattern="^help_other$")
                 ],
-                HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)]
+                HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)],
+                MESSAGE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_id)],
+                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)]
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=86400
