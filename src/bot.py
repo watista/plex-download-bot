@@ -42,6 +42,7 @@ class Bot:
         self.account = Account(logger, self.function)
         self.schedule = Schedule(args, logger, self.function)
         self.message = Message(args, logger, self.function)
+        self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN')))
 
         # Create the Application using the new async API
         self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build(
@@ -52,7 +53,7 @@ class Bot:
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
-                          CommandHandler("message", self.message.message_start, filters.User(os.getenv('CHAT_ID_ADMIN'))),
+                          CommandHandler("message", self.message.message_start, filters.User(self.allowed_users)),
                           MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
