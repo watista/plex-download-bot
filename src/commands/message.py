@@ -31,12 +31,14 @@ class Message:
     async def message_id(self, update: Update, context: CallbackContext) -> int:
 
         # Check if ID is only int
-        if not isinstance(update.message.text, int):
+        try:
+            send_id = int(update.message.text)
+        except (TypeError, ValueError):
             await self.function.send_message("Foutieve input, geef alleen cijfers op", update, context)
             return MESSAGE_ID
 
         # Set context data MSG id based on live/dev
-        context.user_data["id_to_send_msg"] = update.message.text if self.args.env == "live" else os.getenv('CHAT_ID_ADMIN')
+        context.user_data["id_to_send_msg"] = send_id if self.args.env == "live" else os.getenv('CHAT_ID_ADMIN')
 
         # Send the message
         await self.function.send_message(f"Wat is het bericht dat je wilt sturen?", update, context)

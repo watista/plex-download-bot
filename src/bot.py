@@ -42,7 +42,7 @@ class Bot:
         self.account = Account(logger, self.function)
         self.schedule = Schedule(args, logger, self.function)
         self.message = Message(args, logger, self.function)
-        self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN')))
+        self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
         # Create the Application using the new async API
         self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build(
