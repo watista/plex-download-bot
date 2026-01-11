@@ -94,7 +94,7 @@ class ArrApiHandler(ABC):
                     # Log and send Telegram message if request was unsuccesfull
                     if not response.ok:
                         await self.log.logger(
-                            f"Not OK response for {self.label} API POST. Error: {response.status} {response.reason} {await response.text()} - URL: {url}",
+                            f"Not OK response for {self.label} API POST. Error: {response.status} {response.reason} {await response.text()} - URL: {url} - Payload: {payload}",
                             False, "error", False
                         )
                         return False
@@ -103,7 +103,7 @@ class ArrApiHandler(ABC):
         # Log and send Telegram message if anything went wrong
         except Exception as e:
             await self.log.logger(
-                f"Error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url}",
+                f"Error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url} - Payload: {payload}",
                 False, "error", False
             )
             return False

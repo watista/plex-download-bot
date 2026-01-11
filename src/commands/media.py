@@ -326,8 +326,8 @@ class Media(ABC):
         disk_space = await self.media_handler.get_disk_space()
 
         # TMP ALWAYS INSTANT RETURN MEDIE FOLDER SINCE ITS JUST /MEDIA/BEIDE/MOVIES4 OR /MEDIA/BEIDE/SERIES4
-        await self.log.logger(disk_list, False, "error", False)
-        return disk_list
+        await self.log.logger(disk_list[0], False, "error", False)
+        return disk_list[0]
 
         # Check retrieve diskspace succesfull
         if not disk_space:
