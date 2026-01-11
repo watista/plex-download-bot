@@ -93,7 +93,7 @@ class Bot:
                 ],
                 HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)],
                 MESSAGE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_id)],
-                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.other_reply)]
+                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)]
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=86400
