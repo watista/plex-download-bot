@@ -19,7 +19,7 @@ class Message:
     async def message_start(self, update: Update, context: CallbackContext) -> int:
 
         # Debug usage log
-        await self.log.logger(f"User started bot with /message - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "debug", False)
+        await self.log.logger(f"User started bot with /message - Gebruiker: {context.user_data["gebruiker"]} - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "debug", False)
 
         # Send the message
         await self.function.send_message(f"Naar welk Telegram ID wil je een bericht sturen?", update, context)

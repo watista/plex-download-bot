@@ -22,7 +22,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     Application,
-    ConversationHandler
+    ConversationHandler,
+    PicklePersistence
 )
 
 
@@ -44,12 +45,28 @@ class Bot:
         self.message = Message(args, logger, self.function)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
+        # Set vars based on live/dev
+        if args.env == "live":
+            persistence = PicklePersistence(filepath="/root/scripts/plex-download-bot/bot_state.pkl")
+            token = os.getenv('BOT_TOKEN')
+        else:
+            persistence = PicklePersistence(filepath="bot_state.pkl")
+            token = os.getenv('BOT_TOKEN_DEV')
+
         # Create the Application using the new async API
-        self.application = Application.builder().token(os.getenv('BOT_TOKEN')).concurrent_updates(False).read_timeout(300).build(
-        ) if args.env == "live" else Application.builder().token(os.getenv('BOT_TOKEN_DEV')).concurrent_updates(False).read_timeout(300).build()
+        self.application = (
+            Application.builder()
+            .token(token)
+            .concurrent_updates(False)
+            .read_timeout(300)
+            .persistence(persistence)
+            .build()
+        )
 
         # Add conversation handler with different states
         self.application.add_handler(ConversationHandler(
+            name="conversation",
+            persistent=True,
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
@@ -98,7 +115,7 @@ class Bot:
                 MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)]
             },
             fallbacks=[CommandHandler("stop", self.stop)],
-            conversation_timeout=86400
+            conversation_timeout=1800
         )
         )
 

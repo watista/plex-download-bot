@@ -52,7 +52,7 @@ class Start:
     async def verification(self, update: Update, context: CallbackContext) -> Optional[int]:
 
         # Extract callback data and acknowledge the callback
-        context.user_data["callback_data"] = update.callback_query.data
+        context.user_data["start_option"] = update.callback_query.data
         await update.callback_query.answer()
 
         # Load JSON file
@@ -69,6 +69,7 @@ class Start:
         # Check if user_id is already known and verified
         if str(update.effective_user.id) in json_data["user_id"]:
 
+            # write to stats.json
             async with aiofiles.open(self.stats_json, "r+") as file:
                 data = json.loads(await file.read())
                 data.setdefault(str(update.effective_user.id), {
@@ -82,7 +83,7 @@ class Start:
             # Return to the next state
             return await self.parse_request(update, context)
 
-        # Ask for user password
+        # Ask for user password if not yet verified
         await self.function.send_message(f"Zo te zien is dit de eerste keer dat je gebruik maakt van deze bot. Om gebruik te maken van de bot heb je een wachtwoord nodig.\n\nVoer nu je wachtwoord in:", update, context)
 
         # Set amount on login tries
@@ -100,9 +101,12 @@ class Start:
         # Check if given password is known in json
         for key, value in json_data["users"].items():
             if value == update.message.text:
-                await self.log.logger(f"*ℹ️ First time login for user ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                await self.log.logger(f"*ℹ️ First time login for user ℹ️*\nGebruiker: {key}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
                 await self.function.send_message(f"Je wachtwoord klopt!\n\nJe bent nu ingelogd als gebruiker: {key}", update, context)
                 await asyncio.sleep(1)
+
+                # Set username to user_context
+                context.user_data["gebruiker"] = key
 
                 # Write user_id to json
                 json_data["user_id"][str(update.effective_user.id)] = f"{key}, {update.effective_user.first_name}"
@@ -131,7 +135,7 @@ class Start:
         if context.user_data["login_tries"] >= 3:
             # Send message and add to blocklist
             await self.log.logger(f"*ℹ️ User has been blocked ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-            await self.function.send_message(f"Je hebt 3 keer het verkeeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
+            await self.function.send_message(f"Je hebt 3 keer het verkeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
             json_data["blocked_users"][str(
                 update.effective_user.id)] = update.effective_user.first_name
             async with aiofiles.open(self.data_json, "w") as file:
@@ -149,16 +153,16 @@ class Start:
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        if not context.user_data.get("callback_data"):
+        if not context.user_data.get("start_option"):
             await update.callback_query.answer()
             await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)
             await self.function.send_message(f"Om te beginnen, hoe mag ik je noemen?", update, context)
             return REQUEST_ACCOUNT
-        elif context.user_data["callback_data"] == "serie_request":
+        elif context.user_data["start_option"] == "serie_request":
             await self.function.send_message(f"Welke serie wil je graag op Plęx zien?", update, context)
             return REQUEST_SERIE
-        elif context.user_data["callback_data"] == "movie_request":
+        elif context.user_data["start_option"] == "movie_request":
             await self.function.send_message(f"Welke film wil je graag op Plęx zien?", update, context)
             return REQUEST_MOVIE
         else:

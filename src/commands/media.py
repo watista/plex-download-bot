@@ -195,7 +195,7 @@ class Media(ABC):
                         await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.sanitize_title} online staat?")
 
                         # Info log
-                        await self.log.logger(f"*⚠️ User has requested {self.sanitize_title} ({self.media_data['tmdbId']}) with {self.media_data['statistics']['seasonCount']} seasons ⚠️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                        await self.log.logger(f"*⚠️ User has requested {self.sanitize_title} ({self.media_data['tmdbId']}) with {self.media_data['statistics']['seasonCount']} seasons ⚠️*\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                         # Write to stats file
                         await self.write_to_stats(update)
@@ -215,7 +215,7 @@ class Media(ABC):
 
                 # Inform owner about unmonitored series if defined
                 if "inform_unmonitored" in details:
-                    await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} which has been marked as unmonitored ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
+                    await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} which has been marked as unmonitored ℹ️*\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
 
                 # Send the message if defined
                 if "message" in details:
@@ -240,7 +240,7 @@ class Media(ABC):
                     await self.write_to_stats(update)
 
                     # Send log
-                    await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} - ({self.media_data['tmdbId']}) while it's already downløaded ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                    await self.log.logger(f"*ℹ️ User has requested {self.sanitize_title} - ({self.media_data['tmdbId']}) while it's already downløaded ℹ️*\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                     # Return the next specific state
                     return details["next_state"]
@@ -252,7 +252,7 @@ class Media(ABC):
                     await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {self.sanitize_title} online staat?")
 
                 # Info log
-                await self.log.logger(f"*ℹ️ User has requested the {self.label} {self.sanitize_title} - ({self.media_data['tmdbId']}) ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                await self.log.logger(f"*ℹ️ User has requested the {self.label} {self.sanitize_title} - ({self.media_data['tmdbId']}) ℹ️*\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                 # Write to stats file
                 await self.write_to_stats(update)

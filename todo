@@ -1,14 +1,10 @@
-- films/series met een lagere imdb score dan X dubbel check of deze echt gedownload moet worden
-- media met een lagere score dan X op een lager download profiel downloaden
 - uitzoeken waarom sommige series als unmonitored blijven staan
 - auto upgrade bij quality request
 - inform dat serie online staat gebeurt nu alleen bij complete seizoenen, bij lopende series al eerder melding geven als alle beschikbare afleveringen er zijn
+- optie geven om melding te krijgen bij elke nieuwe aflevering
 - optie om een bericht te sturen naar alle bekende gebruikers
 - als aanvraag tegelijk is worden variablen overschreven, dit opslaan in bot user info ipv global var
 - boven elke functie zo'n ```functie tekst``` plaatsen
 - in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
 - bij eigen melding dat user is geinformeerd dat download klaar is, ook de username bij zetten die in data.json wordt opgeslagen
-- if main disk is bijna vol, bij nieuwe download niet meteen search naar missing doen
-- optie geven om melding te krijgen bij elke nieuwe aflevering
-- bij serie/film aanvraag als er geen hit bij de lijst zit, knop bouwen om meteen nieuwe search te doen
--
+- overal debug logging toevoegen
