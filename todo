@@ -1,10 +1,9 @@
-- uitzoeken waarom sommige series als unmonitored blijven staan
-- auto upgrade bij quality request
+- als aanvraag tegelijk is worden variablen overschreven, dit opslaan in bot user info ipv global var
 - inform dat serie online staat gebeurt nu alleen bij complete seizoenen, bij lopende series al eerder melding geven als alle beschikbare afleveringen er zijn
 - optie geven om melding te krijgen bij elke nieuwe aflevering
-- optie om een bericht te sturen naar alle bekende gebruikers
-- als aanvraag tegelijk is worden variablen overschreven, dit opslaan in bot user info ipv global var
-- boven elke functie zo'n ```functie tekst``` plaatsen
-- in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
-- bij eigen melding dat user is geinformeerd dat download klaar is, ook de username bij zetten die in data.json wordt opgeslagen
 - overal debug logging toevoegen
+- in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
+- boven elke functie zo'n ```functie tekst``` plaatsen
+- auto upgrade bij quality request
+- uitzoeken waarom sommige series als unmonitored blijven staan
+-

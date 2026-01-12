@@ -3,7 +3,7 @@
 import os
 import traceback
 
-from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID
 from src.functions import Functions
 from src.commands.privacy import Privacy
 from src.commands.help import Help
@@ -71,6 +71,7 @@ class Bot:
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
                           CommandHandler("message", self.message.message_start, filters.User(self.allowed_users)),
+                          CommandHandler("message_all", self.message.message_all, filters.User(self.allowed_users)),
                           MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
                 VERIFY: [
@@ -112,7 +113,8 @@ class Bot:
                 ],
                 HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)],
                 MESSAGE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_id)],
-                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)]
+                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)],
+                MESSAGE_ALL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_all_id)]
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=1800
