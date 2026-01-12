@@ -3,7 +3,7 @@
 import os
 import traceback
 
-from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN
 from src.functions import Functions
 from src.commands.privacy import Privacy
 from src.commands.help import Help
@@ -71,14 +71,15 @@ class Bot:
                 REQUEST_ACCOUNT_REFER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_refer)],
                 REQUEST_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.movie.request_media)],
                 REQUEST_SERIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.request_media)],
+                REQUEST_AGAIN: [CallbackQueryHandler(self.movie.request_media_again, pattern="^(yes|no)$")],
                 MOVIE_OPTION: [CallbackQueryHandler(self.movie.media_option, pattern="^(0|1|2|3|4)$")],
                 SERIE_OPTION: [CallbackQueryHandler(self.serie.media_option, pattern="^(0|1|2|3|4)$")],
                 MOVIE_NOTIFY: [CallbackQueryHandler(self.movie.stay_notified, pattern="^(film_notify_yes|film_notify_no)$")],
                 SERIE_NOTIFY: [CallbackQueryHandler(self.serie.stay_notified, pattern="^(serie_notify_yes|serie_notify_no)$")],
                 MOVIE_UPGRADE: [CallbackQueryHandler(self.movie.media_upgrade, pattern="^(film_upgrade_yes|film_upgrade_no)$")],
                 SERIE_UPGRADE: [CallbackQueryHandler(self.serie.media_upgrade, pattern="^(serie_upgrade_yes|serie_upgrade_no)$")],
-                MOVIE_UPGRADE_INFO: [CallbackQueryHandler(self.movie.media_upgrade_info, pattern="^(quality|subs|ads|other)$")],
-                SERIE_UPGRADE_INFO: [CallbackQueryHandler(self.serie.media_upgrade_info, pattern="^(quality|subs|ads|other)$")],
+                MOVIE_UPGRADE_INFO: [CallbackQueryHandler(self.movie.media_upgrade_info, pattern="^(quality|subs|ads|audio|other)$")],
+                SERIE_UPGRADE_INFO: [CallbackQueryHandler(self.serie.media_upgrade_info, pattern="^(quality|subs|ads|missing|audio|other)$")],
                 SERIE_UPGRADE_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.serie.media_upgrade_option)],
                 HELP_CHOICE: [
                     CallbackQueryHandler(

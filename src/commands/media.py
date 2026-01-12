@@ -12,7 +12,9 @@ from abc import ABC, abstractmethod
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, ConversationHandler
 
+from src.states import REQUEST_AGAIN
 from src.services.plex import Plex
+from src.commands.start import Start
 
 
 class Media(ABC):
@@ -29,6 +31,7 @@ class Media(ABC):
         self.media_folder = media_folder
         self.option_state = option_state
         self.plex = Plex(self.log)
+        self.start = Start(self.args, self.logger, self.function)
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
@@ -57,6 +60,17 @@ class Media(ABC):
         """ Handles the specific info about the media upgrade """
         pass
 
+    async def request_media_again(self, update: Update, context: CallbackContext):
+
+        # Acknowledge the callback
+        await update.callback_query.answer()
+
+        if update.callback_query.data == "no":
+            await self.function.send_message(f"Oke, je kan de bot altijd opnieuw starten door /start te sturen.", update, context)
+            return ConversationHandler.END
+
+        return await self.start.parse_request(update, context)
+
     async def request_media(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the parsing of the chosen media and gives the options for which one the user wants """
 
@@ -70,10 +84,19 @@ class Media(ABC):
         # Make the API request
         self.media = await self.media_handler.lookup_by_name(sanitize_message)
 
-        # End conversation if no results are found
+        # End or retry conversation if no results are found
         if not self.media:
-            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de {self.label} {sanitize_message}. Misschien heb je een typfout gemaakt in de titel? Je kan het nogmaals proberen door /start te sturen.", update, context)
-            return ConversationHandler.END
+
+            # Create keyboard
+            reply_markup = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Ja", callback_data="yes"),
+                    InlineKeyboardButton("Nee", callback_data="no")
+                ]
+            ])
+
+            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de {self.label} {sanitize_message}. Misschien heb je een typfout gemaakt in de titel? Wil je het nogmaals proberen?", update, context, reply_markup)
+            return REQUEST_AGAIN
 
         await self.function.send_message(f"De volgende {self.label}s zijn gevonden met de term {sanitize_message}:", update, context)
         await asyncio.sleep(1)

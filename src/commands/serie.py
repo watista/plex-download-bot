@@ -107,10 +107,10 @@ class Serie(Media):
                         "Reclame/logo's in het scherm", callback_data="ads")
                 ],
                 [
-                    InlineKeyboardButton("Missende aflevering(en)", callback_data="other")
+                    InlineKeyboardButton("Missende aflevering(en)", callback_data="missing")
                 ],
                 [
-                    InlineKeyboardButton("Audio klopt niet", callback_data="other")
+                    InlineKeyboardButton("Audio klopt niet", callback_data="audio")
                 ],
                 [
                     InlineKeyboardButton("Overig", callback_data="other")
@@ -139,5 +139,5 @@ class Serie(Media):
 
         # Send the confirmation message and notify option
         await self.log.logger(f"*⚠️ User did a quality request for {self.function.sanitize_text(self.media_data['title'])} ({self.media_data['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {self.callback_data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-        await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geupgrade, dit zal zo snel mogelijk gebeuren.", update, context)
+        await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geüpgraded, dit zal zo snel mogelijk gebeuren. Je ontvangt een bericht zodra dit is gedaan.", update, context)
         return ConversationHandler.END
