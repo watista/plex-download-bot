@@ -31,7 +31,7 @@ class Media(ABC):
         self.media_folder = media_folder
         self.option_state = option_state
         self.plex = Plex(self.log)
-        self.start = Start(self.args, self.logger, self.function)
+        self.start = Start(self.args, self.log, self.function)
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
