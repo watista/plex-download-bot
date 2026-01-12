@@ -87,15 +87,18 @@ class Movie(Media):
             reply_markup = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        "Slechte kwaliteit (bijv. 720p)", callback_data="quality")
+                        "Slechte kwaliteit", callback_data="quality")
                 ],
                 [
                     InlineKeyboardButton(
-                        "Ingebrande (chinese) ondertiteling", callback_data="subs")
+                        "Ingebrande ondertiteling", callback_data="subs")
                 ],
                 [
                     InlineKeyboardButton(
-                        "Reclame/Logo's in het scherm", callback_data="ads")
+                        "Reclame/logo's in het scherm", callback_data="ads")
+                ],
+                [
+                    InlineKeyboardButton("Audio klopt niet", callback_data="other")
                 ],
                 [
                     InlineKeyboardButton("Overig", callback_data="other")
@@ -103,7 +106,7 @@ class Movie(Media):
             ])
 
             # Send the message with the keyboard options
-            await self.function.send_message(f"Kan je aangeven wat er precies mis is met de kwaliteit van de film?", update, context, reply_markup)
+            await self.function.send_message(f"Kan je aangeven wat er precies mis is met de downløad van de film?", update, context, reply_markup)
 
             # Return to the next state
             return MOVIE_UPGRADE_INFO
@@ -116,5 +119,5 @@ class Movie(Media):
 
         # Send the confirmation message and notify option
         await self.log.logger(f"*⚠️ User did a quality request for {self.function.sanitize_text(self.media_data['title'])} ({self.media_data['tmdbId']}) ⚠️*\nReason: {update.callback_query.data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-        await self.function.send_message(f"Duidelijk! De film zal worden geupgrade, dit duurt meestal ongeveer 1 dag.", update, context)
+        await self.function.send_message(f"Duidelijk! De film zal worden geupgrade, dit zal zo snel mogelijk gebeuren.", update, context)
         return ConversationHandler.END

@@ -211,7 +211,7 @@ class Media(ABC):
 
                     # Send the notify message
                     await asyncio.sleep(1)
-                    await self.ask_notify_question(update, context, "upgrade", f"Heb je {self.sanitize_title} aangevraagd omdat de kwaliteit niet goed is? (denk bijvoorbeeld aan slechte 720p kwaliteit, reclame in het scherm of ingebakken chinese ondertiteling)")
+                    await self.ask_notify_question(update, context, "upgrade", f"Heb je {self.sanitize_title} aangevraagd omdat er iets mis is met de downløad? Bijvoorbeeld: \n- Slechte 720p kwaliteit\n- Ingebakken reclame\n- Chinese ondertiteling\n- Missende episode")
 
                     # Write to stats file
                     await self.write_to_stats(update)

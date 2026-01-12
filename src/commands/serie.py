@@ -96,15 +96,21 @@ class Serie(Media):
             reply_markup = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        "Slechte kwaliteit (bijv. 720p)", callback_data="quality")
+                        "Slechte kwaliteit", callback_data="quality")
                 ],
                 [
                     InlineKeyboardButton(
-                        "Ingebrande (chinese) ondertiteling", callback_data="subs")
+                        "Ingebrande ondertiteling", callback_data="subs")
                 ],
                 [
                     InlineKeyboardButton(
-                        "Reclame/Logo's in het scherm", callback_data="ads")
+                        "Reclame/logo's in het scherm", callback_data="ads")
+                ],
+                [
+                    InlineKeyboardButton("Missende aflevering(en)", callback_data="other")
+                ],
+                [
+                    InlineKeyboardButton("Audio klopt niet", callback_data="other")
                 ],
                 [
                     InlineKeyboardButton("Overig", callback_data="other")
@@ -112,7 +118,7 @@ class Serie(Media):
             ])
 
             # Send the message with the keyboard options
-            await self.function.send_message(f"Kan je aangeven wat er precies mis is met de kwaliteit van de serie?", update, context, reply_markup)
+            await self.function.send_message(f"Kan je aangeven wat er precies mis is met de downløad van deze serie?", update, context, reply_markup)
 
             # Return to the next state
             return SERIE_UPGRADE_INFO
@@ -125,7 +131,7 @@ class Serie(Media):
         await update.callback_query.answer()
 
         # Aks question which season/episode needs to be upgrade
-        await self.function.send_message(f"Check, en kan je aangeven om welk seizoen en/of episode het gaat? (bijvoorbeeld seizoen 1, episode 4 of episode 1 t/m 8 van seizoen 3)", update, context)
+        await self.function.send_message(f"Om welk seizoen en/of episode gaat het?", update, context)
         return SERIE_UPGRADE_OPTION
 
     async def media_upgrade_option(self, update: Update, context: CallbackContext) -> None:
@@ -133,5 +139,5 @@ class Serie(Media):
 
         # Send the confirmation message and notify option
         await self.log.logger(f"*⚠️ User did a quality request for {self.function.sanitize_text(self.media_data['title'])} ({self.media_data['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {self.callback_data}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-        await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geupgrade, dit duurt meestal ongeveer 1 dag.", update, context)
+        await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geupgrade, dit zal zo snel mogelijk gebeuren.", update, context)
         return ConversationHandler.END
