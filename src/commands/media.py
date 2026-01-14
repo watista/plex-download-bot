@@ -61,10 +61,10 @@ class Media(ABC):
         """ Handles the parsing of the chosen media and gives the options for which one the user wants """
 
         # Create user data from global vars
-        context.user_data["media_handler"] = self.media_handler
-        context.user_data["label"] = self.label
-        context.user_data["media_folder"] = self.media_folder
-        context.user_data["option_state"] = self.option_state
+        context.user_data['media_handler'] = self.media_handler
+        context.user_data['label'] = self.label
+        context.user_data['media_folder'] = self.media_folder
+        context.user_data['option_state'] = self.option_state
 
         # Sanatize and set response variable
         sanitize_message = self.function.sanitize_text(update.message.text)
@@ -75,7 +75,7 @@ class Media(ABC):
         await asyncio.sleep(1)
 
         # Make the API request
-        context.user_data["media_object"] = await context.user_data["media_handler"].lookup_by_name(sanitize_message)
+        context.user_data["media_object"] = await context.user_data['media_handler'].lookup_by_name(sanitize_message)
 
         # End or retry conversation if no results are found
         if not context.user_data["media_object"]:
@@ -88,10 +88,10 @@ class Media(ABC):
                 ]
             ])
 
-            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de {context.user_data["label"]} {sanitize_message}. Misschien heb je een typfout gemaakt in de titel? Wil je het nogmaals proberen?", update, context, reply_markup)
+            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de {context.user_data['label']} {sanitize_message}. Misschien heb je een typfout gemaakt in de titel? Wil je het nogmaals proberen?", update, context, reply_markup)
             return REQUEST_AGAIN
 
-        await self.function.send_message(f"De volgende {context.user_data["label"]}s zijn gevonden met de term {sanitize_message}:", update, context)
+        await self.function.send_message(f"De volgende {context.user_data['label']}s zijn gevonden met de term {sanitize_message}:", update, context)
         await asyncio.sleep(1)
 
         # Set counter
@@ -138,7 +138,7 @@ class Media(ABC):
         await self.function.send_message(f"Welke optie wil je graag op Plęx zien?\n\n_Staat je keuze er niet tussen? Stuur dan /stop om opnieuw te beginnen_", update, context, reply_markup)
 
         # Return to the next state
-        return context.user_data["option_state"]
+        return context.user_data['option_state']
 
     async def request_media_again(self, update: Update, context: CallbackContext):
 
@@ -157,7 +157,7 @@ class Media(ABC):
 
         # Answer query and set media_data based on option number
         await update.callback_query.answer()
-        context.user_data["media_data"] = context.user_data["media_object"][int(update.callback_query.data)]
+        context.user_data['media_data'] = context.user_data["media_object"][int(update.callback_query.data)]
 
         # Make transmission connection and get active torrent list
         try:
@@ -179,15 +179,15 @@ class Media(ABC):
 
         # Loop through states
         for state, details in states.items():
-            if details["condition"](context.user_data["media_data"], active_torrents):
+            if details["condition"](context.user_data['media_data'], active_torrents):
 
                 # Sanitize title and set a var
-                context.user_data["media_data"]['title'] = self.function.sanitize_text(context.user_data["media_data"]['title'])
+                context.user_data['media_data']['title'] = self.function.sanitize_text(context.user_data['media_data']['title'])
 
                 # Do serie season size check if defined
                 if "size_check" in details:
                     # Check if there are more than 6 seasons
-                    if context.user_data["media_data"]["statistics"]["seasonCount"] > 5:
+                    if context.user_data['media_data']["statistics"]["seasonCount"] > 5:
                         await self.function.send_message(f"Je hebt een serie aangevraagd die meer dan 5 seizoenen heeft, omdat de server opslag beperkt is zal deze aanvraag handmatig beoordeeld worden. Er bestaat een reële kans dat de serie hierdoor niet gedownløad zal worden.\n\nWil je de serie echt super graag op Plęx zien? Stuur dan een bericht door /help te sturen en te kiezen voor de optie: *📍 Anders*", update, context)
                         await asyncio.sleep(1)
 
@@ -199,10 +199,10 @@ class Media(ABC):
                             return ConversationHandler.END
 
                         # Send the notify message
-                        await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {context.user_data["media_data"]['title']} online staat?")
+                        await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {context.user_data['media_data']['title']} online staat?")
 
                         # Info log
-                        await self.log.logger(f"*⚠️ User has requested {context.user_data["media_data"]['title']} ({context.user_data["media_data"]['tmdbId']}) with {context.user_data["media_data"]['statistics']['seasonCount']} seasons ⚠️*\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                        await self.log.logger(f"*⚠️ User has requested {context.user_data['media_data']['title']} ({context.user_data['media_data']['tmdbId']}) with {context.user_data['media_data']['statistics']['seasonCount']} seasons ⚠️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                         # Write to stats file
                         await self.write_to_stats(update, context)
@@ -219,36 +219,36 @@ class Media(ABC):
 
                 # Do extra action if defined
                 if "extra_action" in details:
-                    await getattr(context.user_data["media_handler"], details["extra_action"])()
+                    await getattr(context.user_data['media_handler'], details["extra_action"])()
 
                 # Inform owner about unmonitored series if defined
                 if "inform_unmonitored" in details:
-                    await self.log.logger(f"*ℹ️ User has requested {context.user_data["media_data"]['title']} which has been marked as unmonitored ℹ️*\nGebruiker verwacht reactie of het wel/niet gedownload gaat worden.\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
+                    await self.log.logger(f"*ℹ️ User has requested {context.user_data['media_data']['title']} which has been marked as unmonitored ℹ️*\nGebruiker verwacht reactie of het wel/niet gedownload gaat worden.\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
 
                 # Send the message if defined
                 if "message" in details:
-                    await self.function.send_message(details["message"].format(title=context.user_data["media_data"]['title']), update, context)
+                    await self.function.send_message(details["message"].format(title=context.user_data['media_data']['title']), update, context)
                     await asyncio.sleep(1)
 
                 # Only if media is already downloaded
                 if state == "already_downloaded":
 
                     # Get the Plęx url of the media
-                    media_plex_url = await self.plex.get_media_url(context.user_data["media_data"], context.user_data["label"])
+                    media_plex_url = await self.plex.get_media_url(context.user_data['media_data'], context.user_data['label'])
                     if not media_plex_url:
-                        await self.function.send_message(f"Zo te zien is {context.user_data["media_data"]['title']} al gedownløad.", update, context)
+                        await self.function.send_message(f"Zo te zien is {context.user_data['media_data']['title']} al gedownløad.", update, context)
                     else:
-                        await self.function.send_message(f"Zo te zien is {context.user_data["media_data"]['title']} al gedownløad.\n\n🌐 <a href='{media_plex_url}'>Bekijk {context.user_data["media_data"]['title']} in de browser</a>", update, context, None, "HTML")
+                        await self.function.send_message(f"Zo te zien is {context.user_data['media_data']['title']} al gedownløad.\n\n🌐 <a href='{media_plex_url}'>Bekijk {context.user_data['media_data']['title']} in de browser</a>", update, context, None, "HTML")
 
                     # Send the notify message
                     await asyncio.sleep(1)
-                    await self.ask_notify_question(update, context, "upgrade", f"Heb je {context.user_data["media_data"]['title']} aangevraagd omdat er iets mis is met de downløad? Bijvoorbeeld: \n- Slechte 720p kwaliteit\n- Ingebakken reclame\n- Chinese ondertiteling\n- Missende episode")
+                    await self.ask_notify_question(update, context, "upgrade", f"Heb je {context.user_data['media_data']['title']} aangevraagd omdat er iets mis is met de downløad? Bijvoorbeeld: \n- Slechte 720p kwaliteit\n- Ingebakken reclame\n- Chinese ondertiteling\n- Missende episode")
 
                     # Write to stats file
                     await self.write_to_stats(update, context)
 
                     # Send log
-                    await self.log.logger(f"*ℹ️ User has requested {context.user_data["media_data"]['title']} - ({context.user_data["media_data"]['tmdbId']}) while it's already downløaded ℹ️*\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                    await self.log.logger(f"*ℹ️ User has requested {context.user_data['media_data']['title']} - ({context.user_data['media_data']['tmdbId']}) while it's already downløaded ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                     # Return the next specific state
                     return details["next_state"]
@@ -257,10 +257,10 @@ class Media(ABC):
                 if "state_message" in details:
 
                     # Send the notify message
-                    await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {context.user_data["media_data"]['title']} online staat?")
+                    await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {context.user_data['media_data']['title']} online staat?")
 
                 # Info log
-                await self.log.logger(f"*ℹ️ User has requested the {context.user_data["label"]} {context.user_data["media_data"]['title']} - ({context.user_data["media_data"]['tmdbId']}) ℹ️*\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                await self.log.logger(f"*ℹ️ User has requested the {context.user_data['label']} {context.user_data['media_data']['title']} - ({context.user_data['media_data']['tmdbId']}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
                 # Write to stats file
                 await self.write_to_stats(update, context)
@@ -271,7 +271,7 @@ class Media(ABC):
         # Fallback error: if no state matches
         await self.function.send_message(f"*😵 Oeps, daar ging iets fout*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
         await self.log.logger(f"Error happened during media state filtering, see the logs for the media JSON.", False, "error", True)
-        await self.log.logger(f"Media JSON:\n{context.user_data["media_data"]}", False, "error", False)
+        await self.log.logger(f"Media JSON:\n{context.user_data['media_data']}", False, "error", False)
         return ConversationHandler.END
 
     async def ask_notify_question(self, update: Update, context: CallbackContext, type: str, msg: str) -> None:
@@ -280,8 +280,8 @@ class Media(ABC):
         # Create the keyboard
         reply_markup = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("Ja", callback_data=f"{context.user_data["label"]}_{type}_yes"),
-                InlineKeyboardButton("Nee", callback_data=f"{context.user_data["label"]}_{type}_no")
+                InlineKeyboardButton("Ja", callback_data=f"{context.user_data['label']}_{type}_yes"),
+                InlineKeyboardButton("Nee", callback_data=f"{context.user_data['label']}_{type}_no")
             ]
         ])
 
@@ -295,7 +295,7 @@ class Media(ABC):
         await update.callback_query.answer()
 
         # Finish conversation if chosen
-        if update.callback_query.data == f"{context.user_data["label"]}_notify_no":
+        if update.callback_query.data == f"{context.user_data['label']}_notify_no":
             await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
             return ConversationHandler.END
 
@@ -313,7 +313,7 @@ class Media(ABC):
                     json_data["notify_list"][f"{update.effective_user.id}"][f"{media_type}"] = {}
 
             # Add media to notify_list
-            json_data["notify_list"][f"{update.effective_user.id}"][f"{context.user_data["label"]}"][context.user_data["media_data"]["tmdbId"]] = round(time.time())
+            json_data["notify_list"][f"{update.effective_user.id}"][f"{context.user_data['label']}"][context.user_data['media_data']["tmdbId"]] = round(time.time())
 
             # Write to the file
             file.seek(0)
@@ -321,7 +321,7 @@ class Media(ABC):
             file.truncate()
 
         # Send final message
-        await self.function.send_message(f"Oke, je ontvangt een melding als {context.user_data["media_data"]['title']} beschikbaar is. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
+        await self.function.send_message(f"Oke, je ontvangt een melding als {context.user_data['media_data']['title']} beschikbaar is. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
         return ConversationHandler.END
 
     async def start_download(self, update: Update, context: CallbackContext) -> bool:
@@ -341,7 +341,7 @@ class Media(ABC):
             set_monitored = context.user_data["set_monitored"]
         except NameError:
             set_monitored = True
-        payload = await self.create_download_payload(context.user_data["media_data"], download_folder, set_monitored)
+        payload = await self.create_download_payload(context.user_data['media_data'], download_folder, set_monitored)
 
         # Check if payload creation was succesfull
         if not payload:
@@ -349,7 +349,7 @@ class Media(ABC):
             return False
 
         # Queue download
-        response = await context.user_data["media_handler"].queue_download(payload)
+        response = await context.user_data['media_handler'].queue_download(payload)
 
         # Check if download queue was succesfull
         if not response:
@@ -362,8 +362,8 @@ class Media(ABC):
         """ Checks if the disk given in de .env file have enough space left """
 
         # Get list of disks and diskspace
-        disk_list = context.user_data["media_folder"].split(",")
-        disk_space = await context.user_data["media_handler"].get_disk_space()
+        disk_list = context.user_data['media_folder'].split(",")
+        disk_space = await context.user_data['media_handler'].get_disk_space()
 
         ######################
         # TMP ALWAYS INSTANT RETURN MEDIE FOLDER SINCE ITS JUST /MEDIA/BEIDE/MOVIES4 OR /MEDIA/BEIDE/SERIES4
@@ -396,9 +396,9 @@ class Media(ABC):
         try:
             with open(self.stats_json, "r+") as file:
                 data = json.load(file)
-                data[f"{update.effective_user.id}"][f"{context.user_data["label"]}_requests"][datetime.now().strftime("%d-%m-%Y %H:%M:%S")] = context.user_data["media_data"]['title']
+                data[f"{update.effective_user.id}"][f"{context.user_data['label']}_requests"][datetime.now().strftime("%d-%m-%Y %H:%M:%S")] = context.user_data['media_data']['title']
                 file.seek(0)
                 json.dump(data, file, indent=4)
                 file.truncate()
         except Exception as e:
-            await self.log.logger(f"Error during write to stats.json for media {context.user_data["media_data"]['title']} and user {context.user_data["gebruiker"]}, username {update.effective_user.first_name}.\n\nError: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error", True)
+            await self.log.logger(f"Error during write to stats.json for media {context.user_data['media_data']['title']} and user {context.user_data['gebruiker']}, username {update.effective_user.first_name}.\n\nError: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error", True)
