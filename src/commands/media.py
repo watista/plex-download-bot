@@ -61,7 +61,6 @@ class Media(ABC):
         """ Handles the parsing of the chosen media and gives the options for which one the user wants """
 
         # Create user data from global vars
-        context.user_data['media_handler'] = self.media_handler
         context.user_data['label'] = self.label
         context.user_data['media_folder'] = self.media_folder
         context.user_data['option_state'] = self.option_state
@@ -75,7 +74,7 @@ class Media(ABC):
         await asyncio.sleep(1)
 
         # Make the API request
-        context.user_data["media_object"] = await context.user_data['media_handler'].lookup_by_name(sanitize_message)
+        context.user_data["media_object"] = await self.media_handler.lookup_by_name(sanitize_message)
 
         # End or retry conversation if no results are found
         if not context.user_data["media_object"]:
@@ -219,7 +218,7 @@ class Media(ABC):
 
                 # Do extra action if defined
                 if "extra_action" in details:
-                    await getattr(context.user_data['media_handler'], details["extra_action"])()
+                    await getattr(self.media_handler, details["extra_action"])()
 
                 # Inform owner about unmonitored series if defined
                 if "inform_unmonitored" in details:
@@ -242,7 +241,10 @@ class Media(ABC):
 
                     # Send the notify message
                     await asyncio.sleep(1)
-                    await self.ask_notify_question(update, context, "upgrade", f"Heb je {context.user_data['media_data']['title']} aangevraagd omdat er iets mis is met de downløad? Bijvoorbeeld: \n- Slechte 720p kwaliteit\n- Ingebakken reclame\n- Chinese ondertiteling\n- Missende episode")
+                    if context.user_data['label'] == "serie":
+                        await self.ask_notify_question(update, context, "upgrade", f"Heb je {context.user_data['media_data']['title']} aangevraagd omdat er iets mis is met de downløad? Bijvoorbeeld: \n- Slechte (720p) kwaliteit\n- Reclame in het scherm\n- Chinese ondertiteling\n- Missende episode(s)")
+                    else:
+                        await self.ask_notify_question(update, context, "upgrade", f"Heb je {context.user_data['media_data']['title']} aangevraagd omdat er iets mis is met de downløad? Bijvoorbeeld: \n- Slechte (720p) kwaliteit\n- Reclame in het scherm\n- Chinese ondertiteling\n- Audio klopt niet")
 
                     # Write to stats file
                     await self.write_to_stats(update, context)
@@ -349,7 +351,7 @@ class Media(ABC):
             return False
 
         # Queue download
-        response = await context.user_data['media_handler'].queue_download(payload)
+        response = await self.media_handler.queue_download(payload)
 
         # Check if download queue was succesfull
         if not response:
@@ -363,7 +365,7 @@ class Media(ABC):
 
         # Get list of disks and diskspace
         disk_list = context.user_data['media_folder'].split(",")
-        disk_space = await context.user_data['media_handler'].get_disk_space()
+        disk_space = await self.media_handler.get_disk_space()
 
         ######################
         # TMP ALWAYS INSTANT RETURN MEDIE FOLDER SINCE ITS JUST /MEDIA/BEIDE/MOVIES4 OR /MEDIA/BEIDE/SERIES4

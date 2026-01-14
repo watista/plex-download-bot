@@ -136,5 +136,5 @@ class Movie(Media):
 
         # Send the confirmation message and notify option
         await self.log.logger(f"*⚠️ User did a quality request for {context.user_data['media_data']['title']} ({context.user_data['media_data']['tmdbId']}) ⚠️*\nReason: {update.callback_query.data}\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-        await self.function.send_message(f"Duidelijk! De film zal worden geüpgraded, dit zal zo snel mogelijk gebeuren. Je ontvangt een bericht zodra dit is gedaan.", update, context)
+        await self.function.send_message(f"Duidelijk! De film zal zo snel mogelijk worden geüpgraded. Je ontvangt een bericht zodra dit is gedaan.", update, context)
         return ConversationHandler.END

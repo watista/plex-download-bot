@@ -113,6 +113,9 @@ class Serie(Media):
             # Ask for specific info about quality
             reply_markup = InlineKeyboardMarkup([
                 [
+                    InlineKeyboardButton("Missende aflevering(en)", callback_data="missing")
+                ],
+                [
                     InlineKeyboardButton(
                         "Slechte kwaliteit", callback_data="quality")
                 ],
@@ -123,9 +126,6 @@ class Serie(Media):
                 [
                     InlineKeyboardButton(
                         "Reclame/logo's in het scherm", callback_data="ads")
-                ],
-                [
-                    InlineKeyboardButton("Missende aflevering(en)", callback_data="missing")
                 ],
                 [
                     InlineKeyboardButton("Audio klopt niet", callback_data="audio")
@@ -157,6 +157,6 @@ class Serie(Media):
 
         # Send the confirmation message and notify option
         await self.log.logger(f"*⚠️ User did a quality request for {context.user_data['media_data']['title']} ({context.user_data['media_data']['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {context.user_data['serie_upgrade_option']}\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
-        await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geüpgraded, dit zal zo snel mogelijk gebeuren. Je ontvangt een bericht zodra dit is gedaan.", update, context)
+        await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes worden zo snel mogelijk gefixt. Je ontvangt een bericht zodra dit is gedaan.", update, context)
         context.user_data.pop("serie_upgrade_option", None)
         return ConversationHandler.END
