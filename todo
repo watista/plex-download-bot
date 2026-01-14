@@ -9,3 +9,4 @@
 - uitzoeken waarom sommige series als unmonitored blijven staan
 - periodiek scannen op nieuwe series/films
 - bij bericht dat een serie/film online staat wordt de titel soms wel/soms niet vetgedrukt
+- mogelijkheid bouwen bij disk check dat ook folder in mount point kan zijn (media/beide/series4)

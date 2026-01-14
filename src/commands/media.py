@@ -161,10 +161,12 @@ class Media(ABC):
 
         # Make transmission connection and get active torrent list
         try:
-            ip = "0.0.0.0" if getattr(
-                self.args, 'env', 'dev') == "live" else os.getenv('TRANSMISSION_IP')
-            client = Client(host=ip, port=os.getenv('TRANSMISSION_PORT'), username=os.getenv(
-                'TRANSMISSION_USER'), password=os.getenv('TRANSMISSION_PWD'))
+            client = Client(
+                host=os.getenv('TRANSMISSION_IP'),
+                port=os.getenv('TRANSMISSION_PORT'),
+                username=os.getenv('TRANSMISSION_USER'),
+                password=os.getenv('TRANSMISSION_PWD')
+            )
             active_torrents = client.get_torrents(arguments=["name"])
         except Exception as e:
             await self.function.send_message(f"*😵 Er ging iets fout tijdens het maken van verbinding met de downløad client*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
@@ -363,9 +365,11 @@ class Media(ABC):
         disk_list = context.user_data["media_folder"].split(",")
         disk_space = await context.user_data["media_handler"].get_disk_space()
 
+        ######################
         # TMP ALWAYS INSTANT RETURN MEDIE FOLDER SINCE ITS JUST /MEDIA/BEIDE/MOVIES4 OR /MEDIA/BEIDE/SERIES4
         await self.log.logger(disk_list[0], False, "error", False)
         return disk_list[0]
+        ######################
 
         # Check retrieve diskspace succesfull
         if not disk_space:
