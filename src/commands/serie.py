@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os
+import re
 from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
@@ -22,7 +23,17 @@ class Serie(Media):
 
         return {
             "downloading": {
-                "condition": lambda serie, torrents: any(serie["title"].lower() in t.name.lower() for t in torrents),
+                # "condition": lambda serie, torrents: any(serie["title"].lower() in t.name.lower() for t in torrents),
+                "condition": lambda serie, torrents: any(
+                    re.search(
+                        r"\b" + r"[.\s_-]+".join(
+                            map(re.escape, serie["title"].split())
+                        ) + r"\b",
+                        t.name,
+                        re.IGNORECASE
+                    )
+                    for t in torrents
+                ),
                 "message": "{title} wordt op dit moment al gedownløad, nog even geduld 😄",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
@@ -64,13 +75,20 @@ class Serie(Media):
         }
 
     async def create_download_payload(self, data: dict, folder: str, monitor: bool) -> dict:
-        """ Generates the download payload for Radarr """
+        """ Generates the download payload for Sonarr """
+
+        try:
+            title = data["title"]
+            tvdb_id = data["tvdbId"]
+        except KeyError as e:
+            await self.log.logger(f"Missing required field in serie download payload: {e}", False, "error", True)
+            return None
 
         payload = {
-            "title": data['title'],
+            "title": title,
             "qualityProfileId": 7,
             "monitored": monitor,
-            "tvdbId": data['tvdbId'],
+            "tvdbId": tvdb_id,
             "rootFolderPath": folder,
             "addOptions": {
                 "ignoreEpisodesWithFiles": False,
@@ -127,7 +145,7 @@ class Serie(Media):
         """ Handles the specific info about the media upgrade """
 
         # Answer query
-        self.callback_data = update.callback_query.data
+        context.user_data["serie_upgrade_option"] = update.callback_query.data
         await update.callback_query.answer()
 
         # Aks question which season/episode needs to be upgrade
@@ -138,6 +156,7 @@ class Serie(Media):
         """ Handles the answer for which season/episode the serie should be upgraded """
 
         # Send the confirmation message and notify option
-        await self.log.logger(f"*⚠️ User did a quality request for {self.function.sanitize_text(self.media_data['title'])} ({self.media_data['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {self.callback_data}\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.log.logger(f"*⚠️ User did a quality request for {self.function.sanitize_text(self.media_data['title'])} ({self.media_data['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {context.user_data["serie_upgrade_option"]}\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geüpgraded, dit zal zo snel mogelijk gebeuren. Je ontvangt een bericht zodra dit is gedaan.", update, context)
+        context.user_data.pop("serie_upgrade_option", None)
         return ConversationHandler.END

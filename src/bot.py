@@ -65,8 +65,6 @@ class Bot:
 
         # Add conversation handler with different states
         self.application.add_handler(ConversationHandler(
-            name="conversation",
-            persistent=True,
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),

@@ -1,4 +1,5 @@
 - als aanvraag tegelijk is worden variablen overschreven, dit opslaan in bot user info ipv global var
+- nogmaals vanaf start checken hoe info wordt opgelsagen, als pickle wegvalt werkt context.user[gebruiker] niet meer en die kan nu niet aan het begin opnieuw opgehaald worden
 - inform dat serie online staat gebeurt nu alleen bij complete seizoenen, bij lopende series al eerder melding geven als alle beschikbare afleveringen er zijn
 - optie geven om melding te krijgen bij elke nieuwe aflevering
 - overal debug logging toevoegen
@@ -6,4 +7,5 @@
 - boven elke functie zo'n ```functie tekst``` plaatsen
 - auto upgrade bij quality request
 - uitzoeken waarom sommige series als unmonitored blijven staan
--
+- periodiek scannen op nieuwe series/films
+- bij bericht dat een serie/film online staat wordt de titel soms wel/soms niet vetgedrukt

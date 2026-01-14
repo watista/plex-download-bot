@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os
+import re
 from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
@@ -22,7 +23,17 @@ class Movie(Media):
 
         return {
             "downloading": {
-                "condition": lambda movie, torrents: any(movie["title"].lower() in t.name.lower() for t in torrents),
+                # "condition": lambda movie, torrents: any(movie["title"].lower() in t.name.lower() for t in torrents),
+                "condition": lambda movie, torrents: any(
+                    re.search(
+                        r"\b" + r"[.\s_-]+".join(
+                            map(re.escape, movie["title"].split())
+                        ) + r"\b",
+                        t.name,
+                        re.IGNORECASE
+                    )
+                    for t in torrents
+                ),
                 "message": "{title} wordt op dit moment al gedownløad, nog even geduld 😄",
                 "state_message": True,
                 "next_state": MOVIE_NOTIFY
@@ -63,10 +74,16 @@ class Movie(Media):
     async def create_download_payload(self, data: dict, folder: str, monitor: bool) -> dict:
         """ Generates the download payload for Radarr """
 
+        try:
+            tmdb_id = data["tmdbId"]
+        except KeyError as e:
+            await self.log.logger(f"Missing required field in movie download payload: {e}", False, "error", True)
+            return None
+
         payload = {
             "qualityProfileId": 7,
             "monitored": monitor,
-            "tmdbId": data['tmdbId'],
+            "tmdbId": tmdb_id,
             "rootFolderPath": folder
         }
 

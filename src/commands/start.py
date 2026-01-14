@@ -52,7 +52,7 @@ class Start:
     async def verification(self, update: Update, context: CallbackContext) -> Optional[int]:
 
         # Extract callback data and acknowledge the callback
-        context.user_data["start_option"] = update.callback_query.data
+        context.user_data["media_option"] = update.callback_query.data
         await update.callback_query.answer()
 
         # Load JSON file
@@ -153,16 +153,18 @@ class Start:
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        if not context.user_data.get("start_option"):
+        if not context.user_data.get("media_option"):
             await update.callback_query.answer()
             await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)
             await self.function.send_message(f"Om te beginnen, hoe mag ik je noemen?", update, context)
             return REQUEST_ACCOUNT
-        elif context.user_data["start_option"] == "serie_request":
+        elif context.user_data["media_option"] == "serie_request":
+            context.user_data["media_type"] = "serie"
             await self.function.send_message(f"Welke serie wil je graag op Plęx zien?", update, context)
             return REQUEST_SERIE
-        elif context.user_data["start_option"] == "movie_request":
+        elif context.user_data["media_option"] == "movie_request":
+            context.user_data["media_type"] = "movie"
             await self.function.send_message(f"Welke film wil je graag op Plęx zien?", update, context)
             return REQUEST_MOVIE
         else:
