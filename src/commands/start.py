@@ -69,8 +69,9 @@ class Start:
         # Check if user_id is already known and verified
         if str(update.effective_user.id) in json_data["user_id"]:
 
-            # check
-            print(context.user_data["gebruiker"])
+            # Set gebruikernaam if not set
+            if not context.user_data.get("gebruiker"):
+                context.user_data["gebruiker"] = config.get("user_id", {}).get(update.effective_user.id).split(",", 1)[0].strip()
 
             # write to stats.json
             async with aiofiles.open(self.stats_json, "r+") as file:
