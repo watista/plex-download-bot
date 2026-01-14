@@ -31,7 +31,8 @@ class Log:
 
         # Set name and create the log file and folder if not exist
         log_folder = os.getenv("LOG_FOLDER", "log")
-        log_file = f"{log_folder}/wouter-thuisserver-bot-{time.strftime('%m-%d-%Y')}.log"
+        file_name = "wouter-thuisserver-bot" if args.env == "live" else "dev-wouter-thuisserver-bot"
+        log_file = f"{log_folder}/{file_name}-{time.strftime('%m-%d-%Y')}.log"
         Path(log_folder).mkdir(parents=True, exist_ok=True)
         Path(log_file).touch(exist_ok=True)
 

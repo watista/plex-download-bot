@@ -156,7 +156,7 @@ class Serie(Media):
         """ Handles the answer for which season/episode the serie should be upgraded """
 
         # Send the confirmation message and notify option
-        await self.log.logger(f"*⚠️ User did a quality request for {self.function.sanitize_text(self.media_data['title'])} ({self.media_data['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {context.user_data["serie_upgrade_option"]}\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.log.logger(f"*⚠️ User did a quality request for {context.user_data["media_data"]['title']} ({context.user_data["media_data"]['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {context.user_data["serie_upgrade_option"]}\nGebruiker: {context.user_data["gebruiker"]}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes zullen worden geüpgraded, dit zal zo snel mogelijk gebeuren. Je ontvangt een bericht zodra dit is gedaan.", update, context)
         context.user_data.pop("serie_upgrade_option", None)
         return ConversationHandler.END
