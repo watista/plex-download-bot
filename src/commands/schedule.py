@@ -63,13 +63,6 @@ class Schedule:
                     # Check if media_folder exists
                     if media_folder.is_dir():
 
-                        # # Check if all episodes are downloaded
-                        # if media_type == "serie":
-                        #     total_seasons = media_json.get("statistics", {}).get("seasonCount", 0)
-                        #     existing_folders = len([d for d in media_folder.iterdir() if d.is_dir()])
-                        #     if existing_folders < total_seasons:
-                        #         continue
-
                         # Check if all episodes are downloaded
                         if media_type == "serie":
                             total_seasons = self.effective_season_count(media_json)
@@ -79,29 +72,21 @@ class Schedule:
                             found = set()
 
                             # Regex: match S01..S99 in a filename (case-insensitive)
-                            season_re = re.compile(r"\bS(\d{2})\b", re.IGNORECASE)
+                            season_re = re.compile(r"S(\d{2})", re.IGNORECASE)
 
                             # Scan all files under the media folder (recursive)
-                            print("123")
                             for p in media_folder.rglob("*"):
-                                print(p)
-                                print(p.name)
                                 if not p.is_file():
                                     continue
                                 m = season_re.search(p.name)
-                                print(m)
                                 if m:
                                     found.add(f"S{int(m.group(1)):02d}")
-                                    print(found)
 
                                 # Small optimization: stop early if we found them all
                                 if found >= required:
                                     break
 
                             # If any required season tag is missing, skip
-                            print("456")
-                            print(required)
-                            print(found)
                             if found < required:
                                 continue
 
@@ -117,7 +102,7 @@ class Schedule:
                             if not media_plex_url:
                                 await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, *{sanitize_title}*, staat nu online op Plęx. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
                             else:
-                                await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, *{sanitize_title}*, staat nu online op Plęx. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
+                                await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{sanitize_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
                             # Write to log
                             await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {sanitize_title} is online ℹ️*\nUser ID: {user_id}", False, "info")
                             # Delete the entry and write to data.json
