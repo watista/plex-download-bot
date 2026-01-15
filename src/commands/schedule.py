@@ -37,15 +37,14 @@ class Schedule:
         # track whether we need to write JSON back
         changed = False
 
-        # Set usernames
-        user_name_raw = data.get("user_id", {}).get(str(user_id), "Unknown, Unknown")
-
-        name_parts = [p.strip() for p in user_name_raw.split(",", 1)]
-        gebruiker = name_parts[0]
-        username = name_parts[1]
-
         # Iterate through notify_list
         for user_id, media_types in data.get("notify_list", {}).items():
+
+            # Set usernames
+            user_name_raw = data.get("user_id", {}).get(str(user_id), "Unknown, Unknown")
+            name_parts = [p.strip() for p in user_name_raw.split(",", 1)]
+            gebruiker = name_parts[0]
+            username = name_parts[1]
 
             # Ensure keys exist
             media_types.setdefault("serie", {})
