@@ -72,11 +72,14 @@ class Schedule:
 
                         # Check if all episodes are downloaded
                         if media_type == "serie":
-                            total_seasons = effective_season_count(media_json)
+                            print(media_folder)
+                            total_seasons = self.effective_season_count(media_json)
+                            print(total_seasons)
 
                             # Build required season tags: {"S01", "S02", ...}
                             required = {f"S{n:02d}" for n in range(1, total_seasons + 1)}
                             found = set()
+                            print(required)
 
                             # Regex: match S01..S99 in a filename (case-insensitive)
                             season_re = re.compile(r"\bS(\d{2})\b", re.IGNORECASE)
@@ -88,25 +91,29 @@ class Schedule:
 
                                 m = season_re.search(p.name)
                                 if m:
+                                    print(m)
                                     found.add(f"S{int(m.group(1)):02d}")
+                                    print(found)
 
                                 # Small optimization: stop early if we found them all
                                 if found >= required:
                                     break
 
                             # If any required season tag is missing, skip
+                            print(required)
+                            print(found)
                             if found < required:
                                 continue
 
                         # Check if media_folder contains any files or subdirectories
                         if any(media_folder.iterdir()):
-                            # Send message
+                            # Get Plex URL
                             media_plex_url = await self.plex.get_media_url(media_json, media_type)
 
                             # Sanitize title and set a var
-                            sanitize_title = self.function.sanitize_text(
-                                media_json['title'])
+                            sanitize_title = self.function.sanitize_text(media_json['title'])
 
+                            # Send message
                             if not media_plex_url:
                                 await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, *{sanitize_title}*, staat nu online op Plęx. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
                             else:
@@ -119,10 +126,12 @@ class Schedule:
                                 await file.write(json.dumps(data, indent=4))
 
 
-    def effective_season_count(media_json: dict) -> int:
+    def effective_season_count(self, media_json: dict) -> int:
         season_count = int(media_json.get("statistics", {}).get("seasonCount", 0) or 0)
+        print(season_count)
 
         last_aired = media_json.get("lastAired")
+        print(last_aired)
         if not last_aired:
             return season_count
 
@@ -131,7 +140,9 @@ class Schedule:
             s = str(last_aired).strip()
             if s.endswith("Z"):
                 s = s[:-1] + "+00:00"
+                print(s)
             dt = datetime.fromisoformat(s)
+            print(dt)
 
             # If dt is naive, assume UTC (adjust if your API uses local time)
             if dt.tzinfo is None:
@@ -139,12 +150,15 @@ class Schedule:
 
             now = datetime.now(timezone.utc)
 
+            print(now)
             # If lastAired is in the future, it suggests an announced season is included
             if dt > now:
                 season_count = max(0, season_count - 1)
 
         except (ValueError, TypeError):
             # If parsing fails, just keep the original season count
+            print("failed")
             pass
 
+        print(season_count)
         return season_count
