@@ -72,26 +72,25 @@ class Schedule:
 
                         # Check if all episodes are downloaded
                         if media_type == "serie":
-                            print(media_folder)
                             total_seasons = self.effective_season_count(media_json)
-                            print(total_seasons)
 
                             # Build required season tags: {"S01", "S02", ...}
                             required = {f"S{n:02d}" for n in range(1, total_seasons + 1)}
                             found = set()
-                            print(required)
 
                             # Regex: match S01..S99 in a filename (case-insensitive)
                             season_re = re.compile(r"\bS(\d{2})\b", re.IGNORECASE)
 
                             # Scan all files under the media folder (recursive)
+                            print("123")
                             for p in media_folder.rglob("*"):
+                                print(p)
+                                print(p.name)
                                 if not p.is_file():
                                     continue
-
                                 m = season_re.search(p.name)
+                                print(m)
                                 if m:
-                                    print(m)
                                     found.add(f"S{int(m.group(1)):02d}")
                                     print(found)
 
@@ -100,6 +99,7 @@ class Schedule:
                                     break
 
                             # If any required season tag is missing, skip
+                            print("456")
                             print(required)
                             print(found)
                             if found < required:
@@ -128,10 +128,8 @@ class Schedule:
 
     def effective_season_count(self, media_json: dict) -> int:
         season_count = int(media_json.get("statistics", {}).get("seasonCount", 0) or 0)
-        print(season_count)
 
         last_aired = media_json.get("lastAired")
-        print(last_aired)
         if not last_aired:
             return season_count
 
@@ -140,9 +138,7 @@ class Schedule:
             s = str(last_aired).strip()
             if s.endswith("Z"):
                 s = s[:-1] + "+00:00"
-                print(s)
             dt = datetime.fromisoformat(s)
-            print(dt)
 
             # If dt is naive, assume UTC (adjust if your API uses local time)
             if dt.tzinfo is None:
@@ -150,15 +146,12 @@ class Schedule:
 
             now = datetime.now(timezone.utc)
 
-            print(now)
             # If lastAired is in the future, it suggests an announced season is included
             if dt > now:
                 season_count = max(0, season_count - 1)
 
         except (ValueError, TypeError):
             # If parsing fails, just keep the original season count
-            print("failed")
             pass
 
-        print(season_count)
         return season_count
