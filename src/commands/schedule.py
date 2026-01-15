@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 
 import json
+import re
 import time
 import aiofiles
 from pathlib import Path
+from datetime import datetime, timezone
 from telegram.ext import CallbackContext
 
 from src.services.radarr import Radarr
@@ -61,13 +63,39 @@ class Schedule:
                     # Check if media_folder exists
                     if media_folder.is_dir():
 
+                        # # Check if all episodes are downloaded
+                        # if media_type == "serie":
+                        #     total_seasons = media_json.get("statistics", {}).get("seasonCount", 0)
+                        #     existing_folders = len([d for d in media_folder.iterdir() if d.is_dir()])
+                        #     if existing_folders < total_seasons:
+                        #         continue
+
                         # Check if all episodes are downloaded
                         if media_type == "serie":
-                            total_seasons = media_json.get(
-                                "statistics", {}).get("seasonCount", 0)
-                            existing_folders = len(
-                                [d for d in media_folder.iterdir() if d.is_dir()])
-                            if existing_folders < total_seasons:
+                            total_seasons = effective_season_count(media_json)
+
+                            # Build required season tags: {"S01", "S02", ...}
+                            required = {f"S{n:02d}" for n in range(1, total_seasons + 1)}
+                            found = set()
+
+                            # Regex: match S01..S99 in a filename (case-insensitive)
+                            season_re = re.compile(r"\bS(\d{2})\b", re.IGNORECASE)
+
+                            # Scan all files under the media folder (recursive)
+                            for p in media_folder.rglob("*"):
+                                if not p.is_file():
+                                    continue
+
+                                m = season_re.search(p.name)
+                                if m:
+                                    found.add(f"S{int(m.group(1)):02d}")
+
+                                # Small optimization: stop early if we found them all
+                                if found >= required:
+                                    break
+
+                            # If any required season tag is missing, skip
+                            if found < required:
                                 continue
 
                         # Check if media_folder contains any files or subdirectories
@@ -90,22 +118,33 @@ class Schedule:
                             async with aiofiles.open(self.data_json, "w") as file:
                                 await file.write(json.dumps(data, indent=4))
 
-    async def check_timestamp(self, context: CallbackContext) -> None:
-        """ Checks if someone needs to be notified from the JSON notify list """
 
-        # Load JSON file
-        async with aiofiles.open(self.data_json, "r") as file:
-            data = json.loads(await file.read())
+    def effective_season_count(media_json: dict) -> int:
+        season_count = int(media_json.get("statistics", {}).get("seasonCount", 0) or 0)
 
-        # Set notify time to 31 days in seconds
-        NOTIFY_THRESHOLD = 31 * 24 * 60 * 60
+        last_aired = media_json.get("lastAired")
+        if not last_aired:
+            return season_count
 
-        # Iterate through notify_list
-        for user_id, media_types in data["notify_list"].items():
-            # Itarate through serie and movie options
-            for media_type in ["serie", "film"]:
-                # Iterate through all media ID's
-                for media_id, timestamp in list(media_types[media_type].items()):
-                    waiting_time = round(time.time()) - timestamp
-                    if waiting_time > NOTIFY_THRESHOLD:
-                        await self.log.logger(f"*ℹ️ The {media_type} with ID {media_id} hasn't been downløaded in the past 31 days ℹ️*\nRequest by user ID: {user_id}", False, "info")
+        # lastAired is usually ISO-8601. Handle "Z" and naive timestamps.
+        try:
+            s = str(last_aired).strip()
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+
+            # If dt is naive, assume UTC (adjust if your API uses local time)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+
+            now = datetime.now(timezone.utc)
+
+            # If lastAired is in the future, it suggests an announced season is included
+            if dt > now:
+                season_count = max(0, season_count - 1)
+
+        except (ValueError, TypeError):
+            # If parsing fails, just keep the original season count
+            pass
+
+        return season_count

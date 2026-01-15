@@ -133,9 +133,7 @@ class Bot:
 
         # Enable the Schedule Job Queue
         self.application.job_queue.run_repeating(
-            self.schedule.check_notify_list, interval=3600, first=0)
-        # self.application.job_queue.run_repeating(
-        #     self.schedule.check_timestamp, interval=604800, first=0)
+            self.schedule.check_notify_list, interval=10, first=0)
 
         # Start the bot
         self.application.run_polling(

@@ -1,5 +1,3 @@
-- als aanvraag tegelijk is worden variablen overschreven, dit opslaan in bot user info ipv global var
-- nogmaals vanaf start checken hoe info wordt opgelsagen, als pickle wegvalt werkt context.user[gebruiker] niet meer en die kan nu niet aan het begin opnieuw opgehaald worden
 - inform dat serie online staat gebeurt nu alleen bij complete seizoenen, bij lopende series al eerder melding geven als alle beschikbare afleveringen er zijn
 - optie geven om melding te krijgen bij elke nieuwe aflevering
 - overal debug logging toevoegen

@@ -71,7 +71,7 @@ class Start:
 
             # Set gebruikernaam if not set
             if not context.user_data.get("gebruiker"):
-                context.user_data["gebruiker"] = config.get("user_id", {}).get(update.effective_user.id).split(",", 1)[0].strip()
+                context.user_data["gebruiker"] = json_data.get("user_id", {}).get(str(update.effective_user.id)).split(",", 1)[0].strip()
 
             # write to stats.json
             async with aiofiles.open(self.stats_json, "r+") as file:
