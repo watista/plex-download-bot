@@ -145,11 +145,11 @@ class Schedule:
                 if not media_folder.is_dir():
                     continue
 
-                found_seasons = self.seasons_present_in_folder(media_folder)
-                if not found_seasons:
+                seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
+                if not seasons_count:
                     continue
 
-                max_seen = max(found_seasons)
+                max_seen = max(seasons_count)
 
                 last_notified = int(state.get("last_notified_season", 0))
                 last_seen = int(state.get("last_seen_season", 0))
@@ -159,7 +159,7 @@ class Schedule:
                     sanitize_title = self.function.sanitize_text(media_json["title"])
                     media_plex_url = await self.plex.get_media_url(media_json, "serie")
 
-                    new_seasons = sorted(s for s in found_seasons if s > last_notified)
+                    new_seasons = sorted(s for s in seasons_count if s > last_notified)
                     if len(new_seasons) == 1:
                         season_text = f"seizoen {new_seasons[0]}"
                     else:

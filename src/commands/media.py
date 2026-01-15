@@ -310,7 +310,7 @@ class Media(ABC):
                 json_data["notify_list"][f"{update.effective_user.id}"] = {}
 
             # Check if serie/film block exists, otherwise create it
-            for media_type in ["serie", "film"]:
+            for media_type in ["serie", "film", "recurring_serie"]:
                 if media_type not in json_data["notify_list"][f"{update.effective_user.id}"]:
                     json_data["notify_list"][f"{update.effective_user.id}"][f"{media_type}"] = {}
 
