@@ -1,10 +1,7 @@
-- inform dat serie online staat gebeurt nu alleen bij complete seizoenen, bij lopende series al eerder melding geven als alle beschikbare afleveringen er zijn
+- periodiek scannen op nieuwe series/films
 - optie geven om melding te krijgen bij elke nieuwe aflevering
+- mogelijkheid bouwen bij disk check dat ook folder in mount point kan zijn (media/beide/series4)
 - overal debug logging toevoegen
 - in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
 - boven elke functie zo'n ```functie tekst``` plaatsen
 - auto upgrade bij quality request
-- uitzoeken waarom sommige series als unmonitored blijven staan
-- periodiek scannen op nieuwe series/films
-- bij bericht dat een serie/film online staat wordt de titel soms wel/soms niet vetgedrukt
-- mogelijkheid bouwen bij disk check dat ook folder in mount point kan zijn (media/beide/series4)

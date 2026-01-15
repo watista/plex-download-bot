@@ -107,7 +107,7 @@ class Schedule:
                         else:
                             await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{sanitize_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
                         # Write to log
-                        await self.log.logger(f"*ℹ️ User has been notified that the {media_type} {sanitize_title} is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
+                        await self.log.logger(f"*ℹ️ Notify: The {media_type} {sanitize_title} is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
 
                         # If it's a series: initialize recurring tracking
                         if media_type == "serie":
@@ -166,11 +166,11 @@ class Schedule:
                         season_text = "seizoen " + " en ".join(str(s) for s in new_seasons)
 
                     if not media_plex_url:
-                        await self.function.send_message(f"Nieuw seizoen! 🎉\n\nEr is een nieuw seizoen beschikbaar van *{sanitize_title}*: *{season_text}*. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
+                        await self.function.send_message(f"Goed nieuws! 🎉\n\n*{season_text.capitalize()}* van *{sanitize_title}* is nu beschikbaar. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
                     else:
-                        await self.function.send_message(f"Nieuw seizoen! 🎉\n\nEr is een nieuw seizoen beschikbaar van <b>{sanitize_title}</b>: <b>{season_text}</b>. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
+                        await self.function.send_message(f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}<b/> van <b>{sanitize_title}<b/> is nu beschikbaar. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
 
-                    await self.log.logger(f"*ℹ️ User has been notified about new season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
+                    await self.log.logger(f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
 
                     state["last_notified_season"] = max_seen
                     changed = True
