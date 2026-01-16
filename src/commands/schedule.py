@@ -61,7 +61,7 @@ class Schedule:
                     media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
 
                     # do the required checks
-                    check, media_folder = self.check_requirements(media_json, media_id)
+                    check, media_folder = await self.check_requirements(media_json, media_id)
                     if not check:
                         continue
 
@@ -120,7 +120,7 @@ class Schedule:
                 media_json = await self.sonarr.lookup_by_tmdbid(media_id)
 
                 # do the required checks
-                check, media_folder = self.check_requirements(media_json, media_id)
+                check, media_folder = await self.check_requirements(media_json, media_id)
                 if not check:
                     continue
 
@@ -165,7 +165,7 @@ class Schedule:
                 media_json = await self.sonarr.lookup_by_tmdbid(media_id)
 
                 # do the required checks
-                check, media_folder = self.check_requirements(media_json, media_id)
+                check, media_folder = await self.check_requirements(media_json, media_id)
                 if not check:
                     continue
 
@@ -273,7 +273,7 @@ class Schedule:
 
         return found
 
-    def check_requirements(self, media_json, media_id):
+    async def check_requirements(self, media_json, media_id):
         """
         Returns True of False if requirements are met.
         """
