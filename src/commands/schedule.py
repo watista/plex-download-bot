@@ -103,12 +103,19 @@ class Schedule:
                                 seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
                                 max_seen = max(seasons_count) if seasons_count else 0
 
+                                # Initialize serie_episode tracking so we don't spam old episodes.
+                                latest_ep = self.newest_episode_in_folder(media_folder)
+                                media_types["serie_episode"].setdefault(str(media_id), {})
+                                media_types["serie_episode"][str(media_id)]["started"] = True
+                                media_types["serie_episode"][str(media_id)]["last"] = latest_ep or "S00E00"
+
                                 # Create/update recurring state for this serie
                                 media_types["recurring_serie"].setdefault(str(media_id), {})
                                 media_types["recurring_serie"][str(media_id)]["last_notified_season"] = max_seen
                                 media_types["recurring_serie"][str(media_id)]["last_seen_season"] = max_seen
                             else:
                                 media_types.get("recurring_serie", {}).pop(str(media_id), None)
+                                media_types.get("serie_episode", {}).pop(str(media_id), None)
 
                         # Delete the entry and write to data.json
                         del data["notify_list"][user_id][media_type][media_id]
@@ -167,6 +174,10 @@ class Schedule:
                 # do the required checks
                 check, media_folder, media_json = await self.check_requirements(media_json, media_id)
                 if not check:
+                    continue
+
+                # Only start notifying after started=True
+                if not bool((state or {}).get("started", False)):
                     continue
 
                 episodes_found = self.episodes_present_in_folder(media_folder)
@@ -273,6 +284,14 @@ class Schedule:
 
         return found
 
+
+    def newest_episode_in_folder(self, media_folder: Path) -> str | None:
+        episodes = self.episodes_present_in_folder(media_folder)
+        if not episodes:
+            return None
+        return max(episodes)
+
+
     async def check_requirements(self, media_json, media_id):
         """
         Returns True of False if requirements are met.
@@ -280,7 +299,7 @@ class Schedule:
 
         # Check if data is present
         if not media_json:
-            return False, False
+            return False, False, False
 
         # Check if media_data is a list or dict
         if isinstance(media_json, list):
@@ -291,12 +310,12 @@ class Schedule:
         if not media_folder:
             await self.log.logger(f"❌ *No path present in JSON for media with ID {media_id}.*\nCheck the error log for more information. ❌", False, "error")
             await self.log.logger(f"Path not in the JSON. JSON: {media_json}", False, "error", False)
-            return False, False
+            return False, False, False
 
         # Check if media_folder exists
         media_folder = Path(media_folder)
         if not media_folder.is_dir():
-            return False, False
+            return False, False, False
 
         return True, media_folder, media_json
 
