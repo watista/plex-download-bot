@@ -51,9 +51,16 @@ class Start:
 
     async def verification(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        # Extract callback data and acknowledge the callback
-        context.user_data["media_option"] = update.callback_query.data
-        await update.callback_query.answer()
+        # check if it's called with aan/afmelden or /start
+        if update.message and update.message.text.startswith("/aanmelden"):
+            await self.log.logger(f"User started bot with /aanmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "aanmelden"
+        elif update.message and update.message.text.startswith("/afmelden"):
+            await self.log.logger(f"User started bot with /afmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "afmelden"
+        else:
+            context.user_data["media_option"] = update.callback_query.data
+            await update.callback_query.answer()
 
         # Load JSON file
         async with aiofiles.open(self.data_json, "r") as file:
@@ -171,6 +178,10 @@ class Start:
             context.user_data["media_type"] = "movie"
             await self.function.send_message(f"Welke film wil je graag op Plęx zien?", update, context)
             return REQUEST_MOVIE
+        elif context.user_data["media_option"] == "aanmelden":
+            return await self.subscribe.aanmelden(update, context)
+        elif context.user_data["media_option"] == "afmelden":
+            return await self.subscribe.afmelden(update, context)
         else:
             # Send msg to user + logging
             await self.function.send_message(f"*😵 *Oeps, daar ging iets fout*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)

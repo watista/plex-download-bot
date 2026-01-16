@@ -6,3 +6,5 @@
 - auto upgrade bij quality request
 - if notify every episode, set last episode in json when all is downloaded.
 - fix correct schedule each X period for new serie/mvoie
+- check type hints in new functions
+- comments plaatsen overal waar nog niet is

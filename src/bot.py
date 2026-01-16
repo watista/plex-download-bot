@@ -3,7 +3,7 @@
 import os
 import traceback
 
-from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID, AFMELDEN_OPTIE
 from src.functions import Functions
 from src.commands.privacy import Privacy
 from src.commands.help import Help
@@ -13,6 +13,7 @@ from src.commands.movie import Movie
 from src.commands.account import Account
 from src.commands.schedule import Schedule
 from src.commands.message import Message
+from src.commands.subscribe import Subscribe
 
 from telegram import Update, BotCommand
 from telegram.ext import (
@@ -43,7 +44,9 @@ class Bot:
         self.account = Account(logger, self.function)
         self.schedule = Schedule(args, logger, self.function)
         self.message = Message(args, logger, self.function)
+        self.subscribe = Subscribe(args, logger, self.function)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
+        self.start.subscribe = self.subscribe
 
         # Set vars based on live/dev
         if args.env == "live":
@@ -68,6 +71,8 @@ class Bot:
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
+                          CommandHandler("aanmelden", self.start.verification),
+                          CommandHandler("afmelden", self.start.verification),
                           CommandHandler("message", self.message.message_start, filters.User(self.allowed_users)),
                           CommandHandler("message_all", self.message.message_all, filters.User(self.allowed_users)),
                           MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
@@ -112,7 +117,8 @@ class Bot:
                 HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)],
                 MESSAGE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_id)],
                 MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)],
-                MESSAGE_ALL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_all_id)]
+                MESSAGE_ALL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_all_id)],
+                AFMELDEN_OPTIE: [CallbackQueryHandler(self.subscribe.afmelden_optie)],
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=1800
@@ -132,7 +138,7 @@ class Bot:
         self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
 
         # Enable the Schedule Job Queue
-        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=10, first=0)
+        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=3600, first=0)
         # self.application.job_queue.run_repeating(self.serie.scan_missing_media, interval=86400, first=0)
         # self.application.job_queue.run_repeating(self.movie.scan_missing_media, interval=86400, first=0)
 
@@ -144,6 +150,8 @@ class Bot:
         """ Create and publish command list """
         command_list = [
             BotCommand("start", "Commando om de bot te starten"),
+            BotCommand("aanmelden", "Aanmelden op nieuwe serie afleveringen"),
+            BotCommand("afmelden", "Afmelden op nieuwe serie afleveringen"),
             BotCommand("help", "Krijg alle informatie te zien van deze bot"),
             BotCommand("privacy", "Toont de privacy policy van de bot")
         ]
