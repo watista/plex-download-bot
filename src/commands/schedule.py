@@ -61,7 +61,7 @@ class Schedule:
                     media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
 
                     # do the required checks
-                    check, media_folder = await self.check_requirements(media_json, media_id)
+                    check, media_folder, media_json = await self.check_requirements(media_json, media_id)
                     if not check:
                         continue
 
@@ -120,7 +120,7 @@ class Schedule:
                 media_json = await self.sonarr.lookup_by_tmdbid(media_id)
 
                 # do the required checks
-                check, media_folder = await self.check_requirements(media_json, media_id)
+                check, media_folder, media_json = await self.check_requirements(media_json, media_id)
                 if not check:
                     continue
 
@@ -165,7 +165,7 @@ class Schedule:
                 media_json = await self.sonarr.lookup_by_tmdbid(media_id)
 
                 # do the required checks
-                check, media_folder = await self.check_requirements(media_json, media_id)
+                check, media_folder, media_json = await self.check_requirements(media_json, media_id)
                 if not check:
                     continue
 
@@ -298,7 +298,7 @@ class Schedule:
         if not media_folder.is_dir():
             return False, False
 
-        return True, media_folder
+        return True, media_folder, media_json
 
 
     def format_episode_list(self, episodes: list[str]) -> str:
