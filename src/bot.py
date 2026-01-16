@@ -132,8 +132,9 @@ class Bot:
         self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
 
         # Enable the Schedule Job Queue
-        self.application.job_queue.run_repeating(
-            self.schedule.check_notify_list, interval=7, first=0)
+        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=10, first=0)
+        self.application.job_queue.run_repeating(self.serie.scan_missing_media, interval=86400, first=0)
+        self.application.job_queue.run_repeating(self.movie.scan_missing_media, interval=86400, first=0)
 
         # Start the bot
         self.application.run_polling(

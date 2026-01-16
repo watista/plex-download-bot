@@ -50,6 +50,7 @@ class Schedule:
             media_types.setdefault("serie", {})
             media_types.setdefault("film", {})
             media_types.setdefault("recurring_serie", {})
+            media_types.setdefault("serie_episode", {})
 
             # Itarate through serie and movie options
             for media_type in ["serie", "film"]:
@@ -59,24 +60,9 @@ class Schedule:
                     # Get JSON data for the media ID
                     media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
 
-                    # Check if data is present
-                    if not media_json:
-                        continue
-
-                    # Check if media_data is a list or dict
-                    if isinstance(media_json, list):
-                        media_json = media_json[0]
-
-                    # Check if path exists in the JSON
-                    media_folder = media_json.get("path")
-                    if not media_folder:
-                        await self.log.logger(f"❌ *No path present in JSON for {media_type} with ID {media_id}.*\nCheck the error log for more information. ❌", False, "error")
-                        await self.log.logger(f"Path not in the JSON. JSON: {media_json}", False, "error", False)
-                        continue
-
-                    # Check if media_folder exists
-                    media_folder = Path(media_folder)
-                    if not media_folder.is_dir():
+                    # do the required checks
+                    check, media_folder = self.check_requirements(media_json, media_id)
+                    if not check:
                         continue
 
                     # Check if all episodes are downloaded
@@ -132,17 +118,10 @@ class Schedule:
             for media_id, state in list(media_types.get("recurring_serie", {}).items()):
 
                 media_json = await self.sonarr.lookup_by_tmdbid(media_id)
-                if not media_json:
-                    continue
-                if isinstance(media_json, list):
-                    media_json = media_json[0]
 
-                media_folder = media_json.get("path")
-                if not media_folder:
-                    continue
-
-                media_folder = Path(media_folder)
-                if not media_folder.is_dir():
+                # do the required checks
+                check, media_folder = self.check_requirements(media_json, media_id)
+                if not check:
                     continue
 
                 seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
@@ -180,6 +159,51 @@ class Schedule:
                     state["last_seen_season"] = max_seen
                     changed = True
 
+            # Iterate through serie_episode options (new episode notifications)
+            for media_id, state in list(media_types.get("serie_episode", {}).items()):
+
+                media_json = await self.sonarr.lookup_by_tmdbid(media_id)
+
+                # do the required checks
+                check, media_folder = self.check_requirements(media_json, media_id)
+                if not check:
+                    continue
+
+                episodes_found = self.episodes_present_in_folder(media_folder)
+                if not episodes_found:
+                    continue
+
+                # Get highest option
+                newest_found = max(episodes_found)
+
+                # Get last notified from json
+                last_notified = (state or {}).get("last", "S00E00").upper()
+
+                # Only notify when newer episodes exist
+                if newest_found <= last_notified:
+                    continue
+
+                # Gather all new episodes since last (and sort them)
+                new_episodes = sorted(ep for ep in episodes_found if ep > last_notified)
+                if not new_episodes:
+                    continue
+
+                sanitize_title = self.function.sanitize_text(media_json["title"])
+                media_plex_url = await self.plex.get_media_url(media_json, "serie")
+
+                # Generate episode list text
+                eps_text = self.format_episode_list_nl(new_episodes)
+
+                if not media_plex_url:
+                    await self.function.send_message(f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van *{sanitize_title}* zijn nu beschikbaar:\n\n*{eps_text}*\n\nVeel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
+                else:
+                    await self.function.send_message(f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van <b>{sanitize_title}</b> zijn nu beschikbaar:\n\n<b>{eps_text}</b>\n\nVeel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
+
+                await self.log.logger(f"*ℹ️ Notify: New episode(s) for serie {sanitize_title}: {eps_text} ℹ️*\n" f"User ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
+
+                # Update last notified
+                state["last"] = new_episodes[-1]
+                changed = True
 
         # Write back once per run
         if changed:
@@ -230,3 +254,88 @@ class Schedule:
                 seasons_name.add(f"S{int(m.group(1)):02d}")
                 seasons_count.add(int(m.group(1)))
         return seasons_name, seasons_count
+
+
+    def episodes_present_in_folder(self, media_folder: Path) -> set[str]:
+        """
+        Returns a set like {"S01E01", "S01E02", "S02E01"}
+        """
+        ep_re = re.compile(r"(S\d{2}E\d{2})", re.IGNORECASE)
+        found = set()
+
+        for p in media_folder.rglob("*"):
+            if not p.is_file():
+                continue
+
+            m = ep_re.search(p.name)
+            if m:
+                found.add(m.group(1).upper())
+
+        return found
+
+    def check_requirements(self, media_json, media_id):
+        """
+        Returns True of False if requirements are met.
+        """
+
+        # Check if data is present
+        if not media_json:
+            return False, False
+
+        # Check if media_data is a list or dict
+        if isinstance(media_json, list):
+            media_json = media_json[0]
+
+        # Check if path exists in the JSON
+        media_folder = media_json.get("path")
+        if not media_folder:
+            await self.log.logger(f"❌ *No path present in JSON for media with ID {media_id}.*\nCheck the error log for more information. ❌", False, "error")
+            await self.log.logger(f"Path not in the JSON. JSON: {media_json}", False, "error", False)
+            return False, False
+
+        # Check if media_folder exists
+        media_folder = Path(media_folder)
+        if not media_folder.is_dir():
+            return False, False
+
+        return True, media_folder
+
+
+    def format_episode_list(self, episodes: list[str]) -> str:
+        """
+        Input:  ["S01E02", "S01E03", "S01E04"]
+        Output: "Seizoen 1, Episode 2, 3 & 4"
+        """
+
+        # Convert to numbers
+        parsed = []
+        for ep in episodes:
+            m = re.match(r"^S(\d{2})E(\d{2})$", ep.strip(), re.IGNORECASE)
+            if not m:
+                continue
+            season = int(m.group(1))
+            episode = int(m.group(2))
+            parsed.append((season, episode))
+
+        if not parsed:
+            return "Nieuwe afleveringen beschikbaar."
+
+        # Group by season
+        by_season = {}
+        for season, episode in parsed:
+            by_season.setdefault(season, []).append(episode)
+
+        parts = []
+        for season in sorted(by_season.keys()):
+            eps = sorted(set(by_season[season]))
+
+            if len(eps) == 1:
+                eps_text = f"{eps[0]}"
+            elif len(eps) == 2:
+                eps_text = f"{eps[0]} & {eps[1]}"
+            else:
+                eps_text = ", ".join(str(x) for x in eps[:-1]) + f" & {eps[-1]}"
+
+            parts.append(f"Seizoen {season}, Episode {eps_text}")
+
+        return " | ".join(parts)
