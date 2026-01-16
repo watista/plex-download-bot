@@ -171,9 +171,7 @@ class Subscribe:
         # Build buttons
         buttons = []
         for serie_id, state in serie_episode.items():
-            print(serie_id)
             media_json = self.first_item(await self.sonarr.lookup_by_tmdbid(serie_id))
-            print(media_json)
             title = media_json.get("title") if media_json else f"Serie {serie_id}"
 
             # Callback data must be <= 64 bytes => keep it short
@@ -195,7 +193,6 @@ class Subscribe:
 
         serie_id = query.data
         user_id = str(query.from_user.id)
-        print(serie_id)
 
         # Load JSON
         async with aiofiles.open(self.data_json, "r") as file:
@@ -213,7 +210,6 @@ class Subscribe:
 
         # show title
         media_json = self.first_item(await self.sonarr.lookup_by_tmdbid(serie_id))
-        print(media_json)
         title = media_json.get("title") if media_json else f"Serie {serie_id}"
 
         await self.function.send_message(f"✅ Je bent nu afgemeld voor *{self.function.sanitize_text(title)}*",update, context)
