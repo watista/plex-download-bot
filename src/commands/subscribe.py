@@ -146,6 +146,7 @@ class Subscribe:
 
         title = context.user_data['aanmeld_data'].get("title", "")
         await self.function.send_message(f"✅ Je bent nu aangemeld voor nieuwe afleveringen van *{self.function.sanitize_text(title)}*.", update, context)
+        await self.log.logger(f"*ℹ️ User has subscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
         return ConversationHandler.END
 
@@ -215,7 +216,8 @@ class Subscribe:
         print(media_json)
         title = media_json.get("title") if media_json else f"Serie {serie_id}"
 
-        await self.function.send_message(f"✅ Je bent nu afgemeld voor *{title}*",update, context)
+        await self.function.send_message(f"✅ Je bent nu afgemeld voor *{self.function.sanitize_text(title)}*",update, context)
+        await self.log.logger(f"*ℹ️ User has ubsubscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         return ConversationHandler.END
 
 
