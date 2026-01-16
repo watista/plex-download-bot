@@ -192,7 +192,7 @@ class Schedule:
                 media_plex_url = await self.plex.get_media_url(media_json, "serie")
 
                 # Generate episode list text
-                eps_text = self.format_episode_list_nl(new_episodes)
+                eps_text = self.format_episode_list(new_episodes)
 
                 if not media_plex_url:
                     await self.function.send_message(f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van *{sanitize_title}* zijn nu beschikbaar:\n\n*{eps_text}*\n\nVeel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
