@@ -147,7 +147,7 @@ class Schedule:
                     if not media_plex_url:
                         await self.function.send_message(f"Goed nieuws! 🎉\n\n*{season_text.capitalize()}* van *{sanitize_title}* is nu beschikbaar. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
                     else:
-                        await self.function.send_message(f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}<b/> van <b>{sanitize_title}<b/> is nu beschikbaar. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
+                        await self.function.send_message(f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}</b> van <b>{sanitize_title}</b> is nu beschikbaar. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
 
                     await self.log.logger(f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
 
