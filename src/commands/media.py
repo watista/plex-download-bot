@@ -421,8 +421,8 @@ class Media(ABC):
             print(candidates)
             if not candidates:
                 continue
-            print(best)
             best = max(candidates, key=lambda d: len(d["path"]))
+            print(best)
 
             if best.get("freeSpace", 0) > GB_100:
                 # return the folder you want to use (the configured one)
