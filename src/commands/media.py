@@ -345,7 +345,7 @@ class Media(ABC):
         """ Starts the download in Radarr or Sonarr """
 
         # Get folder to download to
-        download_folder = await self.check_disk_space()
+        download_folder = await self.check_disk_space(context)
 
         # Check if enough space is left
         if not download_folder:
@@ -375,7 +375,7 @@ class Media(ABC):
 
         return True
 
-    async def check_disk_space(self) -> Optional[str]:
+    async def check_disk_space(self, context) -> Optional[str]:
         """ Checks if the disk given in de .env file have enough space left """
 
         # Get list of disks and diskspace
