@@ -2,6 +2,8 @@
 
 import os
 import re
+import aiofiles
+from pathlib import Path
 from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler

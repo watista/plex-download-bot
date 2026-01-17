@@ -5,8 +5,6 @@ import os
 import json
 import traceback
 import time
-import aiofiles
-from pathlib import Path
 from datetime import datetime
 from transmission_rpc import Client
 from typing import Optional
