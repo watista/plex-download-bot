@@ -375,7 +375,7 @@ class Media(ABC):
 
         return True
 
-    async def check_disk_space(self) -> Optional[str]:
+    async def check_disk_space(self, context: CallbackContext) -> Optional[str]:
         """Checks if any configured media folder has >= 100GB free on its mount."""
 
         # Get list of disks and diskspace
