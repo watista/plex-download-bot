@@ -376,34 +376,60 @@ class Media(ABC):
         return True
 
     async def check_disk_space(self, context: CallbackContext) -> Optional[str]:
-        """ Checks if the disk given in de .env file have enough space left """
+        """Checks if any configured media folder has >= 100GB free on its mount."""
 
         # Get list of disks and diskspace
-        disk_list = context.user_data['media_folder'].split(",")
+        # disk_list = context.user_data['media_folder'].split(",")
+        disk_list = [p.strip() for p in os.getenv('SERIE_FOLDERS').split(",") if p.strip()]
+        print(disk_list)
         disk_space = await self.media_handler.get_disk_space()
+        print(disk_space)
 
-        ######################
-        # TMP ALWAYS INSTANT RETURN MEDIE FOLDER SINCE ITS JUST /MEDIA/BEIDE/MOVIES4 OR /MEDIA/BEIDE/SERIES4
-        await self.log.logger(disk_list[0], False, "error", False)
-        return disk_list[0]
-        ######################
+        # ######################
+        # # TMP ALWAYS INSTANT RETURN MEDIE FOLDER SINCE ITS JUST /MEDIA/BEIDE/MOVIES4 OR /MEDIA/BEIDE/SERIES4
+        # await self.log.logger(disk_list[0], False, "error", False)
+        # return disk_list[0]
+        # ######################
 
         # Check retrieve diskspace succesfull
         if not disk_space:
-            await self.log.logger(f"Hier?", False, "error", True)
+            await self.log.logger("No disk space data returned", False, "error", True)
             return None
 
         # 100GB to bytes
         GB_100 = 100 * 1024 ** 3
 
-        # Check each folder in JSON, return folder name if more then 100gb space left
-        for folder in disk_list:
-            for disk in disk_space:
-                if disk["path"] == folder:
-                    if disk["freeSpace"] > GB_100:
-                        return disk["path"]
+        # Pre-normalize mount paths
+        mounts = []
+        for d in disk_space:
+            print(d)
+            mount = os.path.normpath(d["path"])
+            mounts.append({**d, "path": mount})
+        print(222)
+        print(mounts)
+        def is_under(folder: str, mount: str) -> bool:
+            folder = os.path.normpath(folder)
+            mount = os.path.normpath(mount)
+            return folder == mount or folder.startswith(mount + os.sep)
 
-        # Return if no disks have more then 100gb left
+        for folder in disk_list:
+            folder_norm = os.path.normpath(folder)
+
+            # find best (most specific) mount for this folder
+            candidates = [d for d in mounts if is_under(folder_norm, d["path"])]
+            print(111)
+            print(candidates)
+            if not candidates:
+                continue
+            print(best)
+            best = max(candidates, key=lambda d: len(d["path"]))
+
+            if best.get("freeSpace", 0) > GB_100:
+                # return the folder you want to use (the configured one)
+                print(12345)
+                print(folder)
+                return folder_norm
+
         return None
 
     async def write_to_stats(self, update: Update, context: CallbackContext) -> None:
