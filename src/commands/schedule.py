@@ -180,7 +180,7 @@ class Schedule:
                 if not bool((state or {}).get("started", False)):
                     continue
 
-                episodes_found = self.episodes_present_in_folder(media_folder)
+                episodes_found = self.functions.episodes_present_in_folder(media_folder)
                 if not episodes_found:
                     continue
 
@@ -267,26 +267,8 @@ class Schedule:
         return seasons_name, seasons_count
 
 
-    def episodes_present_in_folder(self, media_folder: Path) -> set[str]:
-        """
-        Returns a set like {"S01E01", "S01E02", "S02E01"}
-        """
-        ep_re = re.compile(r"(S\d{2}E\d{2})", re.IGNORECASE)
-        found = set()
-
-        for p in media_folder.rglob("*"):
-            if not p.is_file():
-                continue
-
-            m = ep_re.search(p.name)
-            if m:
-                found.add(m.group(1).upper())
-
-        return found
-
-
     def newest_episode_in_folder(self, media_folder: Path) -> str | None:
-        episodes = self.episodes_present_in_folder(media_folder)
+        episodes = self.functions.episodes_present_in_folder(media_folder)
         if not episodes:
             return None
         return max(episodes)

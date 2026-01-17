@@ -115,7 +115,7 @@ class Subscribe:
         serie_id = str(context.user_data['aanmeld_data'].get("tmdbId"))
         if not serie_id or serie_id == "None":
             await self.function.send_message("Er ging iets fout bij het ophalen van data van de serie. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
-            await self.log.logger(f"Error happened during parsing tmdbId, see the logs for the media JSON.", False, "error", True)
+            await self.log.logger(f"Error happened during parsing tmdbId in subscribe.py, see the logs for the media JSON.", False, "error", True)
             await self.log.logger(f"Media JSON:\n{context.user_data['aanmeld_data']}", False, "error", False)
             return ConversationHandler.END
 
@@ -137,7 +137,7 @@ class Subscribe:
 
         # Set to newest episode available
         media_folder = Path(context.user_data['aanmeld_data']["path"])
-        latest = max(self.schedule.episodes_present_in_folder(media_folder), default="S00E00")
+        latest = max(self.functions.episodes_present_in_folder(media_folder), default="S00E00")
         entry["last"] = latest
 
         # Save JSON

@@ -2,6 +2,7 @@
 
 import re
 import asyncio
+from pathlib import Path
 from telegram.error import RetryAfter
 
 class Functions:
@@ -122,3 +123,21 @@ class Functions:
     # Sanitize text and remove _ and *
     def sanitize_text(self, text: str) -> str:
         return text.replace("*", "").replace("_", "")
+
+
+    def episodes_present_in_folder(self, media_folder: Path) -> set[str]:
+        """
+        Returns a set like {"S01E01", "S01E02", "S02E01"}
+        """
+        ep_re = re.compile(r"(S\d{2}E\d{2})", re.IGNORECASE)
+        found = set()
+
+        for p in media_folder.rglob("*"):
+            if not p.is_file():
+                continue
+
+            m = ep_re.search(p.name)
+            if m:
+                found.add(m.group(1).upper())
+
+        return found

@@ -3,7 +3,7 @@
 import os
 import traceback
 
-from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID, AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE
+from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID, AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE, AANMELDEN_SERIE
 from src.functions import Functions
 from src.commands.privacy import Privacy
 from src.commands.help import Help
@@ -121,6 +121,7 @@ class Bot:
                 AFMELDEN_OPTIE: [CallbackQueryHandler(self.subscribe.afmelden_optie)],
                 AANMELD_OPTIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.subscribe.aanmeld_optie)],
                 AANMELD_CHOICE: [CallbackQueryHandler(self.subscribe.aanmeld_keus)],
+                AANMELDEN_SERIE: [CallbackQueryHandler(self.serie.aanmelden, pattern="^(yes|no)$")],
             },
             fallbacks=[CommandHandler("stop", self.stop)],
             conversation_timeout=1800

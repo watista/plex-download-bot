@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.states import REQUEST_AGAIN
+from src.states import REQUEST_AGAIN, AANMELDEN_SERIE
 from src.services.plex import Plex
 from src.commands.start import Start
 
@@ -290,7 +290,7 @@ class Media(ABC):
         # Send the notify message
         await self.function.send_message(msg, update, context, reply_markup)
 
-    async def stay_notified(self, update: Update, context: CallbackContext) -> None:
+    async def stay_notified(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles if the user wants te be updated about the requested media """
 
         # Answer query
@@ -323,8 +323,74 @@ class Media(ABC):
             file.truncate()
 
         # Send final message
-        await self.function.send_message(f"Oke, je ontvangt een melding als {context.user_data['media_data']['title']} beschikbaar is. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
+        if context.user_data['label'] == "serie" and not context.user_data['media_data'].get("ended", False):
+            await self.function.send_message(f"Oke, je ontvangt een melding als {context.user_data['media_data']['title']} beschikbaar is.", update, context)
+            await asyncio.sleep(1)
+
+            # Create keyboard
+            reply_markup = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("Ja", callback_data="yes"),
+                    InlineKeyboardButton("Nee", callback_data="no")
+                ]
+            ])
+            await self.function.send_message(f"Wil je ook updates ontvangen zodra er nieuwe afleveringen online komen? Je kan je hiervoor later altijd afmelden door /afmelden te sturen.", update, context, reply_markup)
+            return AANMELDEN_SERIE
+        else:
+            await self.function.send_message(f"Oke, je ontvangt een melding als {context.user_data['media_data']['title']} beschikbaar is. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
+            return ConversationHandler.END
+
+
+    async def aanmelden(self, update: Update, context: CallbackContext) -> None:
+        """ Handles if the user wants te be updated about future new serie episodes """
+
+        # Answer query
+        await update.callback_query.answer()
+
+        # Finish conversation if chosen
+        if update.callback_query.data == "no":
+            await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
+            return ConversationHandler.END
+
+        # Get tmdbId
+        serie_id = str(context.user_data['media_data'].get("tmdbId"))
+        if not serie_id or serie_id == "None":
+            await self.function.send_message("Er ging iets fout bij het ophalen van data van de serie. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
+            await self.log.logger(f"Error happened during parsing tmdbId in media.py, see the logs for the media JSON.", False, "error", True)
+            await self.log.logger(f"Media JSON:\n{context.user_data['aanmeld_data']}", False, "error", False)
+            return ConversationHandler.END
+
+        # Load JSON
+        async with aiofiles.open(self.data_json, "r") as f:
+            data = json.loads(await f.read())
+
+        # Ensure structure exists
+        notify_list = data.setdefault("notify_list", {})
+        user_node = notify_list.setdefault(str(update.effective_user.id), {})
+        user_node.setdefault("film", {})
+        user_node.setdefault("serie", {})
+        user_node.setdefault("recurring_serie", {})
+        serie_episode = user_node.setdefault("serie_episode", {})
+
+        # Create/update entry
+        entry = serie_episode.setdefault(serie_id, {})
+        entry["started"] = True
+
+        # Set to newest episode available
+        media_folder = Path(context.user_data['media_data']["path"])
+        latest = max(self.functions.episodes_present_in_folder(media_folder), default="S00E00")
+        entry["last"] = latest
+
+        # Save JSON
+        async with aiofiles.open(self.data_json, "w") as f:
+            await f.write(json.dumps(data, indent=4))
+
+        title = context.user_data['media_data'].get("title", "")
+        await self.function.send_message(f"✅ Je bent nu aangemeld voor nieuwe afleveringen van *{self.function.sanitize_text(title)}*.", update, context)
+        await self.log.logger(f"*ℹ️ User has subscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+
         return ConversationHandler.END
+
 
     async def start_download(self, update: Update, context: CallbackContext) -> bool:
         """ Starts the download in Radarr or Sonarr """
