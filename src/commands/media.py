@@ -378,7 +378,7 @@ class Media(ABC):
 
         # Set to newest episode available
         media_folder = Path(context.user_data['media_data']["path"])
-        latest = max(self.functions.episodes_present_in_folder(media_folder), default="S00E00")
+        latest = max(self.function.episodes_present_in_folder(media_folder), default="S00E00")
         entry["last"] = latest
 
         # Save JSON

@@ -180,7 +180,7 @@ class Schedule:
                 if not bool((state or {}).get("started", False)):
                     continue
 
-                episodes_found = self.functions.episodes_present_in_folder(media_folder)
+                episodes_found = self.function.episodes_present_in_folder(media_folder)
                 if not episodes_found:
                     continue
 
@@ -268,7 +268,7 @@ class Schedule:
 
 
     def newest_episode_in_folder(self, media_folder: Path) -> str | None:
-        episodes = self.functions.episodes_present_in_folder(media_folder)
+        episodes = self.function.episodes_present_in_folder(media_folder)
         if not episodes:
             return None
         return max(episodes)
