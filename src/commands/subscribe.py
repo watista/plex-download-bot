@@ -133,7 +133,7 @@ class Subscribe:
 
         # Create/update entry
         entry = serie_episode.setdefault(serie_id, {})
-        entry["started"] = True
+        entry["started"] = False
 
         # Set to newest episode available
         media_folder = Path(context.user_data['aanmeld_data']["path"])
