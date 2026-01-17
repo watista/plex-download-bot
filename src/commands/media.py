@@ -376,37 +376,26 @@ class Media(ABC):
         return True
 
     async def check_disk_space(self, context: CallbackContext) -> Optional[str]:
-        """Checks if any configured media folder has >= 100GB free on its mount."""
+        """Checks if any configured media folder has >= 150GB free on its mount."""
 
         # Get list of disks and diskspace
-        # disk_list = context.user_data['media_folder'].split(",")
-        disk_list = [p.strip() for p in os.getenv('SERIE_FOLDERS').split(",") if p.strip()]
-        print(disk_list)
+        disk_list = [p.strip() for p in context.user_data["media_folder"].split(",") if p.strip()]
         disk_space = await self.media_handler.get_disk_space()
-        print(disk_space)
-
-        # ######################
-        # # TMP ALWAYS INSTANT RETURN MEDIE FOLDER SINCE ITS JUST /MEDIA/BEIDE/MOVIES4 OR /MEDIA/BEIDE/SERIES4
-        # await self.log.logger(disk_list[0], False, "error", False)
-        # return disk_list[0]
-        # ######################
 
         # Check retrieve diskspace succesfull
         if not disk_space:
             await self.log.logger("No disk space data returned", False, "error", True)
             return None
 
-        # 100GB to bytes
-        GB_100 = 100 * 1024 ** 3
+        # 150GB to bytes
+        GB_150 = 150 * 1024 ** 3
 
         # Pre-normalize mount paths
         mounts = []
         for d in disk_space:
-            print(d)
             mount = os.path.normpath(d["path"])
             mounts.append({**d, "path": mount})
-        print(222)
-        print(mounts)
+
         def is_under(folder: str, mount: str) -> bool:
             folder = os.path.normpath(folder)
             mount = os.path.normpath(mount)
@@ -417,17 +406,13 @@ class Media(ABC):
 
             # find best (most specific) mount for this folder
             candidates = [d for d in mounts if is_under(folder_norm, d["path"])]
-            print(111)
-            print(candidates)
             if not candidates:
                 continue
-            best = max(candidates, key=lambda d: len(d["path"]))
-            print(best)
 
-            if best.get("freeSpace", 0) > GB_100:
+            best = max(candidates, key=lambda d: len(d["path"]))
+
+            if best.get("freeSpace", 0) > GB_150:
                 # return the folder you want to use (the configured one)
-                print(12345)
-                print(folder)
                 return folder_norm
 
         return None

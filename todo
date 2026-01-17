@@ -1,7 +1,9 @@
-- mogelijkheid bouwen bij disk check dat ook folder in mount point kan zijn (media/beide/series4)
 - check unused imports
 - check type hints in new functions
 - comments plaatsen overal waar nog niet is
 - boven elke functie zo'n ```functie tekst``` plaatsen
 - overal debug logging toevoegen
 - in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
+
+
+- in dot-env, alle mogelijke paden meegeven
