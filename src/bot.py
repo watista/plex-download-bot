@@ -148,6 +148,7 @@ class Bot:
         self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=1800, first=0)
         self.application.job_queue.run_repeating(self.sonarr.scan_missing_media, interval=86400, first=0)
         self.application.job_queue.run_repeating(self.radarr.scan_missing_media, interval=86400, first=0)
+        self.application.job_queue.run_repeating(self.serie.check_disk_space, interval=5, first=0)
 
         # Start the bot
         self.application.run_polling(
