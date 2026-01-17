@@ -1,9 +1,7 @@
 - mogelijkheid bouwen bij disk check dat ook folder in mount point kan zijn (media/beide/series4)
+- check unused imports
+- check type hints in new functions
+- comments plaatsen overal waar nog niet is
+- boven elke functie zo'n ```functie tekst``` plaatsen
 - overal debug logging toevoegen
 - in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
-- boven elke functie zo'n ```functie tekst``` plaatsen
-- if notify every episode, set last episode in json when all is downloaded.
-- fix correct schedule each X period for new serie/mvoie
-- check type hints in new functions
-- check unused imports
-- comments plaatsen overal waar nog niet is

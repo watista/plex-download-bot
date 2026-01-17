@@ -375,7 +375,7 @@ class Media(ABC):
 
         return True
 
-    async def check_disk_space(self, context) -> Optional[str]:
+    async def check_disk_space(self, context: CallbackContext) -> Optional[str]:
         """ Checks if the disk given in de .env file have enough space left """
 
         # Get list of disks and diskspace

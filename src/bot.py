@@ -14,6 +14,8 @@ from src.commands.account import Account
 from src.commands.schedule import Schedule
 from src.commands.message import Message
 from src.commands.subscribe import Subscribe
+from src.services.sonarr import Sonarr
+from src.services.radarr import Radarr
 
 from telegram import Update, BotCommand
 from telegram.ext import (
@@ -45,6 +47,8 @@ class Bot:
         self.schedule = Schedule(args, logger, self.function)
         self.message = Message(args, logger, self.function)
         self.subscribe = Subscribe(args, logger, self.function)
+        self.sonarr = Sonarr(logger)
+        self.radarr = Radarr(logger)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
         self.start.subscribe = self.subscribe
 
@@ -141,9 +145,9 @@ class Bot:
         self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
 
         # Enable the Schedule Job Queue
-        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=3600, first=0)
-        # self.application.job_queue.run_repeating(self.serie.scan_missing_media, interval=86400, first=0)
-        # self.application.job_queue.run_repeating(self.movie.scan_missing_media, interval=86400, first=0)
+        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=1800, first=0)
+        self.application.job_queue.run_repeating(self.sonarr.scan_missing_media, interval=86400, first=0)
+        self.application.job_queue.run_repeating(self.radarr.scan_missing_media, interval=86400, first=0)
 
         # Start the bot
         self.application.run_polling(

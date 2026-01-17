@@ -40,7 +40,7 @@ class Sonarr(ArrApiHandler):
         # Return the data
         return response
 
-    async def scan_missing_media(self) -> Union[list[dict], dict]:
+    async def scan_missing_media(self, context=None) -> Union[list[dict], dict]:
         """ Function that scans for missing monitored series """
 
         # Set payload
