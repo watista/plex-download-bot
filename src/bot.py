@@ -17,6 +17,7 @@ from src.commands.subscribe import Subscribe
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
 
+from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict
 from telegram import Update, BotCommand
 from telegram.ext import (
     CommandHandler,
@@ -166,9 +167,34 @@ class Bot:
 
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
         """ Function for unexpted errors """
-        error_message = "".join(traceback.format_exception(
-            None, context.error, context.error.__traceback__))
-        await self.log.logger(f"Error happened with Telegram dispatcher\n{error_message}", False, "error")
+
+        # the actual exception object
+        err = context.error
+
+        # --- handle specific errors first ---
+        if isinstance(err, RetryAfter):
+            await self.log.logger(f"Rate limited by Telegram. Retry after {err.retry_after} seconds.", False, "warning", False)
+            return
+
+        if isinstance(err, TimedOut):
+            await self.log.logger("Telegram request timed out.", False, "warning", False)
+            return
+
+        if isinstance(err, NetworkError):
+            await self.log.logger(f"Network error while calling Telegram: {err}", False, "warning", False)
+            return
+
+        if isinstance(err, Conflict):
+            await self.log.logger("Telegram Conflict: Another bot instance is running.", False, "warning", False)
+            return
+
+        if isinstance(err, TelegramError):
+            await self.log.logger(f"TelegramError: {err}", False, "error")
+            return
+
+        # --- fallback: log full traceback for unknown errors ---
+        error_message = "".join(traceback.format_exception(None, err, err.__traceback__))
+        await self.log.logger(f"Unexpected error happened with Telegram dispatcher\n{error_message}", False, "error")
 
     async def stop(self, update: Update, context: CallbackContext) -> None:
         """ Cancel command """

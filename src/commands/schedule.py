@@ -7,6 +7,7 @@ import aiofiles
 from pathlib import Path
 from datetime import datetime, timezone
 from telegram.ext import CallbackContext
+from typing import Any
 
 from src.services.radarr import Radarr
 from src.services.sonarr import Sonarr
@@ -253,7 +254,7 @@ class Schedule:
         return season_count
 
 
-    def seasons_present_in_folder(self, media_folder) -> set[int]:
+    def seasons_present_in_folder(self, media_folder: Path) -> tuple[set[str], set[int]]:
         season_re = re.compile(r"S(\d{2})", re.IGNORECASE)
         seasons_name = set()
         seasons_count = set()
@@ -274,7 +275,7 @@ class Schedule:
         return max(episodes)
 
 
-    async def check_requirements(self, media_json, media_id):
+    async def check_requirements(self, media_json: Any, media_id: str | int) -> tuple[bool, Path | None, dict | None]:
         """
         Returns True of False if requirements are met.
         """
@@ -302,7 +303,7 @@ class Schedule:
         return True, media_folder, media_json
 
 
-    def format_episode_list(self, episodes: list[str]) -> str:
+    def format_episode_list(self, episodes) -> str:
         """
         Input:  ["S01E02", "S01E03", "S01E04"]
         Output: "Seizoen 1, Episode 2, 3 & 4"

@@ -3,8 +3,6 @@
 import json
 import asyncio
 import aiofiles
-from datetime import datetime
-from typing import Union, Optional
 from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
@@ -212,12 +210,12 @@ class Subscribe:
         media_json = self.first_item(await self.sonarr.lookup_by_tmdbid(serie_id))
         title = media_json.get("title") if media_json else f"Serie {serie_id}"
 
-        await self.function.send_message(f"✅ Je bent nu afgemeld voor *{self.function.sanitize_text(title)}*",update, context)
+        await self.function.send_message(f"✅ Je bent nu afgemeld voor serie updates van *{self.function.sanitize_text(title)}*",update, context)
         await self.log.logger(f"*ℹ️ User has ubsubscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         return ConversationHandler.END
 
 
-    def first_item(self, obj):
+    def first_item(self, obj) -> dict | None:
         if not obj:
             return None
         if isinstance(obj, list):
