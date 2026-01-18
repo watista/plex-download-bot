@@ -5,3 +5,36 @@
 
 
 - in dot-env, alle mogelijke paden meegeven
+
+
+
+*🎉 Nieuwe update voor de Plęx Bot! 🎉*
+Afgelopen tijd is er flink gewerkt aan verbeteringen en nieuwe functies van de bot. Dit is er nieuw en gewijzigd:
+
+*✅ Meldingen voor nieuwe seizoenen*
+Krijg automatisch een bericht zodra er een nieuw seizoen beschikbaar is van een serie die je hebt aangevraagd.
+
+*✅ Meldingen voor nieuwe afleveringen*
+Wil je als eerste weten wanneer een nieuwe aflevering online staat?
+Je kunt je nu aanmelden voor serie updates en ontvangt direct een melding zodra een aflevering klaarstaat.
+
+*📌 Hoe meld je je aan?*
+➡️ Bij het aanvragen van een nieuwe serie krijg je de optie om je te abonneren op updates van nieuwe afleveringen.
+➡️ Stuur */aanmelden* om updates te ontvangen van nieuwe afleveringen van series die al gedownløad zijn.
+
+*📌 Toch geen meldingen meer?*
+➡️ Stuur */afmelden* om je weer af te melden.
+
+*✅ Updates bij kwaliteits-aanvragen*
+Heb je een melding gedaan omdat er iets mis was met een film of serie?
+Vanaf nu krijg je een bericht zodra er een nieuwe (verbeterde) versie online staat. 🔥
+
+*✅ Meer opties bij kwaliteitsproblemen*
+Je kunt nu uit meer keuzes selecteren wat er mis is met een downløad.
+Staat jouw probleem er niet tussen? Dan kun je dat ook aangeven 🛠️
+
+*🐛 Bugfixes & verbeteringen*
+Een hoop bugs zijn opgelost waardoor de bot stabieler is en minder vaak vastloopt.
+
+*ℹ️ Wil je zien wat de bot allemaal kan?*
+Stuur /help voor een overzicht van alle functies.

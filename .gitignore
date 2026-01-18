@@ -13,6 +13,7 @@ stats.dev.json
 test/
 test/*
 bot_state.pkl
+*.bak
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
