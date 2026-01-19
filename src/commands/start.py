@@ -40,6 +40,12 @@ class Start:
             ],
             [
                 InlineKeyboardButton("💁 Informatie", callback_data="info")
+            ],
+            [
+                InlineKeyboardButton("✅ Serie updates", callback_data="aanmelden")
+            ],
+            [
+                InlineKeyboardButton("❌ Serie updates", callback_data="afmelden")
             ]
         ])
 
@@ -55,9 +61,17 @@ class Start:
         if update.message and update.message.text.startswith("/aanmelden"):
             await self.log.logger(f"User started bot with /aanmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
             context.user_data["media_option"] = "aanmelden"
+        elif update.callback_query.data == "aanmelden":
+            await self.log.logger(f"User started bot with /aanmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "aanmelden"
+            await update.callback_query.answer()
         elif update.message and update.message.text.startswith("/afmelden"):
             await self.log.logger(f"User started bot with /afmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
             context.user_data["media_option"] = "afmelden"
+        elif update.callback_query.data == "afmelden":
+            await self.log.logger(f"User started bot with /afmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "afmelden"
+            await update.callback_query.answer()
         else:
             context.user_data["media_option"] = update.callback_query.data
             await update.callback_query.answer()

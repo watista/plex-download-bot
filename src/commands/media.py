@@ -354,10 +354,7 @@ class Media(ABC):
             return False
 
         # Create the download payload
-        try:
-            set_monitored = context.user_data["set_monitored"]
-        except NameError:
-            set_monitored = True
+        set_monitored = context.user_data.get("set_monitored", True)
         payload = await self.create_download_payload(context.user_data['media_data'], download_folder, set_monitored)
 
         # Check if payload creation was succesfull
