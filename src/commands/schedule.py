@@ -94,13 +94,17 @@ class Schedule:
                         else:
                             await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{sanitize_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
                         # Write to log
-                        await self.log.logger(f"*ℹ️ Notify: The {media_type} {sanitize_title} is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
+                        await self.log.logger(f"*ℹ️ User notified: The {media_type} {sanitize_title} ({media_id}) is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
 
                         # If it's a series: initialize recurring tracking
                         if media_type == "serie":
                             ended = bool(media_json.get("ended", False))
 
                             if not ended:
+                                # Only do this if serie_episode tracking exists; otherwise skip
+                                if "serie_episode" not in media_types:
+                                    continue
+
                                 seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
                                 max_seen = max(seasons_count) if seasons_count else 0
 
