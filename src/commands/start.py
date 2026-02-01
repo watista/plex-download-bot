@@ -177,7 +177,7 @@ class Start:
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        print(update.callback_query.data)
+        await self.log.logger(update.callback_query.data, False, "info")
 
         if not context.user_data.get("media_option") or update.callback_query.data == "account_request":
             await update.callback_query.answer()
