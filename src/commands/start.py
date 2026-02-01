@@ -178,7 +178,7 @@ class Start:
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        if not context.user_data.get("media_option"):
+        if not context.user_data.get("media_option") or update.callback_query.data == "account_request":
             await update.callback_query.answer()
             await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)
