@@ -28,6 +28,9 @@ class Start:
         # Debug usage log
         await self.log.logger(f"User started bot with /start - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
 
+        # Clear previous choices
+        context.user_data.pop("media_option", None)
+
         # Create the options keyboard
         reply_markup = InlineKeyboardMarkup([
             [
@@ -177,10 +180,11 @@ class Start:
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
-        await self.log.logger(update.callback_query.data, False, "info")
-
-        if not context.user_data.get("media_option") or update.callback_query.data == "account_request":
+        if update.callback_query:
+            context.user_data["media_option"] = update.callback_query.data
             await update.callback_query.answer()
+
+        if context.user_data["media_option"] == "account_request":
             await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)
             await self.function.send_message(f"Om te beginnen, hoe mag ik je noemen?", update, context)
