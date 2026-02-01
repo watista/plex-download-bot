@@ -118,10 +118,13 @@ class Log:
                         disable_web_page_preview=False,
                         disable_notification=silent
                     )
+                    break
                 except TelegramError as e:
                     logging.error(f"Telegram API error: {e}", exc_info=True)
+                    break
                 except Exception as e:
                     logging.error(f"Unexpected error while sending Telegram message: {e}", exc_info=True)
+                    break
 
 
     def clean_message(self, msg: str) -> str:

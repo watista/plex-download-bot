@@ -214,12 +214,12 @@ class Serie(Media):
 
         # Set to newest episode available
         try:
-            media_folder = Path(context.user_data['media_data']["path"])
+            media_folder = Path(context.user_data["media_data"]["path"])
             latest = max(self.function.episodes_present_in_folder(media_folder), default="S00E00")
             entry["last"] = latest
         except KeyError as e:
             entry["last"] = "S00E00"
-            await self.log.logger(f"*ℹ️ No Path found is JSON for {e}. See logs for more details.", False, "error")
+            await self.log.logger(f"*ℹ️ No Path is found in JSON for {self.function.sanitize_text(e)}. See logs for more details.", False, "error")
             await self.log.logger(f"Media JSON:\n{context.user_data['media_data']}", False, "error", False)
 
         # Save JSON
