@@ -35,8 +35,7 @@ class Start:
                 InlineKeyboardButton("📺 Serie", callback_data="serie_request")
             ],
             [
-                InlineKeyboardButton(
-                    "🆕 Nieuw account", callback_data="account_request")
+                InlineKeyboardButton("🆕 Nieuw account", callback_data="account_request")
             ],
             [
                 InlineKeyboardButton("💁 Informatie", callback_data="info")
@@ -177,6 +176,8 @@ class Start:
         return VERIFY_PWD
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
+
+        print(update.callback_query.data)
 
         if not context.user_data.get("media_option") or update.callback_query.data == "account_request":
             await update.callback_query.answer()
