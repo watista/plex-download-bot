@@ -106,12 +106,16 @@ class Media(ABC):
             overview = item.get('overview', 'Geen beschrijving beschikbaar')
             sanitize_overview = self.function.sanitize_text(overview)
             remote_poster = item.get('remotePoster')
+            if context.user_data['label'] == "serie":
+                score = item.get('ratings', {}).get('value', 'Score onbekend')
+            else:
+                score = item.get('ratings', {}).get('imdb', {}).get('value', 'Score onbekend')
 
             # Send message based on remote_poster availability
             if remote_poster:
-                await self.function.send_image(f"*Optie {counter + 1} - {sanitize_title} ({year})*\n\n{sanitize_overview}", remote_poster, update, context)
+                await self.function.send_image(f"*Optie {counter + 1} - {sanitize_title} ({year})*\n*IMDB: {score} ⭐️*\n\n{sanitize_overview}", remote_poster, update, context)
             else:
-                await self.function.send_message(f"*Optie {counter + 1} - {sanitize_title} ({year})*\n\n{sanitize_overview}", update, context)
+                await self.function.send_message(f"*Optie {counter + 1} - {sanitize_title} ({year})*\n*IMDB: {score} ⭐️*\n\n{sanitize_overview}", update, context)
 
             # Bump counter
             counter += 1
