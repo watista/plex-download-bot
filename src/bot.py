@@ -150,8 +150,8 @@ class Bot:
 
         # Enable the Schedule Job Queue
         self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=1800, first=0)
-        self.application.job_queue.run_repeating(self.sonarr.scan_missing_media, interval=86400, first=0)
-        self.application.job_queue.run_repeating(self.radarr.scan_missing_media, interval=86400, first=0)
+        self.application.job_queue.run_repeating(self.sonarr.scan_missing_media, interval=21600, first=0)
+        self.application.job_queue.run_repeating(self.radarr.scan_missing_media, interval=21600, first=0)
 
         # Start the bot
         self.application.run_polling(
