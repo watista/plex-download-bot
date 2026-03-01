@@ -122,6 +122,7 @@ class Functions:
 
     # Sanitize text and remove _ and *
     def sanitize_text(self, text: str) -> str:
+        text = str(text)
         return text.replace("*", "").replace("_", "")
 
 
