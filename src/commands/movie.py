@@ -6,7 +6,7 @@ from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.states import MOVIE_OPTION, MOVIE_NOTIFY, MOVIE_UPGRADE, MOVIE_UPGRADE_INFO
+from src.states import MOVIE_OPTION, MOVIE_NOTIFY, MOVIE_UPGRADE, MOVIE_UPGRADE_INFO, MOVIE_UPGRADE_INFO_OTHER
 from src.commands.media import Media
 from src.services.radarr import Radarr
 
@@ -95,7 +95,7 @@ class Movie(Media):
         # Answer query
         await update.callback_query.answer()
 
-        if update.callback_query.data == f"film_upgrade_no":
+        if update.callback_query.data == "film_upgrade_no":
             # Finish conversation if chosen
             await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
             return ConversationHandler.END
@@ -128,13 +128,26 @@ class Movie(Media):
             # Return to the next state
             return MOVIE_UPGRADE_INFO
 
-    async def media_upgrade_info(self, update: Update, context: CallbackContext) -> None:
+    async def media_upgrade_info(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the specific info about the media upgrade """
 
         # Answer query
         await update.callback_query.answer()
 
+        if update.callback_query.data == "other":
+            #
+            await self.function.send_message(f"Beschrijf wat er mis is met de film a.u.b.", update, context)
+            return MOVIE_UPGRADE_INFO_OTHER
+
         # Send the confirmation message and notify option
         await self.log.logger(f"*⚠️ User did a quality request for {context.user_data['media_data']['title']} ({context.user_data['media_data']['tmdbId']}) ⚠️*\nReason: {update.callback_query.data}\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.function.send_message(f"Duidelijk! De film zal zo snel mogelijk worden geüpgraded. Je ontvangt een bericht zodra dit is gedaan.", update, context)
+        return ConversationHandler.END
+
+    async def media_upgrade_info_other(self, update: Update, context: CallbackContext) -> None:
+        """ Handles the specific info about the media upgrade """
+
+        # Send the confirmation message and notify option
+        await self.log.logger(f"*⚠️ User did a quality request for {context.user_data['media_data']['title']} ({context.user_data['media_data']['tmdbId']}) ⚠️*\nReason: {update.message.text}\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
         await self.function.send_message(f"Duidelijk! De film zal zo snel mogelijk worden geüpgraded. Je ontvangt een bericht zodra dit is gedaan.", update, context)
         return ConversationHandler.END
