@@ -75,7 +75,7 @@ class Account:
         await asyncio.sleep(1)
         await self.function.send_message(f"Ik ga je toevoegen aan de Plęx server, je kan dan Plęx via de mobiele app bekijken of via <a href='https://server.wouterpaas.nl/'>server.wouterpaas.nl</a> in de browser. Als je direct vanaf de App wilt kijken moet je een Plęx Pass kopen, streamen vanaf de App is gratis.", update, context, None, "HTML")
         await asyncio.sleep(1)
-        await self.function.send_message(f"De eerste maand is gratis en kan je het even uitproberen, daarna worden de kosten 15 euro per jaar om de stroomkosten te compenseren van de server. Hiervoor stuur ik een Tikkie naar je telefoonnummer.", update, context)
+        await self.function.send_message(f"De eerste maand is gratis en kan je het even uitproberen, daarna worden de kosten 20 euro per jaar om de stroomkosten te compenseren van de server. Hiervoor stuur ik een Tikkie naar je telefoonnummer.", update, context)
         await asyncio.sleep(1)
         await self.function.send_message(f"Je ontvangt dan ook een wachtwoord om series en films aan te vragen via deze bot. Hiermee kan je series of films die je mist aanvragen, deze worden dan automatisch gedownløad.", update, context)
         await asyncio.sleep(1)
