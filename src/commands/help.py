@@ -122,7 +122,7 @@ class Help:
         # Send messages
         await self.function.send_message("Heb je net een nieuw account en kom je ergens niet uit? Hier wat extra info over de meest voorkomende vragen:", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("*Hoeveel kost Plęx?*\n\nPlęx is de eerste maand gratis om uit te proberen, daarna kost het 20 euro per jaar om de stroomkosten van de server te compenseren.", update, context)
+        await self.function.send_message("*Hoeveel kost Plęx?*\n\nPlęx is de eerste maand gratis om uit te proberen, daarna kost het 20 euro per jaar om de stroomkosten en opslag van de server te compenseren.", update, context)
         await asyncio.sleep(1)
         await self.function.send_message("*Kan ik vanaf mijn mobiel Plęx kijken?*\n\nAls je de Plęx app gebruikt kan je niet direct op je mobiel kijken, hiervoor moet je (eenmalig) de Plęx app kopen. Streamen naar een TV vanaf de Plęx app is wel gratis. Als je toch Plęx wilt kijken op je mobiel en je wilt niet betalen kan vanaf je browser op je mobiel kijken, ga hiervoor naar https://server.wouterpaas.nl/", update, context)
         await asyncio.sleep(1)
