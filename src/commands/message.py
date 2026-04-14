@@ -83,7 +83,13 @@ class Message:
     async def message_start(self, update: Update, context: CallbackContext) -> int:
 
         # Debug usage log
-        await self.log.logger(f"User started bot with /message - Gebruiker: {context.user_data["gebruiker"]} - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "debug", False)
+        gebruiker = context.user_data.get("gebruiker", "Onbekend")
+        await self.log.logger(
+            f"User started bot with /message - Gebruiker: {gebruiker} - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}",
+            False,
+            "debug",
+            False,
+        )
 
         # Send the message
         await self.function.send_message(f"Naar welk Telegram ID wil je een bericht sturen?", update, context)
@@ -127,7 +133,13 @@ class Message:
     async def message_all(self, update: Update, context: CallbackContext) -> int:
 
         # Debug usage log
-        await self.log.logger(f"User started bot with /message_all - Gebruiker: {context.user_data["gebruiker"]} - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "debug", False)
+        gebruiker = context.user_data.get("gebruiker", "Onbekend")
+        await self.log.logger(
+            f"User started bot with /message_all - Gebruiker: {gebruiker} - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}",
+            False,
+            "debug",
+            False,
+        )
 
         # Send the message
         await self.function.send_message(f"Wat is het bericht dat je wilt sturen?", update, context)
@@ -178,7 +190,13 @@ class Message:
     async def add_movie(self, update: Update, context: CallbackContext) -> int:
 
         # Debug usage log
-        await self.log.logger(f"User started bot with /add_movie - Gebruiker: {context.user_data["gebruiker"]} - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "debug", False)
+        gebruiker = context.user_data.get("gebruiker", "Onbekend")
+        await self.log.logger(
+            f"User started bot with /add_movie - Gebruiker: {gebruiker} - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}",
+            False,
+            "debug",
+            False,
+        )
 
         # Send the message
         await self.function.send_message(f"Voor welk Telegram ID wil je een film toevoegen?", update, context)

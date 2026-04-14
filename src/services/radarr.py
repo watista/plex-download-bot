@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
-import json
 import os
 from typing import Union
+from urllib.parse import quote
 from src.services.arr import ArrApiHandler
 
 
@@ -16,7 +16,7 @@ class Radarr(ArrApiHandler):
         """ Function that does a movie lookup """
 
         # Build url_string and make the request
-        response = await self.get(f"/movie/lookup?term={movie_name}")
+        response = await self.get(f"/movie/lookup?term={quote(movie_name, safe='')}")
 
         # Check if return value is empty
         if response is False:

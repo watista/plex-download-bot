@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
-import json
 import os
 from typing import Union
+from urllib.parse import quote
 from src.services.arr import ArrApiHandler
 
 
@@ -16,7 +16,7 @@ class Sonarr(ArrApiHandler):
         """ Function that does a serie lookup """
 
         # Build url_string and make the request
-        response = await self.get(f"/series/lookup?term={serie_name}")
+        response = await self.get(f"/series/lookup?term={quote(serie_name, safe='')}")
 
         # Check if return value is empty
         if response is False:

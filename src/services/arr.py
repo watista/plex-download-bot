@@ -6,6 +6,7 @@ import traceback
 import asyncio
 from typing import Union
 from abc import ABC, abstractmethod
+from aiohttp import ClientError, ClientTimeout, ContentTypeError
 
 
 class ArrApiHandler(ABC):
@@ -37,18 +38,24 @@ class ArrApiHandler(ABC):
     async def get(self, url_string: str) -> Union[dict, bool]:
         """ Handles the GET requests asynchronously using aiohttp """
 
-        # Build request URL
-        url = f"{self.base_url}{url_string}&apikey={self.token}"
+        # Build request URL (apikey via params to avoid leaking in logs)
+        url = f"{self.base_url}{url_string}"
+        params = {"apikey": self.token}
+        timeout = ClientTimeout(total=30)
 
         # Make the async request
         for attempt in range(1, 3 + 1):
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as response:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, params=params) as response:
 
-                        # Continue if ok
-                        if response.ok:
-                            return await response.json()
+                        # Continue if 2xx
+                        if 200 <= response.status < 300:
+                            try:
+                                return await response.json()
+                            except ContentTypeError:
+                                # Some endpoints may return non-JSON on success
+                                return {"raw": await response.text()}
 
                         # Retry if 5xx
                         if response.status in (500, 502, 503, 504):
@@ -70,7 +77,7 @@ class ArrApiHandler(ABC):
                         return False
 
             # Log and send Telegram message if anything went wrong
-            except Exception as e:
+            except (ClientError, asyncio.TimeoutError) as e:
 
                 if attempt < 3:
                     await asyncio.sleep(3)
@@ -81,33 +88,59 @@ class ArrApiHandler(ABC):
                     False, "error", False
                 )
                 return False
+            except Exception as e:
+                await self.log.logger(
+                    f"Unexpected error during {self.label} API GET request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url}",
+                    False, "error", False
+                )
+                return False
 
     async def post(self, url_string: str, payload: dict) -> Union[dict, bool]:
         """ Handles the POST requests asynchronously using aiohttp """
 
-        # Build request URL
-        url = f"{self.base_url}{url_string}&apikey={self.token}"
+        # Build request URL (apikey via params to avoid leaking in logs)
+        url = f"{self.base_url}{url_string}"
+        params = {"apikey": self.token}
+        timeout = ClientTimeout(total=30)
 
         # Make the async request
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers={'Content-Type': 'application/json'}) as response:
-                    # Log and send Telegram message if request was unsuccesfull
-                    if not response.ok:
+        for attempt in range(1, 3 + 1):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, params=params, json=payload) as response:
+                        # Continue if 2xx
+                        if 200 <= response.status < 300:
+                            try:
+                                return await response.json()
+                            except ContentTypeError:
+                                return {"raw": await response.text()}
+
+                        # Retry if 5xx
+                        if response.status in (500, 502, 503, 504) and attempt < 3:
+                            await asyncio.sleep(3)
+                            continue
+
                         await self.log.logger(
                             f"Not OK response for {self.label} API POST. Error: {response.status} {response.reason} {await response.text()} - URL: {url} - Payload: {payload}",
                             False, "error", False
                         )
                         return False
-                    return await response.json()
 
-        # Log and send Telegram message if anything went wrong
-        except Exception as e:
-            await self.log.logger(
-                f"Error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url} - Payload: {payload}",
-                False, "error", False
-            )
-            return False
+            except (ClientError, asyncio.TimeoutError) as e:
+                if attempt < 3:
+                    await asyncio.sleep(3)
+                    continue
+                await self.log.logger(
+                    f"Error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url} - Payload: {payload}",
+                    False, "error", False
+                )
+                return False
+            except Exception as e:
+                await self.log.logger(
+                    f"Unexpected error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url} - Payload: {payload}",
+                    False, "error", False
+                )
+                return False
 
     async def get_disk_space(self) -> Union[list[dict], dict]:
         """ Makes a GET request to get the disk space """
