@@ -44,10 +44,12 @@ class Start:
                 InlineKeyboardButton("💁 Informatie", callback_data="info")
             ],
             [
-                InlineKeyboardButton("✅ Serie updates", callback_data="aanmelden")
+                InlineKeyboardButton("✅ Serie updates", callback_data="aanmelden_serie"),
+                InlineKeyboardButton("❌ Serie updates", callback_data="afmelden_serie"),
             ],
             [
-                InlineKeyboardButton("❌ Serie updates", callback_data="afmelden")
+                InlineKeyboardButton("✅ Algemene updates", callback_data="aanmelden_updates"),
+                InlineKeyboardButton("❌ Algemene updates", callback_data="afmelden_updates"),
             ]
         ])
 
@@ -60,19 +62,19 @@ class Start:
     async def verification(self, update: Update, context: CallbackContext) -> Optional[int]:
 
         # check if it's called with aan/afmelden or /start
-        if update.message and update.message.text.startswith("/aanmelden"):
-            await self.log.logger(f"User started bot with /aanmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "aanmelden"
-        elif update.callback_query.data == "aanmelden":
-            await self.log.logger(f"User started bot with /aanmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "aanmelden"
+        if update.message and update.message.text.startswith("/aanmelden_serie"):
+            await self.log.logger(f"User started bot with /aanmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "aanmelden_serie"
+        elif update.callback_query and update.callback_query.data == "aanmelden_serie":
+            await self.log.logger(f"User started bot with /aanmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "aanmelden_serie"
             await update.callback_query.answer()
-        elif update.message and update.message.text.startswith("/afmelden"):
-            await self.log.logger(f"User started bot with /afmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "afmelden"
-        elif update.callback_query.data == "afmelden":
-            await self.log.logger(f"User started bot with /afmelden - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "afmelden"
+        elif update.message and update.message.text.startswith("/afmelden_serie"):
+            await self.log.logger(f"User started bot with /afmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "afmelden_serie"
+        elif update.callback_query and update.callback_query.data == "afmelden_serie":
+            await self.log.logger(f"User started bot with /afmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+            context.user_data["media_option"] = "afmelden_serie"
             await update.callback_query.answer()
         else:
             context.user_data["media_option"] = update.callback_query.data
@@ -137,6 +139,9 @@ class Start:
 
                 # Write user_id to json
                 json_data["user_id"][str(update.effective_user.id)] = f"{key}, {update.effective_user.first_name}"
+                # Default: user is subscribed to general update messages
+                json_data.setdefault("update_messages", {})
+                json_data["update_messages"][str(update.effective_user.id)] = True
                 async with aiofiles.open(self.data_json, "w") as file:
                     await file.write(json.dumps(json_data, indent=4))
 
@@ -197,9 +202,9 @@ class Start:
             context.user_data["media_type"] = "movie"
             await self.function.send_message(f"Welke film wil je graag op Plęx zien?", update, context)
             return REQUEST_MOVIE
-        elif context.user_data["media_option"] == "aanmelden":
+        elif context.user_data["media_option"] == "aanmelden_serie":
             return await self.subscribe.aanmelden(update, context)
-        elif context.user_data["media_option"] == "afmelden":
+        elif context.user_data["media_option"] == "afmelden_serie":
             return await self.subscribe.afmelden(update, context)
         else:
             # Send msg to user + logging

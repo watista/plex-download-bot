@@ -19,6 +19,65 @@ class Message:
         self.args = args
         self.log = logger
         self.function = functions
+        self.data_json = "data.json" if args.env == "live" else "data.dev.json"
+
+    async def _load_data(self) -> dict:
+        async with aiofiles.open(self.data_json, "r") as file:
+            data = json.loads(await file.read())
+
+        return data
+
+    async def _save_data(self, data: dict) -> None:
+        async with aiofiles.open(self.data_json, "w") as file:
+            await file.write(json.dumps(data, indent=4))
+
+    @staticmethod
+    def _is_broadcast_subscribed(data: dict, user_id: str) -> bool:
+        # Default: subscribed unless explicitly turned off
+        subs = data.get("update_messages", {})
+        if not isinstance(subs, dict):
+            return True
+        return subs.get(user_id, True) is True
+
+    async def updates_subscribe(self, update: Update, context: CallbackContext) -> int:
+        if update.callback_query:
+            await update.callback_query.answer()
+
+        data = await self._load_data()
+        subs = data.setdefault("update_messages", {})
+        user_id = str(update.effective_user.id)
+        was_subscribed = subs.get(user_id, True) is True
+        subs[user_id] = True
+        await self._save_data(data)
+
+        await self.function.send_message(
+            "Je stond al aangemeld voor algemene updates van de serverbeheerder."
+            if was_subscribed
+            else "Je bent nu aangemeld voor algemene updates van de serverbeheerder.",
+            update,
+            context,
+        )
+        return ConversationHandler.END
+
+    async def updates_unsubscribe(self, update: Update, context: CallbackContext) -> int:
+        if update.callback_query:
+            await update.callback_query.answer()
+
+        data = await self._load_data()
+        subs = data.setdefault("update_messages", {})
+        user_id = str(update.effective_user.id)
+        was_subscribed = subs.get(user_id, True) is True
+        subs[user_id] = False
+        await self._save_data(data)
+
+        await self.function.send_message(
+            "Je bent nu afgemeld voor algemene updates van de serverbeheerder."
+            if was_subscribed
+            else "Je stond al afgemeld voor algemene updates van de serverbeheerder.",
+            update,
+            context,
+        )
+        return ConversationHandler.END
 
 
     async def message_start(self, update: Update, context: CallbackContext) -> int:
@@ -80,8 +139,6 @@ class Message:
     async def message_all_id(self, update: Update, context: CallbackContext) -> None:
 
         # Send the message to all users
-        self.data_json = "data.json" if self.args.env == "live" else "data.dev.json"
-
         # if dev
         if self.args.env != "live":
             await self.function.send_message(update.message.text, os.getenv('CHAT_ID_ADMIN'), context, None, "MarkdownV2", False)
@@ -89,20 +146,30 @@ class Message:
             return ConversationHandler.END
 
         # Load JSON file
-        async with aiofiles.open(self.data_json, "r") as file:
-            json_data = json.loads(await file.read())
+        json_data = await self._load_data()
 
         # Send the message for all users
-        for key in json_data["user_id"]:
+        subscribed_count = 0
+        skipped_count = 0
+
+        for key in json_data.get("user_id", {}):
+            if not self._is_broadcast_subscribed(json_data, str(key)):
+                skipped_count += 1
+                continue
             try:
                 await self.function.send_message(update.message.text, key, context, None, "MarkdownV2", False)
+                subscribed_count += 1
             except TelegramError as e:
                 await self.log.logger(f"Error happened during message_all to {key}, see the logs for more info.", False, "error")
                 await self.log.logger(f"Exception: {e}", False, "error", False)
             await asyncio.sleep(1)
 
         # Send the message
-        await self.function.send_message(f"Berichten zijn verstuurd.", update, context)
+        await self.function.send_message(
+            f"Berichten zijn verstuurd.\n\nVerstuurd naar: {subscribed_count}\nOvergeslagen (afgemeld): {skipped_count}",
+            update,
+            context,
+        )
 
         # End convo
         return ConversationHandler.END

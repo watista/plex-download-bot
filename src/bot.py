@@ -76,8 +76,10 @@ class Bot:
             # entry_points=[CommandHandler("start", self.start.start_msg)],
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
-                          CommandHandler("aanmelden", self.start.verification),
-                          CommandHandler("afmelden", self.start.verification),
+                          CommandHandler("aanmelden_serie", self.start.verification),
+                          CommandHandler("afmelden_serie", self.start.verification),
+                          CommandHandler("aanmelden_updates", self.message.updates_subscribe),
+                          CommandHandler("afmelden_updates", self.message.updates_unsubscribe),
                           CommandHandler("message", self.message.message_start, filters.User(self.allowed_users)),
                           CommandHandler("message_all", self.message.message_all, filters.User(self.allowed_users)),
                           CommandHandler("add_movie", self.message.add_movie, filters.User(self.allowed_users)),
@@ -85,7 +87,11 @@ class Bot:
             states={
                 VERIFY: [
                     CallbackQueryHandler(
-                        self.start.verification, pattern="^(movie_request|serie_request|aanmelden|afmelden)$"),
+                        self.start.verification, pattern="^(movie_request|serie_request|aanmelden_serie|afmelden_serie)$"),
+                    CallbackQueryHandler(
+                        self.message.updates_subscribe, pattern="^aanmelden_updates$"),
+                    CallbackQueryHandler(
+                        self.message.updates_unsubscribe, pattern="^afmelden_updates$"),
                     CallbackQueryHandler(
                         self.start.parse_request, pattern="^account_request$"),
                     CallbackQueryHandler(
@@ -162,8 +168,10 @@ class Bot:
         """ Create and publish command list """
         command_list = [
             BotCommand("start", "Commando om de bot te starten"),
-            BotCommand("aanmelden", "Aanmelden op nieuwe serie afleveringen"),
-            BotCommand("afmelden", "Afmelden op nieuwe serie afleveringen"),
+            BotCommand("aanmelden_serie", "Aanmelden op nieuwe serie afleveringen"),
+            BotCommand("afmelden_serie", "Afmelden op nieuwe serie afleveringen"),
+            BotCommand("aanmelden_updates", "Aanmelden op algemene updates"),
+            BotCommand("afmelden_updates", "Afmelden op algemene updates"),
             BotCommand("help", "Krijg alle informatie te zien van deze bot"),
             BotCommand("privacy", "Toont de privacy policy van de bot")
         ]

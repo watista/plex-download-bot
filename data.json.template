@@ -2,5 +2,6 @@
     "users": {},
     "user_id": {},
     "blocked_users": {},
-    "notify_list": {}
+    "notify_list": {},
+    "update_messages": {}
 }
