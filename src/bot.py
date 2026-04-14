@@ -139,7 +139,9 @@ class Bot:
                 ADD_MOVIE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_id)],
             },
             fallbacks=[CommandHandler("stop", self.stop)],
-            conversation_timeout=1800
+            conversation_timeout=1800,
+            per_chat=True,
+            per_user=True
         )
         )
 

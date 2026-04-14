@@ -17,7 +17,7 @@ class Functions:
     async def send_message(self, text: str, update, context, reply_markup=None, parse_mode='MarkdownV2', regular=True) -> None:
 
         # Check if the user_id is regular or special
-        chat_id = update.effective_user.id if regular else update
+        chat_id = update.effective_chat.id if regular else update
 
         # Split all words on spaces
         words = text.split(' ')
@@ -67,7 +67,7 @@ class Functions:
     async def send_gif(self, caption: str, animation, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
         try:
             await context.bot.send_animation(
-                chat_id=update.effective_user.id,
+                chat_id=update.effective_chat.id,
                 caption=self.escape_markdown(caption, parse_mode)[:1024],
                 animation=animation,
                 parse_mode=parse_mode,
@@ -76,7 +76,7 @@ class Functions:
         except RetryAfter as e:
             await asyncio.sleep(e.retry_after)
             await context.bot.send_animation(
-                chat_id=update.effective_user.id,
+                chat_id=update.effective_chat.id,
                 caption=self.escape_markdown(caption, parse_mode)[:1024],
                 animation=animation,
                 parse_mode=parse_mode,
@@ -91,7 +91,7 @@ class Functions:
     async def send_image(self, caption: str, photo, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
         try:
             await context.bot.send_photo(
-                chat_id=update.effective_user.id,
+                chat_id=update.effective_chat.id,
                 caption=self.escape_markdown(caption, parse_mode)[:1024],
                 photo=photo,
                 parse_mode=parse_mode,
@@ -100,7 +100,7 @@ class Functions:
         except RetryAfter as e:
             await asyncio.sleep(e.retry_after)
             await context.bot.send_photo(
-                chat_id=update.effective_user.id,
+                chat_id=update.effective_chat.id,
                 caption=self.escape_markdown(caption, parse_mode)[:1024],
                 photo=photo,
                 parse_mode=parse_mode,
