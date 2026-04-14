@@ -1,5 +1,3 @@
 - comments plaatsen overal waar nog niet is
 - boven elke functie zo'n ```functie tekst``` plaatsen
 - overal debug logging toevoegen
-- in function.py fixen dat bericht naar group teruggaat als daarin gepraat wordt
-- bot started message toevoegen

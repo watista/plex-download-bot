@@ -2,6 +2,7 @@
 
 import os
 import traceback
+from datetime import datetime
 
 from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID, AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE, AANMELDEN_SERIE, ADD_MOVIE, ADD_MOVIE_USER, MOVIE_UPGRADE_INFO_OTHER
 from src.functions import Functions
@@ -156,6 +157,7 @@ class Bot:
 
         # Run the publish command function
         self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
+        self.application.job_queue.run_once(lambda ctx: self.application.create_task(self.notify_admin_startup(ctx)), when=0)
 
         # Enable the Schedule Job Queue
         self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=1800, first=0)
@@ -178,6 +180,26 @@ class Bot:
             BotCommand("privacy", "Toont de privacy policy van de bot")
         ]
         await self.application.bot.set_my_commands(command_list)
+
+    async def notify_admin_startup(self, context: CallbackContext) -> None:
+        """Notify group chat(s) that the bot started."""
+        raw_group_id = os.getenv("CHAT_ID_GROUP")
+        if not raw_group_id:
+            return
+        try:
+            group_id = int(raw_group_id)
+        except ValueError:
+            await self.log.logger(f"Invalid CHAT_ID_GROUP value: {raw_group_id}", False, "warning", False)
+            return
+
+        started_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        env_label = "live" if self.args.env == "live" else "dev"
+        msg = f"✅ Bot gestart ({env_label}) om {started_at}."
+
+        try:
+            await self.function.send_message(msg, group_id, context, None, "MarkdownV2", False)
+        except Exception as e:
+            await self.log.logger(f"Failed to notify group startup to {group_id}: {e}", False, "warning", False)
 
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
         """ Function for unexpted errors """
