@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, ConversationHandler
 
-from src.states import REQUEST_AGAIN, AANMELDEN_SERIE
+from src.states import REQUEST_AGAIN, REQUEST_MOVIE, REQUEST_SERIE, AANMELDEN_SERIE
 from src.services.plex import Plex
 from src.commands.start import Start
 
@@ -152,8 +152,25 @@ class Media(ABC):
             await self.function.send_message(f"Oke, je kan de bot altijd opnieuw starten door /start te sturen.", update, context)
             return ConversationHandler.END
 
-        # Try again from start
-        return await self.start.parse_request(update, context)
+        # Try again based on the previously chosen media type
+        media_type = context.user_data.get("media_type")
+
+        # Clear previous attempt data (keep media_type so routing still works)
+        context.user_data.pop("requested_media", None)
+        context.user_data.pop("media_object", None)
+        context.user_data.pop("media_data", None)
+
+        if media_type == "serie":
+            await self.function.send_message("Welke serie wil je graag op Plęx zien?", update, context)
+            return REQUEST_SERIE
+
+        if media_type == "movie":
+            await self.function.send_message("Welke film wil je graag op Plęx zien?", update, context)
+            return REQUEST_MOVIE
+
+        # Fallback: unknown state, end safely
+        await self.function.send_message("Oeps, ik weet niet meer of je een film of serie aan het aanvragen was. Stuur /start om opnieuw te beginnen.", update, context)
+        return ConversationHandler.END
 
     async def media_option(self, update: Update, context: CallbackContext) -> Optional[int]:
         """ Handles the specific user media choice and downloads it """

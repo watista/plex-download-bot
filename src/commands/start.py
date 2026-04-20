@@ -208,6 +208,6 @@ class Start:
             return await self.subscribe.afmelden(update, context)
         else:
             # Send msg to user + logging
-            await self.function.send_message(f"*😵 *Oeps, daar ging iets fout*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
+            await self.function.send_message(f"*😵 Oeps, daar ging iets fout*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
             await self.log.logger(f"Error happened during request type query data parsing", False, "error", True)
             return ConversationHandler.END
