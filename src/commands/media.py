@@ -243,7 +243,7 @@ class Media(ABC):
 
                 # Inform owner about unmonitored series if defined
                 if "inform_unmonitored" in details:
-                    await self.log.logger(f"*ℹ️ User has requested {context.user_data['media_data']['title']} which has been marked as unmonitored ℹ️*\nGebruiker verwacht reactie of het wel/niet gedownload gaat worden.\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warn")
+                    await self.log.logger(f"*ℹ️ User has requested {context.user_data['media_data']['title']} which has been marked as unmonitored ℹ️*\nGebruiker verwacht reactie of het wel/niet gedownload gaat worden.\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "warning")
 
                 # Send the message if defined
                 if "message" in details:
