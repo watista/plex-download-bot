@@ -6,7 +6,7 @@ from typing import Any, Tuple
 
 from transmission_rpc import Client
 
-# In-memory only: used to detect down -> up without persisting to data.json.
+# Used to detect down -> up
 _last_transmission_up: bool | None = None
 
 

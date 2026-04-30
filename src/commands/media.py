@@ -279,8 +279,20 @@ class Media(ABC):
                     # Send the notify message
                     await self.ask_notify_question(update, context, "notify", f"Wil je een melding ontvangen als {context.user_data['media_data']['title']} online staat?")
 
-                # Info log
-                await self.log.logger(f"*ℹ️ User has requested the {context.user_data['label']} {context.user_data['media_data']['title']} - ({context.user_data['media_data']['tmdbId']}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                # Info log (films: include release year next to title when Radarr provides it)
+                md = context.user_data["media_data"]
+                title_for_log = md.get("title") or "Unknown title"
+                if context.user_data["label"] == "film":
+                    movie_year = md.get("year")
+                    if movie_year:
+                        title_for_log = f"{title_for_log} ({movie_year})"
+
+                await self.log.logger(
+                    f"*ℹ️ User has requested the {context.user_data['label']} {title_for_log} - ({md.get('tmdbId', 'unknown')}) ℹ️*\n"
+                    f"Gebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                    False,
+                    "info",
+                )
 
                 # Write to stats file
                 await self.write_to_stats(update, context)
