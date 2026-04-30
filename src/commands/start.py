@@ -190,9 +190,9 @@ class Start:
             await update.callback_query.answer()
 
         if context.user_data["media_option"] == "account_request":
-            await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat ik een account voor je kan aanmaken heb ik eerst wat informatie van je nodig.", update, context)
+            await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat er een account voor je aangemaakt kan worden, is er eerst wat informatie van je nodig.", update, context)
             await asyncio.sleep(1)
-            await self.function.send_message(f"Om te beginnen, hoe mag ik je noemen?", update, context)
+            await self.function.send_message(f"Om te beginnen, wat is je naam?", update, context)
             return REQUEST_ACCOUNT
         elif context.user_data["media_option"] == "serie_request":
             context.user_data["media_type"] = "serie"

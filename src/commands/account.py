@@ -25,7 +25,7 @@ class Account:
         # Send messages
         await self.function.send_message(f"Leuk je te ontmoeten {self.function.sanitize_text(update.message.text)} 😀", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message(f"Om toegang te krijgen tot Plęx, heb je een Plęx account nodig die ik aan mijn server kan toevoegen. Een Plęx account kan je aanmaken via <a href='https://plex.tv'>plex.tv</a>.", update, context, None, "HTML")
+        await self.function.send_message(f"Om toegang te krijgen tot Plęx, heb je een Plęx account nodig die aan de server toegevoegd kan worden. Een Plęx account kan je aanmaken via <a href='https://plex.tv'>plex.tv</a>.", update, context, None, "HTML")
         await asyncio.sleep(1)
         await self.function.send_message(f"Wat is het e-mailadres van je Plęx account?", update, context)
 
@@ -41,7 +41,7 @@ class Account:
         # Send messages
         await self.function.send_message(f"Oke staat genoteerd.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message(f"Ook niet geheel onbelangrijk, wat is je telefoonnummer? Deze heb ik nodig om je een Tikkie te sturen (hierover later meer).", update, context)
+        await self.function.send_message(f"Ook niet geheel onbelangrijk, wat is je telefoonnummer? Deze is nodig om een Tikkie naar toe te sturen (hierover later meer).", update, context)
 
         # Return to next state
         return REQUEST_ACCOUNT_PHONE
@@ -73,15 +73,15 @@ class Account:
         await asyncio.sleep(1)
         await self.function.send_message(f"Dat waren al mijn vragen, dan dan een paar huis, tuin en keuken mededelingen:", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message(f"Ik ga je toevoegen aan de Plęx server, je kan dan Plęx via de mobiele app bekijken of via <a href='https://server.wouterpaas.nl/'>server.wouterpaas.nl</a> in de browser. Als je direct vanaf de App wilt kijken moet je een Plęx Pass kopen, streamen vanaf de App is gratis.", update, context, None, "HTML")
+        await self.function.send_message(f"Je word toegevoegd aan de Plęx server, je kan dan Plęx via de mobiele app bekijken of via <a href='https://server.wouterpaas.nl/'>server.wouterpaas.nl</a> in de browser. Als je direct vanaf de App wilt kijken moet je een Plęx Pass kopen, streamen vanaf de App is gratis.", update, context, None, "HTML")
         await asyncio.sleep(1)
-        await self.function.send_message(f"De eerste maand is gratis en kan je het even uitproberen, daarna kost het 20 euro per jaar om de stroomkosten en opslag te compenseren van de server. Hiervoor stuur ik een Tikkie naar je telefoonnummer.", update, context)
+        await self.function.send_message(f"De eerste maand is gratis en kan je het even uitproberen, daarna kost het 20 euro per jaar om de stroomkosten en opslag te compenseren van de server. Hiervoor ontvang je en Tikkie op je eeder doorgegeven telefoonnummer.", update, context)
         await asyncio.sleep(1)
         await self.function.send_message(f"Je ontvangt dan ook een wachtwoord om series en films aan te vragen via deze bot. Hiermee kan je series of films die je mist aanvragen, deze worden dan automatisch gedownløad.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message(f"Heb je vragen over het gebruik van Plęx (en dan vooral de App)? Lees dan even de <a href='https://docs.wouterpaas.nl/'>documentatie</a> door die ik heb opgesteld.", update, context, None, "HTML")
+        await self.function.send_message(f"Heb je vragen over het gebruik van Plęx (en dan vooral de App)? Lees dan even de <a href='https://docs.wouterpaas.nl/'>documentatie</a> door die is opgesteld.", update, context, None, "HTML")
         await asyncio.sleep(1)
-        await self.function.send_message(f"Dat was alles, zoals gezegd zal ik je toevoegen aan de server en je hierover een seintje geven op je telefoonnummer, als je nog vragen hebt kan je /help naar deze bot sturen voor antwoorden op veelgestelde vragen of je kan je vraag via Whatsapp aan me stellen.", update, context)
+        await self.function.send_message(f"Dat was alles, zoals gezegd zal je worden toegevoegd aan de server en ontvang je hierover een seintje op je telefoonnummer, als je nog vragen hebt kan je /help naar deze bot sturen voor antwoorden op veelgestelde vragen of je kan je vraag via Whatsapp aan me stellen.", update, context)
         await asyncio.sleep(1)
         await self.function.send_message(f"Veel kijkplezier alvast! 😎", update, context)
 

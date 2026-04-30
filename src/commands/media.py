@@ -169,7 +169,7 @@ class Media(ABC):
             return REQUEST_MOVIE
 
         # Fallback: unknown state, end safely
-        await self.function.send_message("Oeps, ik weet niet meer of je een film of serie aan het aanvragen was. Stuur /start om opnieuw te beginnen.", update, context)
+        await self.function.send_message("Oeps, de bot weet niet meer of je een film of serie aan het aanvragen was. Stuur /start om opnieuw te beginnen.", update, context)
         return ConversationHandler.END
 
     async def media_option(self, update: Update, context: CallbackContext) -> Optional[int]:

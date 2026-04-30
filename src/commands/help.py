@@ -96,7 +96,7 @@ class Help:
         # Send messages
         await self.function.send_message("Deze bot kan je voor 4 dingen gebruiken:\n\n 1. Een account aanvragen voor de Plęx server\n 2. Nieuwe films aanvragen\n 3. Nieuwe series aanvragen\n 4. Aan- en afmelden voor serie updates", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("*1. Een nieuw account aanvragen*\n\nBen je zo enthousiast over Plęx en denk je dat een vriend, broertje, moeder of opa ook wel een Plęx account wilt? Vraag dan een nieuw account aan via deze bot.\n\nAls je /start stuurt krijg je 4 opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die ik nodig heb om iemand toe te voegen aan de server. Zodra ik de gegevens heb ontvangen stuur ik de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
+        await self.function.send_message("*1. Een nieuw account aanvragen*\n\nBen je zo enthousiast over Plęx en denk je dat een vriend, broertje, moeder of opa ook wel een Plęx account wilt? Vraag dan een nieuw account aan via deze bot.\n\nAls je /start stuurt krijg je 4 opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die zijn nodig om iemand toe te voegen aan de server. Zodra de gegevens ontvangen zijn ontvangt de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
         await asyncio.sleep(1)
         await self.function.send_message("*2. Nieuwe film(s) aanvragen*\n\nMis je een film op de server? Geen probleem, deze kan je makkelijk aanvragen via deze bot waarna de film automatisch erop gezet wordt, vaak is dit al binnen een uur!\n\nOok in dit geval begin je door /start te sturen, kies hierna de optie *🎬 Film*. Je wordt gevraagd om de naam van de film te sturen, de bot geeft je daarna een maximum van 5 opties op basis van de film titel die je hebt gestuurd. Kies de film die je graag wilt en that's it. Je krijgt ook nog de optie om op de hoogte gehouden te worden voor als de film online staat. Super simpel dus 😄", update, context)
         await asyncio.sleep(1)
@@ -152,7 +152,7 @@ class Help:
         # Send messages
         await self.function.send_message("*Een nieuw account aanvragen*\n\nBen je zo enthousiast over Plęx en denk je dat een vriend, broertje, moeder of opa ook wel een Plęx account wilt? Vraag dan een nieuw account aan via deze bot.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("Als je /start stuurt krijg je 4 opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die ik nodig heb om iemand toe te voegen aan de server. Zodra ik de gegevens heb ontvangen stuur ik de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
+        await self.function.send_message("Als je /start stuurt krijg je 4 opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die nodig zijn om iemand toe te voegen aan de server. Zodra de gegevens ontvangen zijn, ontvangt de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
         await asyncio.sleep(1)
         await self.function.send_message("Heb je verder nog vragen, stuur dan /help om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
 
@@ -168,7 +168,7 @@ class Help:
         await self.log.logger(f"*ℹ️ User invoked the /help - Quality command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
         # Send messages
-        await self.function.send_message("Staat er een film of serie op Plęx en is de kwaliteit ronduit slecht, staat er reclame in het scherm of zitten er ingebakken chinese ondertitels in? Dan kan je de film of serie opnieuw aanvragen. Je krijgt na het kiezen van de film/serie de vraag of er iets mis is met de kwaliteit. Geef hierbij aan wat er mis is en ik zal de film/serie opnieuw op de server zetten met goede kwaliteit.", update, context)
+        await self.function.send_message("Staat er een film of serie op Plęx en is de kwaliteit ronduit slecht, staat er reclame in het scherm of zitten er ingebakken chinese ondertitels in? Dan kan je de film of serie opnieuw aanvragen. Je krijgt na het kiezen van de film/serie de vraag of er iets mis is met de kwaliteit. Geef hierbij aan wat er mis is en de film/serie zal opnieuw op de server gezet worden met goede kwaliteit.", update, context)
         await asyncio.sleep(1)
         await self.function.send_message("Heb je verder nog vragen, stuur dan /help om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
 
@@ -184,7 +184,7 @@ class Help:
         await self.log.logger(f"*ℹ️ User invoked the /help - Other command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
         # Send messages
-        await self.function.send_message("Heb je nog een vraag, op- of aanmerking die niet beantwoord is? Stuur mij dan een bericht via Whatsapp of typ en stuur je bericht nu in Telegram en ik zal je zo snel mogelijk een reactie geven. Stuur ook meteen even je telefoonnummer mee voor de handigheid. Wil je geen bericht sturen? Klik dan op, of stuur /stop", update, context)
+        await self.function.send_message("Heb je nog een vraag, op- of aanmerking die niet beantwoord is? Stuur dan een bericht via Whatsapp of typ en stuur je bericht nu in Telegram en je zal zo snel mogelijk een reactie krijgen. Stuur ook meteen even je telefoonnummer mee voor de handigheid. Wil je geen bericht sturen? Klik dan op, of stuur /stop", update, context)
 
         # Next state
         return HELP_OTHER
@@ -192,7 +192,7 @@ class Help:
     async def other_reply(self, update: Update, context: CallbackContext) -> None:
 
         # Send messages
-        await self.function.send_message("Bedankt voor je bericht, ik neem zo snel mogelijk contact met je op!", update, context)
+        await self.function.send_message("Bedankt voor je bericht, er wordt zo snel mogelijk contact met je opgenomen!", update, context)
         await self.log.logger(f"*ℹ️ User send a question ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}\n\n{update.message.text}", False, "info")
 
         # End convo
