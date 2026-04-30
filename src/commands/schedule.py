@@ -12,6 +12,7 @@ from typing import Any
 from src.services.radarr import Radarr
 from src.services.sonarr import Sonarr
 from src.services.plex import Plex
+from src.services.transmission import check_transmission_and_trigger_scans
 
 
 class Schedule:
@@ -30,6 +31,18 @@ class Schedule:
 
     async def check_notify_list(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list """
+
+        # Check Transmission health on every schedule tick.
+        # If it just recovered, this will trigger Radarr/Sonarr missing-media scans.
+        try:
+            await check_transmission_and_trigger_scans(
+                logger=self.log,
+                radarr=self.radarr,
+                sonarr=self.sonarr,
+            )
+        except Exception:
+            # Never fail the schedule job because of Transmission.
+            pass
 
         # Load JSON file
         async with aiofiles.open(self.data_json, "r") as file:

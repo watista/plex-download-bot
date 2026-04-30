@@ -6,7 +6,6 @@ import json
 import traceback
 import time
 from datetime import datetime
-from transmission_rpc import Client
 from typing import Optional
 from abc import ABC, abstractmethod
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -14,6 +13,7 @@ from telegram.ext import CallbackContext, ConversationHandler
 
 from src.states import REQUEST_AGAIN, REQUEST_MOVIE, REQUEST_SERIE, AANMELDEN_SERIE
 from src.services.plex import Plex
+from src.services.transmission import TransmissionService, check_transmission_and_trigger_scans
 from src.commands.start import Start
 
 
@@ -179,20 +179,9 @@ class Media(ABC):
         await update.callback_query.answer()
         context.user_data['media_data'] = context.user_data["media_object"][int(update.callback_query.data)]
 
-        # Make transmission connection and get active torrent list
-        try:
-            client = Client(
-                host=os.getenv('TRANSMISSION_IP'),
-                port=os.getenv('TRANSMISSION_PORT'),
-                username=os.getenv('TRANSMISSION_USER'),
-                password=os.getenv('TRANSMISSION_PWD')
-            )
-            active_torrents = client.get_torrents(arguments=["name"])
-        except Exception as e:
-            await self.function.send_message(f"*😵 Er ging iets fout tijdens het maken van verbinding met de downløad client*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
-            await self.log.logger(f"There has been an error during the Transmission connection. See the logs for more info.\n\nError: {' '.join(e.args)}", False, "error", False)
-            await self.log.logger(f"There has been an error during the Transmission connection. Error: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error")
-            return ConversationHandler.END  # Quit if connection fails
+        # Check Transmission and fetch active torrents
+        transmission = TransmissionService(self.log)
+        transmission_up, active_torrents = await transmission.get_active_torrents()
 
         # Get the media states
         states = await self.get_media_states()
@@ -247,7 +236,15 @@ class Media(ABC):
 
                 # Send the message if defined
                 if "message" in details:
-                    await self.function.send_message(details["message"].format(title=context.user_data['media_data']['title']), update, context)
+                    # Adjust wording so we don't promise an immediate download start if transmission is down.
+                    msg = details["message"].format(title=context.user_data['media_data']['title'])
+                    if (not transmission_up) and ("action" in details and details["action"] == "start_download"):
+                        msg = (
+                            f"Er is op dit moment helaas te weinig ruimte op de server om de downløad te starten. "
+                            f"Dit probleem is tijdelijk, er is al een nieuwe harde schijf besteld.\n\n "
+                            f"*{context.user_data['media_data']['title']}* zal daarom later gedownløad worden."
+                        )
+                    await self.function.send_message(msg, update, context)
                     await asyncio.sleep(1)
 
                 # Only if media is already downloaded
@@ -287,6 +284,17 @@ class Media(ABC):
 
                 # Write to stats file
                 await self.write_to_stats(update, context)
+
+                # Check if Transmission recovered and kick missing-media scans if so.
+                try:
+                    await check_transmission_and_trigger_scans(
+                        logger=self.log,
+                        radarr=self.media_handler if context.user_data.get("label") == "film" else None,
+                        sonarr=self.media_handler if context.user_data.get("label") == "serie" else None,
+                    )
+                except Exception:
+                    # Never fail the user flow because of a health check.
+                    pass
 
                 # Return the next specific state
                 return details["next_state"]
