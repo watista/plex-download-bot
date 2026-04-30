@@ -94,19 +94,21 @@ class Help:
         await self.log.logger(f"*ℹ️ User invoked the /help - Hoe gebruik je deze bot command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
 
         # Send messages
-        await self.function.send_message("Deze bot kan je voor 4 dingen gebruiken:\n\n 1. Een account aanvragen voor de Plęx server\n 2. Nieuwe films aanvragen\n 3. Nieuwe series aanvragen\n 4. Aan- en afmelden voor serie updates", update, context)
+        await self.function.send_message("Deze bot kan je voor 5 zaken gebruiken:\n\n 1. Een account aanvragen voor de Plęx server\n 2. Nieuwe films aanvragen\n 3. Nieuwe series aanvragen\n 4. Aan- en afmelden voor serie updates", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("*1. Een nieuw account aanvragen*\n\nBen je zo enthousiast over Plęx en denk je dat een vriend, broertje, moeder of opa ook wel een Plęx account wilt? Vraag dan een nieuw account aan via deze bot.\n\nAls je /start stuurt krijg je 4 opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die zijn nodig om iemand toe te voegen aan de server. Zodra de gegevens ontvangen zijn ontvangt de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
+        await self.function.send_message("*1. Een nieuw account aanvragen*\n\nBen je zo enthousiast over Plęx en denk je dat een vriend, broertje, moeder of opa ook wel een Plęx account wilt? Vraag dan een nieuw account aan via deze bot.\n\nAls je */start* stuurt krijg je een aantal opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die zijn nodig om iemand toe te voegen aan de server. Zodra de gegevens ontvangen zijn ontvangt de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("*2. Nieuwe film(s) aanvragen*\n\nMis je een film op de server? Geen probleem, deze kan je makkelijk aanvragen via deze bot waarna de film automatisch erop gezet wordt, vaak is dit al binnen een uur!\n\nOok in dit geval begin je door /start te sturen, kies hierna de optie *🎬 Film*. Je wordt gevraagd om de naam van de film te sturen, de bot geeft je daarna een maximum van 5 opties op basis van de film titel die je hebt gestuurd. Kies de film die je graag wilt en that's it. Je krijgt ook nog de optie om op de hoogte gehouden te worden voor als de film online staat. Super simpel dus 😄", update, context)
+        await self.function.send_message("*2. Nieuwe film(s) aanvragen*\n\nMis je een film op de server? Geen probleem, deze kan je makkelijk aanvragen via deze bot waarna de film automatisch erop gezet wordt, vaak is dit al binnen een uur!\n\nOok in dit geval begin je door */start* te sturen, kies hierna de optie *🎬 Film*. Je wordt gevraagd om de naam van de film te sturen, de bot geeft je daarna een maximum van 5 opties op basis van de film titel die je hebt gestuurd. Kies de film die je graag wilt en that's it. Je krijgt ook nog de optie om op de hoogte gehouden te worden voor als de film online staat. Super simpel dus 😄", update, context)
         await asyncio.sleep(1)
         await self.function.send_message("*3. Nieuwe serie(s) aanvragen*\n\nPrecies hetzelfde als bij het aanvragen van een film, alleen in dit geval klik je op de knop *📺 Serie*.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("*4. Aan- en afmelden serie updates*\n\nWil je op de hoogte blijven zodra er een nieuwe aflevering online staat van je favoriete serie? Meld je dan aan door */aanmelden* te sturen. Tijdens het aanvragen van een nieuwe serie krijg je ook de vraag om je aan te melden voor updates. Liever geen updates meer ontvangen? Stuur dan */afmelden*.", update, context)
+        await self.function.send_message("*4. Aan- en afmelden serie updates*\n\nWil je op de hoogte blijven zodra er een nieuwe aflevering online staat van je favoriete serie? Meld je dan aan door */aanmelden_serie* te sturen. Tijdens het aanvragen van een nieuwe serie krijg je ook de vraag om je aan te melden voor updates. Liever geen updates meer ontvangen? Stuur dan */afmelden_serie*.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("Gaat er tijdens het proces iets fout of wil je graag opnieuw beginnen? Dan kan je altijd op elk moment /stop sturen, de bot stopt dan en kan opnieuw gestart worden door /start te sturen.", update, context)
+        await self.function.send_message("*5. Aan- en afmelden algemene updates*\n\nWil je op de hoogte blijven van algemene updates zoals nieuwe feature of wanneer Plęx tijdelijk onbereikbar is? Meld je dan aan door */aanmelden_update* te sturen. Liever geen updates meer ontvangen? Stuur dan */afmelden_updates*.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("Heb je verder nog vragen, stuur dan /help om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
+        await self.function.send_message("*🙅 Error*\n\nGaat er tijdens het proces iets fout of wil je graag opnieuw beginnen? Dan kan je altijd op elk moment */stop* sturen, de bot stopt dan en kan opnieuw gestart worden door */start* te sturen.", update, context)
+        await asyncio.sleep(1)
+        await self.function.send_message("Heb je verder nog vragen, stuur dan */help* om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
 
         # End convo
         return ConversationHandler.END
@@ -132,11 +134,11 @@ class Help:
         await asyncio.sleep(1)
         await self.function.send_message("*Ik zie alleen maar hele oude films en series*\n\nPlęx biedt zelf ook content aan wat vaak hele oude en slechte films en series zijn. Om deze content niet te zien in de app kan je het beste de documentatie lezen over hoe je de app instelt.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("*Mag ik mijn Plęx account delen?*\n\nJe mag je account delen met mensen uit hetzelfde huishouden, ken je andere mensen die ook willen kijken? Vraag dan een nieuw account aan voor deze personen zodat de stroomkosten gecompenseerd kunnen worden.", update, context)
+        await self.function.send_message("*Mag ik mijn Plęx account delen?*\n\nJe mag je account delen met mensen uit hetzelfde huishouden, ken je andere mensen die ook willen kijken? Vraag dan een nieuw account aan voor deze personen zodat de stroom- en opslagkosten gecompenseerd kunnen worden.", update, context)
         await asyncio.sleep(1)
         await self.function.send_message("*Ik zie geen Nederlandse ondertiteling*\n\nOndertiteling, en dan specifiek Nederlandse, is soms niet aanwezig. Je kan in de Plęx app handmatig zoeken naar ondertiteling in andere talen maar het is geen garantie dat deze er altijd is, vooral bij net nieuwe films of serie afleveringen kan er soms geen ondertiteling zijn. Wil je weten hoe je handmatig ondertiteling zoekt? Bekijk dan de documentatie via https://docs.wouterpaas.nl/", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("Heb je verder nog vragen, stuur dan /help om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
+        await self.function.send_message("Heb je verder nog vragen, stuur dan */help* om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
 
         # End convo
         return ConversationHandler.END
@@ -152,9 +154,9 @@ class Help:
         # Send messages
         await self.function.send_message("*Een nieuw account aanvragen*\n\nBen je zo enthousiast over Plęx en denk je dat een vriend, broertje, moeder of opa ook wel een Plęx account wilt? Vraag dan een nieuw account aan via deze bot.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("Als je /start stuurt krijg je 4 opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die nodig zijn om iemand toe te voegen aan de server. Zodra de gegevens ontvangen zijn, ontvangt de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
+        await self.function.send_message("Als je */start* stuurt krijg je een aantal opties, één daarvan is de optie *🆕 Nieuw account*. Als je deze optie kiest worden er een aantal vragen gesteld zoals je naam, email adres, telefoon, etc. die nodig zijn om iemand toe te voegen aan de server. Zodra de gegevens ontvangen zijn, ontvangt de aanvrager een Whatsapp bericht met alle laatste informatie en dan kan het kijkplezier beginnen 😎", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("Heb je verder nog vragen, stuur dan /help om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
+        await self.function.send_message("Heb je verder nog vragen, stuur dan */help* om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
 
         # End convo
         return ConversationHandler.END
@@ -170,7 +172,7 @@ class Help:
         # Send messages
         await self.function.send_message("Staat er een film of serie op Plęx en is de kwaliteit ronduit slecht, staat er reclame in het scherm of zitten er ingebakken chinese ondertitels in? Dan kan je de film of serie opnieuw aanvragen. Je krijgt na het kiezen van de film/serie de vraag of er iets mis is met de kwaliteit. Geef hierbij aan wat er mis is en de film/serie zal opnieuw op de server gezet worden met goede kwaliteit.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("Heb je verder nog vragen, stuur dan /help om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
+        await self.function.send_message("Heb je verder nog vragen, stuur dan */help* om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
 
         # End convo
         return ConversationHandler.END
