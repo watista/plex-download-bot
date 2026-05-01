@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import html
 import re
 import asyncio
 from pathlib import Path
@@ -118,6 +119,27 @@ class Functions:
             return re.sub(f"([{re.escape(special_chars)}])", r"\\\1", text)
         else:
             return text
+
+    @staticmethod
+    def format_admin_broadcast_html(text: str) -> str:
+        """
+        For /message and /message_all: paired _segments_ become HTML italic.
+        Segments cannot contain underscores or newlines (same practical rule as Telegram Markdown).
+        Everything else is HTML-escaped so snake_case and < > & stay safe/literal.
+        """
+        if not text:
+            return ""
+        pattern = re.compile(r"_([^_\n]+)_")
+        out: list[str] = []
+        pos = 0
+        for m in pattern.finditer(text):
+            out.append(html.escape(text[pos : m.start()]))
+            out.append("<i>")
+            out.append(html.escape(m.group(1)))
+            out.append("</i>")
+            pos = m.end()
+        out.append(html.escape(text[pos:]))
+        return "".join(out)
 
 
     # Sanitize text and remove _ and *
