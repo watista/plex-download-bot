@@ -138,6 +138,8 @@ class Help:
         await asyncio.sleep(1)
         await self.function.send_message("*Ik zie geen Nederlandse ondertiteling*\n\nOndertiteling, en dan specifiek Nederlandse, is soms niet aanwezig. Je kan in de Plęx app handmatig zoeken naar ondertiteling in andere talen maar het is geen garantie dat deze er altijd is, vooral bij net nieuwe films of serie afleveringen kan er soms geen ondertiteling zijn. Wil je weten hoe je handmatig ondertiteling zoekt? Bekijk dan de documentatie via https://docs.wouterpaas.nl/", update, context)
         await asyncio.sleep(1)
+        await self.function.send_message("*Worden mijn berichten mee gelezen in deze bot?*\n\nBerichten die je naar deze bot stuurt worden niet opgeslagen of gelezen door de serverbeheerder. Wil je een vraag stellen doe dit dan via de /help functie of stuur een bericht via Whatsapp.", update, context)
+        await asyncio.sleep(1)
         await self.function.send_message("Heb je verder nog vragen, stuur dan */help* om dit help menu opnieuw te zien of stuur de serverbeheerder een bericht op Whatsapp.", update, context)
 
         # End convo
