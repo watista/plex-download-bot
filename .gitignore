@@ -14,6 +14,7 @@ test/
 test/*
 bot_state.pkl
 *.bak
+plex-download-bot-watcher.env
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
