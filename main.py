@@ -10,13 +10,23 @@ from src.log import Log
 from src.bot import Bot
 
 
-def validate_env_vars() -> None:
-    """Ensures required environment variables are set before execution."""
+def validate_env_vars(mode: str) -> None:
+    """Ensures required environment variables are set before execution.
+
+    In maintenance mode the bot only needs the Telegram/log basics; Plex,
+    Sonarr, Radarr and Transmission are unreachable on the standby host so
+    requiring those variables would just prevent startup.
+    """
     required_vars = ["LOG_TYPE", "LOG_FOLDER", "BOT_TOKEN", "BOT_TOKEN_DEV",
-                     "CHAT_ID_GROUP", "CHAT_ID_ADMIN", "RADARR_URL", "RADARR_API",
-                     "SONARR_URL", "SONARR_API", "PLEX_URL", "PLEX_API",
-                     "PLEX_ID", "TRANSMISSION_IP", "TRANSMISSION_PORT", "TRANSMISSION_USER",
-                     "TRANSMISSION_PWD", "MOVIE_FOLDERS", "SERIE_FOLDERS"]
+                     "CHAT_ID_GROUP", "CHAT_ID_ADMIN"]
+
+    if mode == "normal":
+        required_vars += ["RADARR_URL", "RADARR_API",
+                          "SONARR_URL", "SONARR_API", "PLEX_URL", "PLEX_API",
+                          "PLEX_ID", "TRANSMISSION_IP", "TRANSMISSION_PORT",
+                          "TRANSMISSION_USER", "TRANSMISSION_PWD",
+                          "MOVIE_FOLDERS", "SERIE_FOLDERS"]
+
     missing_vars = [var for var in required_vars if not os.getenv(var)]
 
     if missing_vars:
@@ -39,6 +49,9 @@ if __name__ == '__main__':
                         help='Enable console logging')
     parser.add_argument(
         '-e', '--env', choices=["live", "dev"], help='Environment value: live / dev', required=True)
+    parser.add_argument(
+        '-m', '--mode', choices=["normal", "maintenance"], default="normal",
+        help="Run mode. 'maintenance' is used on the standby host and disables Plex/Sonarr/Radarr/Transmission flows.")
     args = parser.parse_args()
 
     # Load .env file
@@ -47,7 +60,7 @@ if __name__ == '__main__':
     load_dotenv(dotenv_path=path)
 
     # Validate environment variables
-    validate_env_vars()
+    validate_env_vars(args.mode)
 
     # Init classes
     logger = Log(args)

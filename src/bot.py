@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os
+import time
 import traceback
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from src.commands.account import Account
 from src.commands.schedule import Schedule
 from src.commands.message import Message
 from src.commands.subscribe import Subscribe
+from src.commands.maintenance import Maintenance
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
 
@@ -39,20 +41,30 @@ class Bot:
         # Set classes
         self.args = args
         self.log = logger
+        self.mode = getattr(args, "mode", "normal")
+        # Cooldown bookkeeping for the "two pollers detected" group-chat notice.
+        # Stored as a monotonic timestamp; 0.0 means "never notified yet".
+        self._conflict_notified_at: float = 0.0
+        self._conflict_notify_cooldown_seconds: int = 30
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
         self.help = Help(logger, self.function)
-        self.start = Start(args, logger, self.function)
-        self.serie = Serie(args, logger, self.function)
-        self.movie = Movie(args, logger, self.function)
+        self.maintenance = Maintenance(logger, self.function)
+        self.start = Start(args, logger, self.function, self.maintenance)
         self.account = Account(logger, self.function)
-        self.schedule = Schedule(args, logger, self.function)
         self.message = Message(args, logger, self.function)
-        self.subscribe = Subscribe(args, logger, self.function)
-        self.sonarr = Sonarr(logger)
-        self.radarr = Radarr(logger)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
-        self.start.subscribe = self.subscribe
+
+        # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
+        # normal mode; on the standby (maintenance) host they would just fail.
+        if self.mode == "normal":
+            self.serie = Serie(args, logger, self.function)
+            self.movie = Movie(args, logger, self.function)
+            self.schedule = Schedule(args, logger, self.function)
+            self.subscribe = Subscribe(args, logger, self.function)
+            self.sonarr = Sonarr(logger)
+            self.radarr = Radarr(logger)
+            self.start.subscribe = self.subscribe
 
         # Set vars based on live/dev
         if args.env == "live":
@@ -72,9 +84,38 @@ class Bot:
             .build()
         )
 
-        # Add conversation handler with different states
-        self.application.add_handler(ConversationHandler(
-            # entry_points=[CommandHandler("start", self.start.start_msg)],
+        # Register the appropriate conversation handler for the current mode
+        if self.mode == "normal":
+            self.application.add_handler(self._build_normal_conversation())
+        else:
+            self.application.add_handler(self._build_maintenance_conversation())
+
+        # Add stand-alone handlers
+        self.application.add_handler(
+            CommandHandler("help", self.help.help_command))
+        self.application.add_handler(
+            CommandHandler("privacy", self.privacy.privacy_command))
+
+        # Add error handler
+        self.application.add_error_handler(self.error_handler)
+
+        # Run the publish command function
+        self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
+        self.application.job_queue.run_once(lambda ctx: self.application.create_task(self.notify_admin_startup(ctx)), when=0)
+
+        # Recurring jobs need Plex/Sonarr/Radarr/Transmission — only in normal mode
+        if self.mode == "normal":
+            self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=1800, first=0)
+            self.application.job_queue.run_repeating(self.sonarr.scan_missing_media, interval=21600, first=0)
+            self.application.job_queue.run_repeating(self.radarr.scan_missing_media, interval=21600, first=0)
+
+        # Start the bot
+        self.application.run_polling(
+            allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
+
+    def _build_normal_conversation(self) -> ConversationHandler:
+        """Full conversation handler used on the primary (AIVD) host."""
+        return ConversationHandler(
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
                           CommandHandler("aanmelden_serie", self.start.verification),
@@ -144,29 +185,71 @@ class Bot:
             per_chat=True,
             per_user=True
         )
+
+    def _build_maintenance_conversation(self) -> ConversationHandler:
+        """Slimmed conversation handler used on the standby (shared) host.
+
+        Plex/Sonarr/Radarr/Transmission flows are replaced with a maintenance
+        notice. /start, /help, /privacy, the account request flow, algemene
+        updates and the admin /message, /message_all, /add_movie commands all
+        keep working because they only touch data.json and Telegram.
+        """
+        return ConversationHandler(
+            entry_points=[CommandHandler("start", self.start.start_msg),
+                          CommandHandler("help", self.help.help_command),
+                          CommandHandler("aanmelden_serie", self.maintenance.media_maintenance),
+                          CommandHandler("afmelden_serie", self.maintenance.media_maintenance),
+                          CommandHandler("aanmelden_updates", self.message.updates_subscribe),
+                          CommandHandler("afmelden_updates", self.message.updates_unsubscribe),
+                          CommandHandler("message", self.message.message_start, filters.User(self.allowed_users)),
+                          CommandHandler("message_all", self.message.message_all, filters.User(self.allowed_users)),
+                          CommandHandler("add_movie", self.message.add_movie, filters.User(self.allowed_users)),
+                          MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
+            states={
+                VERIFY: [
+                    # Film / Serie / Serie-updates go through verification so
+                    # blocked-user / first-time-password checks still apply,
+                    # but parse_request short-circuits to a maintenance reply.
+                    CallbackQueryHandler(
+                        self.start.verification, pattern="^(movie_request|serie_request|aanmelden_serie|afmelden_serie)$"),
+                    CallbackQueryHandler(
+                        self.message.updates_subscribe, pattern="^aanmelden_updates$"),
+                    CallbackQueryHandler(
+                        self.message.updates_unsubscribe, pattern="^afmelden_updates$"),
+                    CallbackQueryHandler(
+                        self.start.parse_request, pattern="^account_request$"),
+                    CallbackQueryHandler(
+                        self.help.help_command_button, pattern="^info$")
+                ],
+                VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
+                REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
+                REQUEST_ACCOUNT_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_email)],
+                REQUEST_ACCOUNT_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_phone)],
+                REQUEST_ACCOUNT_REFER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_refer)],
+                HELP_CHOICE: [
+                    CallbackQueryHandler(
+                        self.help.usage, pattern="^help_use$"),
+                    CallbackQueryHandler(
+                        self.help.faq, pattern="^help_faq$"),
+                    CallbackQueryHandler(
+                        self.help.new_account, pattern="^help_new_account$"),
+                    CallbackQueryHandler(
+                        self.help.quality, pattern="^help_quality$"),
+                    CallbackQueryHandler(
+                        self.help.other, pattern="^help_other$")
+                ],
+                HELP_OTHER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.help.other_reply)],
+                MESSAGE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_id)],
+                MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)],
+                MESSAGE_ALL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_all_id)],
+                ADD_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_user)],
+                ADD_MOVIE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_id)],
+            },
+            fallbacks=[CommandHandler("stop", self.stop)],
+            conversation_timeout=1800,
+            per_chat=True,
+            per_user=True
         )
-
-        # Add stand-alone handlers
-        self.application.add_handler(
-            CommandHandler("help", self.help.help_command))
-        self.application.add_handler(
-            CommandHandler("privacy", self.privacy.privacy_command))
-
-        # Add error handler
-        self.application.add_error_handler(self.error_handler)
-
-        # Run the publish command function
-        self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
-        self.application.job_queue.run_once(lambda ctx: self.application.create_task(self.notify_admin_startup(ctx)), when=0)
-
-        # Enable the Schedule Job Queue
-        self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=1800, first=0)
-        self.application.job_queue.run_repeating(self.sonarr.scan_missing_media, interval=21600, first=0)
-        self.application.job_queue.run_repeating(self.radarr.scan_missing_media, interval=21600, first=0)
-
-        # Start the bot
-        self.application.run_polling(
-            allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
 
     async def publish_command_list(self):
         """ Create and publish command list """
@@ -194,7 +277,10 @@ class Bot:
 
         started_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
         env_label = "live" if self.args.env == "live" else "dev"
-        msg = f"✅ Bot gestart ({env_label}) om {started_at}."
+        if self.mode == "maintenance":
+            msg = f"⚠️ Standby bot gestart op shared ({env_label}, maintenance) om {started_at}."
+        else:
+            msg = f"✅ Bot gestart ({env_label}) om {started_at}."
 
         try:
             await self.function.send_message(msg, group_id, context, None, "MarkdownV2", False)
@@ -222,11 +308,47 @@ class Bot:
 
         if isinstance(err, Conflict):
             await self.log.logger("Telegram Conflict: Another bot instance is running.", False, "warning", False)
+            # Only the standby surfaces this to the group chat — both instances
+            # will see the Conflict (Telegram alternates winners), so notifying
+            # from one side keeps the chat from getting two messages per cycle.
+            if self.mode == "maintenance":
+                await self._notify_conflict_to_group(context)
             return
 
         # --- fallback: log full traceback for unknown errors ---
         error_message = "".join(traceback.format_exception(None, err, err.__traceback__))
         await self.log.logger(f"Unexpected error happened with Telegram dispatcher\n{error_message}", False, "error")
+
+    async def _notify_conflict_to_group(self, context: CallbackContext) -> None:
+        """Send a rate-limited heads-up to the group when both bot instances
+        are polling at the same time. Called from the maintenance bot only."""
+        now = time.monotonic()
+        if now - self._conflict_notified_at < self._conflict_notify_cooldown_seconds:
+            return
+        self._conflict_notified_at = now
+
+        raw_group_id = os.getenv("CHAT_ID_GROUP")
+        if not raw_group_id:
+            return
+        try:
+            group_id = int(raw_group_id)
+        except ValueError:
+            await self.log.logger(f"Invalid CHAT_ID_GROUP value: {raw_group_id}", False, "warning", False)
+            return
+
+        detected_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        env_label = "live" if self.args.env == "live" else "dev"
+        msg = (
+            f"⚠️ *Conflict gedetecteerd* ({env_label}, {detected_at})\n\n"
+            f"De standby bot op shared kreeg een Telegram Conflict, wat betekent "
+            f"dat er nog een andere instance van de bot draait (waarschijnlijk AIVD). "
+            f"Controleer welke server actief moet blijven en stop de andere handmatig."
+        )
+
+        try:
+            await self.function.send_message(msg, group_id, context, None, "MarkdownV2", False)
+        except Exception as e:
+            await self.log.logger(f"Failed to send Conflict notice to group {group_id}: {e}", False, "warning", False)
 
     async def stop(self, update: Update, context: CallbackContext) -> None:
         """ Cancel command """

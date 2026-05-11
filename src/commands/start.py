@@ -13,11 +13,13 @@ from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VE
 
 class Start:
 
-    def __init__(self, args, logger, functions):
+    def __init__(self, args, logger, functions, maintenance=None):
 
         # Set default values
         self.log = logger
         self.function = functions
+        self.mode = getattr(args, "mode", "normal")
+        self.maintenance = maintenance
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
@@ -188,6 +190,14 @@ class Start:
         if update.callback_query:
             context.user_data["media_option"] = update.callback_query.data
             await update.callback_query.answer()
+
+        # In maintenance mode, intercept the options that need Plex/Sonarr/Radarr.
+        # account_request, info and aanmelden/afmelden_updates continue to work
+        # because they only touch data.json and Telegram.
+        if self.mode == "maintenance" and context.user_data.get("media_option") in (
+            "movie_request", "serie_request", "aanmelden_serie", "afmelden_serie",
+        ):
+            return await self.maintenance.media_maintenance(update, context)
 
         if context.user_data["media_option"] == "account_request":
             await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat er een account voor je aangemaakt kan worden, is er eerst wat informatie van je nodig.", update, context)

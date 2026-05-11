@@ -1,0 +1,17 @@
+[Unit]
+Description=Plex Download Bot failover watcher (probes AIVD, manages standby bot)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/plex-download-bot-watcher.env
+ExecStart=/usr/bin/python3 /root/scripts/plex-download-bot/files/plex-download-bot-watcher.py
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
