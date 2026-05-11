@@ -257,7 +257,7 @@ class Message:
             await file.write(json.dumps(json_data, indent=4))
 
         # Send the message
-        await self.function.send_message(f"Film ID {tmdb_to_add_movie} is toegevoegd voor user {context.user_data["user_to_add_movie"]}", update, context)
+        await self.function.send_message(f"Film ID {tmdb_to_add_movie} is toegevoegd voor user {context.user_data['user_to_add_movie']}", update, context)
 
         context.user_data.pop("user_to_add_movie", None)
 
