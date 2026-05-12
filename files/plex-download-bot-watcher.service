@@ -1,5 +1,5 @@
 [Unit]
-Description=Plex Download Bot failover watcher (probes AIVD, manages standby bot)
+Description=Plex Download Bot failover watcher (receives heartbeats from primary, manages fallback bot)
 Wants=network-online.target
 After=network-online.target
 

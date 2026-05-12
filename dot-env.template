@@ -16,3 +16,20 @@ TRANSMISSION_USER=user
 TRANSMISSION_PWD=123
 MOVIE_FOLDERS=/path/to/folder
 SERIE_FOLDERS=/path/to/folder,/path/to/folder2
+
+# Display names for the two hosts. Used in the group-chat notifications
+# the bot sends when it starts up in maintenance mode, when it hands back
+# control, and when it detects a Telegram Conflict. Defaults are generic;
+# set them to your own hostnames (e.g. PRIMARY_NAME=aivd, FALLBACK_NAME=shared).
+PRIMARY_NAME=primary
+FALLBACK_NAME=fallback
+
+# Outbound TCP heartbeat used by the failover watcher on the fallback host.
+# In --mode normal the bot opens a TCP connection to this host:port every
+# HEARTBEAT_INTERVAL seconds and closes it again. The fallback's watcher
+# listens on that port (see files/plex-download-bot-watcher.env.template,
+# WATCHER_LISTEN_PORT) and treats prolonged silence as a primary outage.
+# Maintenance mode does not push heartbeats.
+HEARTBEAT_TARGET_HOST=fallback.example.com
+HEARTBEAT_TARGET_PORT=9876
+HEARTBEAT_INTERVAL=10

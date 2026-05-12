@@ -1,38 +1,44 @@
 #!/usr/bin/env python3
 """Failover watcher for the Plex download bot.
 
-Runs on the standby host (`shared`) and probes the primary host (`AIVD`)
-with a TCP connect every `POLL_INTERVAL` seconds.
+Runs on the fallback host and decides when to start or stop the local bot
+service based on heartbeats *pushed* by the primary host.
 
-* After `FAIL_THRESHOLD` consecutive failed probes the standby bot service
-  is started so the Telegram bot keeps responding (in `--mode maintenance`).
-* After `SUCCESS_THRESHOLD` consecutive successful probes (i.e. the primary
-  is back) the standby bot service is stopped, returning control to the
-  primary.
+The direction is reversed compared to a classic poller because the primary
+may not be able to accept inbound connections. The primary's bot opens an
+outbound TCP connection to this watcher every few seconds (see
+HEARTBEAT_TARGET_HOST / _TARGET_PORT in the bot's dot-env); the watcher
+records the timestamp of each accepted connection.
 
-The bot service on shared must be installed but *not* enabled at boot — the
-watcher manages it. Only one of the two hosts should ever be polling the
-Telegram API at a time; this watcher is what guarantees that.
+Failover decisions:
+
+* If the watcher has not seen a heartbeat for `FAIL_THRESHOLD *
+  POLL_INTERVAL` seconds (default 30 s) the standby bot service is
+  started in `--mode maintenance` so the Telegram bot keeps responding.
+* If a fresh heartbeat arrives while the standby is active, the standby
+  bot service is stopped immediately (sub-second failback). This means
+  there's effectively no "success threshold" to tune — one heartbeat
+  is enough to hand back control.
 
 Environment variables (loaded from /etc/plex-download-bot-watcher.env):
 
-    WATCHER_TARGET_HOST          Hostname or IP of the primary (required)
-    WATCHER_TARGET_PORT          TCP port to probe                  (default 22)
-    WATCHER_POLL_INTERVAL        Seconds between probes             (default 10)
-    WATCHER_FAIL_THRESHOLD       Consecutive fails to fail over     (default 3)
-    WATCHER_SUCCESS_THRESHOLD    Consecutive ok'es to fail back     (default 3)
-    WATCHER_PROBE_TIMEOUT        TCP connect timeout in seconds     (default 3)
-    WATCHER_SERVICE_NAME         Bot systemd unit on shared
+    WATCHER_LISTEN_HOST          Interface to bind on        (default 0.0.0.0)
+    WATCHER_LISTEN_PORT          TCP port to accept beats on (default 9876)
+    WATCHER_POLL_INTERVAL        Seconds between health checks      (default 10)
+    WATCHER_FAIL_THRESHOLD       Missed heartbeats before failover  (default 3)
+    WATCHER_STATUS_LOG_EVERY     Emit an INFO heartbeat-summary every N checks
+                                 (default 3, so every 30 s at default interval)
+    WATCHER_SERVICE_NAME         Bot systemd unit on the fallback host
                                  (default plex-download-bot.service)
     WATCHER_LOG_FILE             Log file path
                                  (default /var/log/plex-download-bot-watcher.log)
 """
 
+import asyncio
 import logging
 import logging.handlers
 import os
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -76,15 +82,6 @@ def setup_logging(log_file: str) -> logging.Logger:
     return logger
 
 
-def tcp_probe(host: str, port: int, timeout: float) -> bool:
-    """Return True when a TCP connect to host:port completes within timeout."""
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except (OSError, socket.timeout):
-        return False
-
-
 def systemctl(*args: str) -> tuple[int, str]:
     proc = subprocess.run(
         ["systemctl", *args],
@@ -114,85 +111,160 @@ def stop_service(service: str, logger: logging.Logger) -> None:
         logger.error("systemctl stop %s failed (rc=%s): %s", service, rc, out)
 
 
-_running = True
+class WatcherState:
+    """Mutable state shared between the heartbeat acceptor and the polling
+    loop. Both run inside the same asyncio event loop on a single thread,
+    so plain attribute access is safe — no locks needed."""
+
+    def __init__(self, service_name: str, logger: logging.Logger):
+        self.service_name = service_name
+        self.logger = logger
+        # `last_heartbeat_at` uses time.monotonic so it is immune to wall-clock
+        # changes. Initialised to "now" so we give the primary one fail-window
+        # of grace before declaring it dead at startup.
+        self.last_heartbeat_at: float = time.monotonic()
+        self.bot_active: bool = service_is_active(service_name)
+        # Connection counter exposed in the periodic status log.
+        self.beats_since_last_status: int = 0
 
 
-def _handle_signal(signum, _frame):  # noqa: ANN001 - signal handler signature
-    global _running
-    _running = False
+async def handle_heartbeat(reader: asyncio.StreamReader,
+                           writer: asyncio.StreamWriter,
+                           state: WatcherState) -> None:
+    """Called for every inbound TCP connection from the primary.
+
+    Records the timestamp and, if the standby bot is currently running,
+    stops it immediately — that gives sub-second failback as soon as the
+    primary's first heartbeat arrives after an outage.
+    """
+    peer = writer.get_extra_info("peername")
+    state.last_heartbeat_at = time.monotonic()
+    state.beats_since_last_status += 1
+    state.logger.debug("Heartbeat from %s.", peer)
+
+    if state.bot_active:
+        state.logger.warning(
+            "Heartbeat received from %s while standby is active - handing back.",
+            peer,
+        )
+        stop_service(state.service_name, state.logger)
+        state.bot_active = service_is_active(state.service_name)
+
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except Exception:
+        pass
 
 
-def main() -> int:
-    target_host = os.getenv("WATCHER_TARGET_HOST")
-    if not target_host:
-        print("WATCHER_TARGET_HOST is required.", file=sys.stderr)
-        return 2
+async def polling_loop(state: WatcherState,
+                       poll_interval: int,
+                       fail_threshold: int,
+                       status_log_every: int) -> None:
+    """Periodically check whether the primary has gone silent."""
+    fail_seconds = fail_threshold * poll_interval
+    poll_counter = 0
+    state.logger.info(
+        "Polling loop: every %ss, take over after %ss of silence (= %s missed beats).",
+        poll_interval, fail_seconds, fail_threshold,
+    )
 
-    target_port = env_int("WATCHER_TARGET_PORT", 80)
+    while True:
+        await asyncio.sleep(poll_interval)
+        poll_counter += 1
+        now = time.monotonic()
+        silence_age = now - state.last_heartbeat_at
+
+        if not state.bot_active and silence_age >= fail_seconds:
+            state.logger.warning(
+                "No heartbeat from primary for %.1fs (>= %ss) - taking over.",
+                silence_age, fail_seconds,
+            )
+            start_service(state.service_name, state.logger)
+            state.bot_active = service_is_active(state.service_name)
+
+        if poll_counter % status_log_every == 0:
+            state.logger.info(
+                "Status: standby_bot=%s last_beat=%.1fs ago beats_in_window=%d",
+                "active" if state.bot_active else "inactive",
+                silence_age, state.beats_since_last_status,
+            )
+            state.beats_since_last_status = 0
+
+
+async def main_async() -> int:
+    listen_host = os.getenv("WATCHER_LISTEN_HOST", "0.0.0.0")
+    listen_port = env_int("WATCHER_LISTEN_PORT", 9876)
     poll_interval = env_int("WATCHER_POLL_INTERVAL", 10)
     fail_threshold = env_int("WATCHER_FAIL_THRESHOLD", 3)
-    success_threshold = env_int("WATCHER_SUCCESS_THRESHOLD", 3)
-    probe_timeout = env_int("WATCHER_PROBE_TIMEOUT", 3)
+    status_log_every = max(1, env_int("WATCHER_STATUS_LOG_EVERY", 3))
     service_name = os.getenv("WATCHER_SERVICE_NAME", "plex-download-bot.service")
     log_file = os.getenv("WATCHER_LOG_FILE", "/var/log/plex-download-bot-watcher.log")
 
     logger = setup_logging(log_file)
     logger.info(
-        "Watcher starting. target=%s:%s interval=%ss fail=%s success=%s service=%s",
-        target_host, target_port, poll_interval, fail_threshold, success_threshold, service_name,
+        "Watcher starting. listen=%s:%s poll=%ss fail_threshold=%s status_every=%s service=%s",
+        listen_host, listen_port, poll_interval, fail_threshold,
+        status_log_every, service_name,
     )
 
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-
-    consecutive_fails = 0
-    consecutive_successes = 0
-
-    # Reconcile our model with reality at startup: if the bot is already
-    # running, assume we've already failed over and only need success_threshold
-    # successes to stop it again.
-    bot_active = service_is_active(service_name)
+    state = WatcherState(service_name, logger)
     logger.info("Initial state: bot service %s is %s.",
-                service_name, "active" if bot_active else "inactive")
+                service_name, "active" if state.bot_active else "inactive")
 
-    while _running:
-        ok = tcp_probe(target_host, target_port, probe_timeout)
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
 
-        if ok:
-            consecutive_successes += 1
-            consecutive_fails = 0
-            logger.debug("Probe ok (%d consecutive).", consecutive_successes)
-        else:
-            consecutive_fails += 1
-            consecutive_successes = 0
-            logger.debug("Probe failed (%d consecutive).", consecutive_fails)
+    def _handle_signal() -> None:
+        logger.info("Shutdown signal received.")
+        stop_event.set()
 
-        if not bot_active and consecutive_fails >= fail_threshold:
-            logger.warning(
-                "Primary %s:%s unreachable for %d consecutive probes - taking over.",
-                target_host, target_port, consecutive_fails,
-            )
-            start_service(service_name, logger)
-            bot_active = service_is_active(service_name)
-            consecutive_fails = 0  # reset so we don't try to start again next tick
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, _handle_signal)
+        except NotImplementedError:
+            # add_signal_handler is unsupported on Windows; fall back to
+            # signal.signal which is fine for the SIGTERM that systemd sends.
+            signal.signal(sig, lambda *_a: stop_event.set())
 
-        elif bot_active and consecutive_successes >= success_threshold:
-            logger.warning(
-                "Primary %s:%s reachable for %d consecutive probes - handing back.",
-                target_host, target_port, consecutive_successes,
-            )
-            stop_service(service_name, logger)
-            bot_active = service_is_active(service_name)
-            consecutive_successes = 0
+    try:
+        server = await asyncio.start_server(
+            lambda r, w: handle_heartbeat(r, w, state),
+            listen_host, listen_port,
+        )
+    except OSError as e:
+        logger.error("Could not bind %s:%s: %s", listen_host, listen_port, e)
+        return 2
 
-        # Allow signals to interrupt the sleep promptly.
-        for _ in range(poll_interval):
-            if not _running:
-                break
-            time.sleep(1)
+    poller = asyncio.create_task(polling_loop(
+        state, poll_interval, fail_threshold, status_log_every,
+    ))
+
+    async with server:
+        # Serve until a stop signal arrives.
+        serve_task = asyncio.create_task(server.serve_forever())
+        await stop_event.wait()
+        serve_task.cancel()
+        try:
+            await serve_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    poller.cancel()
+    try:
+        await poller
+    except (asyncio.CancelledError, Exception):
+        pass
 
     logger.info("Watcher stopped.")
     return 0
+
+
+def main() -> int:
+    try:
+        return asyncio.run(main_async())
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == "__main__":

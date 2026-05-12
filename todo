@@ -2,3 +2,4 @@
 - boven elke functie zo'n ```functie tekst``` plaatsen
 - overal debug logging toevoegen
 - /help info toevoegen over account delen
+- overal woord AIVD naar vairable primmary en shared naar secondary var zetten

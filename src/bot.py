@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 
+import asyncio
 import os
 import time
 import traceback
 from datetime import datetime
+from typing import Optional
 
 from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID, AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE, AANMELDEN_SERIE, ADD_MOVIE, ADD_MOVIE_USER, MOVIE_UPGRADE_INFO_OTHER
 from src.functions import Functions
@@ -46,6 +48,15 @@ class Bot:
         # Stored as a monotonic timestamp; 0.0 means "never notified yet".
         self._conflict_notified_at: float = 0.0
         self._conflict_notify_cooldown_seconds: int = 30
+        # Outbound heartbeat task handle (normal mode only). The primary may
+        # not be able to accept inbound connections, so it pushes a TCP
+        # heartbeat to the fallback host instead of the other way around.
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        # Display names for the two hosts, used in group-chat notifications.
+        # Defaults are intentionally generic so the project is reusable; set
+        # PRIMARY_NAME / FALLBACK_NAME in dot-env to your own hostnames.
+        self.primary_name: str = os.getenv("PRIMARY_NAME", "primary")
+        self.fallback_name: str = os.getenv("FALLBACK_NAME", "fallback")
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
         self.help = Help(logger, self.function)
@@ -74,13 +85,18 @@ class Bot:
             persistence = PicklePersistence(filepath="bot_state.pkl")
             token = os.getenv('BOT_TOKEN_DEV')
 
-        # Create the Application using the new async API
+        # Create the Application using the new async API. post_init starts
+        # the outbound heartbeat pusher so the fallback's watcher can see this
+        # bot is alive; post_stop sends a group-chat notice when the fallback
+        # bot shuts down (e.g. after the primary comes back).
         self.application = (
             Application.builder()
             .token(token)
             .concurrent_updates(False)
             .read_timeout(300)
             .persistence(persistence)
+            .post_init(self._post_init)
+            .post_stop(self._post_stop)
             .build()
         )
 
@@ -114,7 +130,7 @@ class Bot:
             allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
 
     def _build_normal_conversation(self) -> ConversationHandler:
-        """Full conversation handler used on the primary (AIVD) host."""
+        """Full conversation handler used on the primary host."""
         return ConversationHandler(
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
@@ -187,7 +203,7 @@ class Bot:
         )
 
     def _build_maintenance_conversation(self) -> ConversationHandler:
-        """Slimmed conversation handler used on the standby (shared) host.
+        """Slimmed conversation handler used on the fallback host.
 
         Plex/Sonarr/Radarr/Transmission flows are replaced with a maintenance
         notice. /start, /help, /privacy, the account request flow, algemene
@@ -278,7 +294,7 @@ class Bot:
         started_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
         env_label = "live" if self.args.env == "live" else "dev"
         if self.mode == "maintenance":
-            msg = f"⚠️ Standby bot gestart op shared ({env_label}, maintenance) om {started_at}."
+            msg = f"⚠️ Standby bot gestart op {self.fallback_name} ({env_label}, maintenance) om {started_at}."
         else:
             msg = f"✅ Bot gestart ({env_label}) om {started_at}."
 
@@ -286,6 +302,136 @@ class Bot:
             await self.function.send_message(msg, group_id, context, None, "MarkdownV2", False)
         except Exception as e:
             await self.log.logger(f"Failed to notify group startup to {group_id}: {e}", False, "warning", False)
+
+    async def _post_init(self, application: Application) -> None:
+        """PTB hook that runs after init but before polling begins.
+
+        On the primary (normal mode) this starts the outbound heartbeat
+        pusher so the fallback's watcher can tell the bot process is alive.
+        The fallback (maintenance mode) does not push.
+        """
+        if self.mode == "normal":
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+    async def _post_stop(self, application: Application) -> None:
+        """PTB hook that runs after polling stops.
+
+        Used by the fallback host to tell the group chat that it is going
+        down because the primary is back. The Telegram client is still
+        usable at this point so a final send_message goes through.
+        """
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._heartbeat_task = None
+
+        if self.mode != "maintenance":
+            return
+
+        raw_group_id = os.getenv("CHAT_ID_GROUP")
+        if not raw_group_id:
+            return
+        try:
+            group_id = int(raw_group_id)
+        except ValueError:
+            await self.log.logger(f"Invalid CHAT_ID_GROUP value: {raw_group_id}", False, "warning", False)
+            return
+
+        stopped_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        env_label = "live" if self.args.env == "live" else "dev"
+        msg = (
+            f"ℹ️ Standby bot op {self.fallback_name} gestopt ({env_label}) om {stopped_at}. "
+            f"{self.primary_name} is weer online en heeft het overgenomen."
+        )
+
+        try:
+            await application.bot.send_message(
+                chat_id=group_id,
+                text=self.log.escape_markdown(msg),
+                parse_mode="MarkdownV2",
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            await self.log.logger(f"Failed to send shutdown notice to {group_id}: {e}", False, "warning", False)
+
+    async def _heartbeat_loop(self) -> None:
+        """Push a TCP heartbeat to the fallback host every HEARTBEAT_INTERVAL
+        seconds while this (primary) bot is running.
+
+        The primary may be unable to accept inbound connections, so the
+        direction is reversed: the primary opens a connection to the
+        fallback's watcher (listening on HEARTBEAT_TARGET_HOST:
+        HEARTBEAT_TARGET_PORT) and closes it again. That single connect is
+        enough — the fallback records the timestamp and treats prolonged
+        silence as a primary outage.
+
+        Misconfiguration is logged on the first failure and otherwise quietly
+        retried; a broken heartbeat must not crash the bot.
+        """
+        target_host = os.getenv("HEARTBEAT_TARGET_HOST")
+        if not target_host:
+            await self.log.logger(
+                "HEARTBEAT_TARGET_HOST not set; outbound heartbeat disabled.",
+                False, "warning", False,
+            )
+            return
+
+        try:
+            target_port = int(os.getenv("HEARTBEAT_TARGET_PORT", "9876"))
+        except ValueError as e:
+            await self.log.logger(
+                f"Invalid HEARTBEAT_TARGET_PORT: {e}; outbound heartbeat disabled.",
+                False, "warning", False,
+            )
+            return
+
+        try:
+            interval = max(1, int(os.getenv("HEARTBEAT_INTERVAL", "10")))
+        except ValueError:
+            interval = 10
+
+        await self.log.logger(
+            f"Heartbeat pusher started; sending to {target_host}:{target_port} every {interval}s.",
+            False, "info", False,
+        )
+
+        consecutive_failures = 0
+        while True:
+            try:
+                _reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(target_host, target_port),
+                    timeout=5,
+                )
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+                if consecutive_failures:
+                    await self.log.logger(
+                        f"Heartbeat to {target_host}:{target_port} recovered after {consecutive_failures} failures.",
+                        False, "info", False,
+                    )
+                consecutive_failures = 0
+            except asyncio.CancelledError:
+                raise
+            except (OSError, asyncio.TimeoutError) as e:
+                consecutive_failures += 1
+                # Only log the first failure and then every 30th to avoid log
+                # flooding when the fallback host is genuinely unreachable.
+                if consecutive_failures == 1 or consecutive_failures % 30 == 0:
+                    await self.log.logger(
+                        f"Heartbeat to {target_host}:{target_port} failed ({consecutive_failures}x): {e}",
+                        False, "warning", False,
+                    )
+
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                raise
 
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
         """ Function for unexpted errors """
@@ -340,8 +486,8 @@ class Bot:
         env_label = "live" if self.args.env == "live" else "dev"
         msg = (
             f"⚠️ *Conflict gedetecteerd* ({env_label}, {detected_at})\n\n"
-            f"De standby bot op shared kreeg een Telegram Conflict, wat betekent "
-            f"dat er nog een andere instance van de bot draait (waarschijnlijk AIVD). "
+            f"De standby bot op {self.fallback_name} kreeg een Telegram Conflict, wat betekent "
+            f"dat er nog een andere instance van de bot draait (waarschijnlijk {self.primary_name}). "
             f"Controleer welke server actief moet blijven en stop de andere handmatig."
         )
 
