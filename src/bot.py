@@ -316,13 +316,12 @@ class Bot:
     async def _post_stop(self, application: Application) -> None:
         """PTB hook that runs after polling stops.
 
-        On the primary: sends a one-off "goodbye" packet to the fallback
-        host's watcher so it can fail over immediately instead of waiting
-        for the silence threshold to elapse.
-
-        On the fallback: tells the group chat that it is going down because
-        the primary is back. The Telegram client is still usable at this
-        point so the final send_message goes through.
+        Both modes announce the shutdown to the group chat. In addition:
+        * On the primary the goodbye packet is sent to the fallback's
+          watcher *first* so failover starts immediately, even if the
+          subsequent Telegram send is slow.
+        * On the fallback only the announcement is sent; the watcher already
+          knows what it's doing (it's the one that stopped this process).
         """
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
@@ -332,14 +331,33 @@ class Bot:
                 pass
             self._heartbeat_task = None
 
+        # Fast path first: get the fallback going before we spend time on
+        # the Telegram round-trip.
         if self.mode == "normal":
-            # Tell the fallback host we're going down so it can start its own
-            # bot immediately instead of waiting for the silence threshold to
-            # elapse. Best-effort with a short timeout; the watcher's
-            # silence-based takeover still covers us if this signal is lost.
             await self._send_goodbye_to_fallback()
-            return
 
+        stopped_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        env_label = "live" if self.args.env == "live" else "dev"
+        if self.mode == "normal":
+            msg = (
+                f"⚠️ Bot op {self.primary_name} gestopt ({env_label}) om {stopped_at}. "
+                f"{self.fallback_name} neemt het tijdelijk over."
+            )
+        else:
+            msg = (
+                f"ℹ️ Standby bot op {self.fallback_name} gestopt ({env_label}) om {stopped_at}. "
+                f"{self.primary_name} is weer online en heeft het overgenomen."
+            )
+
+        await self._send_group_message(application, msg)
+
+    async def _send_group_message(self, application: Application, msg: str) -> None:
+        """Send a one-off MarkdownV2 message to CHAT_ID_GROUP; swallow errors.
+
+        Used by the shutdown hook; safe to call from contexts where a failure
+        must not propagate (e.g. PTB's post_stop, which would otherwise be
+        able to delay or break systemd's shutdown sequence).
+        """
         raw_group_id = os.getenv("CHAT_ID_GROUP")
         if not raw_group_id:
             return
@@ -348,13 +366,6 @@ class Bot:
         except ValueError:
             await self.log.logger(f"Invalid CHAT_ID_GROUP value: {raw_group_id}", False, "warning", False)
             return
-
-        stopped_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-        env_label = "live" if self.args.env == "live" else "dev"
-        msg = (
-            f"ℹ️ Standby bot op {self.fallback_name} gestopt ({env_label}) om {stopped_at}. "
-            f"{self.primary_name} is weer online en heeft het overgenomen."
-        )
 
         try:
             await application.bot.send_message(

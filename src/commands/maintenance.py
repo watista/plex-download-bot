@@ -13,10 +13,9 @@ class Maintenance:
     """
 
     MAINTENANCE_TEXT = (
-        "🛠 *Onderhoud*\n\n"
-        "De server is op dit moment niet bereikbaar, waardoor het aanvragen "
-        "van films en series tijdelijk niet mogelijk is.\n\n"
-        "Algemene informatie en het aanvragen van een nieuw account werkt wel. "
+        "🛠 *Onderhoud* 🛠\n\n"
+        "De Plęx server is op dit moment niet bereikbaar, hierdoor is het aanvragen "
+        "van films en series tijdelijk niet mogelijk.\n\n"
         "Probeer het later opnieuw zodra Plęx weer online is."
     )
 
