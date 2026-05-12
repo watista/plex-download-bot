@@ -133,22 +133,52 @@ async def handle_heartbeat(reader: asyncio.StreamReader,
                            state: WatcherState) -> None:
     """Called for every inbound TCP connection from the primary.
 
-    Records the timestamp and, if the standby bot is currently running,
-    stops it immediately — that gives sub-second failback as soon as the
-    primary's first heartbeat arrives after an outage.
+    Two kinds of message are supported:
+
+    * **Regular heartbeat** — the primary opens the connection and closes
+      it without writing anything. Treated as proof of life: the timestamp
+      is recorded and, if the fallback bot is currently running, it is
+      stopped immediately (sub-second failback).
+    * **Goodbye** — the primary writes ``BYE\\n`` before closing, sent from
+      its post_stop hook when it is shutting down cleanly. Treated as a
+      heads-up that the primary is going away: the fallback bot is started
+      immediately so we don't have to wait for the silence threshold.
+
+    The 1 s read timeout protects against connections that open but never
+    send EOF — should not happen with the primary's own client, but might
+    if something else is poking at the listening port.
     """
     peer = writer.get_extra_info("peername")
-    state.last_heartbeat_at = time.monotonic()
-    state.beats_since_last_status += 1
-    state.logger.debug("Heartbeat from %s.", peer)
 
-    if state.bot_active:
+    try:
+        data = await asyncio.wait_for(reader.read(16), timeout=1.0)
+    except (asyncio.TimeoutError, Exception):
+        data = b""
+
+    is_goodbye = data.strip().upper().startswith(b"BYE")
+
+    if is_goodbye:
         state.logger.warning(
-            "Heartbeat received from %s while standby is active - handing back.",
+            "Goodbye signal received from %s — primary is shutting down, taking over immediately.",
             peer,
         )
-        stop_service(state.service_name, state.logger)
-        state.bot_active = service_is_active(state.service_name)
+        # Mark the primary as definitively silent so the polling loop's view
+        # matches reality after we start the fallback.
+        state.last_heartbeat_at = 0.0
+        if not state.bot_active:
+            start_service(state.service_name, state.logger)
+            state.bot_active = service_is_active(state.service_name)
+    else:
+        state.last_heartbeat_at = time.monotonic()
+        state.beats_since_last_status += 1
+        state.logger.debug("Heartbeat from %s.", peer)
+        if state.bot_active:
+            state.logger.warning(
+                "Heartbeat received from %s while fallback is active - handing back.",
+                peer,
+            )
+            stop_service(state.service_name, state.logger)
+            state.bot_active = service_is_active(state.service_name)
 
     writer.close()
     try:

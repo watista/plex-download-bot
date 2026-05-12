@@ -316,9 +316,13 @@ class Bot:
     async def _post_stop(self, application: Application) -> None:
         """PTB hook that runs after polling stops.
 
-        Used by the fallback host to tell the group chat that it is going
-        down because the primary is back. The Telegram client is still
-        usable at this point so a final send_message goes through.
+        On the primary: sends a one-off "goodbye" packet to the fallback
+        host's watcher so it can fail over immediately instead of waiting
+        for the silence threshold to elapse.
+
+        On the fallback: tells the group chat that it is going down because
+        the primary is back. The Telegram client is still usable at this
+        point so the final send_message goes through.
         """
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
@@ -328,7 +332,12 @@ class Bot:
                 pass
             self._heartbeat_task = None
 
-        if self.mode != "maintenance":
+        if self.mode == "normal":
+            # Tell the fallback host we're going down so it can start its own
+            # bot immediately instead of waiting for the silence threshold to
+            # elapse. Best-effort with a short timeout; the watcher's
+            # silence-based takeover still covers us if this signal is lost.
+            await self._send_goodbye_to_fallback()
             return
 
         raw_group_id = os.getenv("CHAT_ID_GROUP")
@@ -432,6 +441,51 @@ class Bot:
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 raise
+
+    async def _send_goodbye_to_fallback(self) -> None:
+        """Best-effort 'I'm shutting down' notice to the fallback's watcher.
+
+        Opens a TCP connection to HEARTBEAT_TARGET_HOST:HEARTBEAT_TARGET_PORT,
+        writes a single ``BYE\\n`` line and closes. The watcher distinguishes
+        a goodbye from a regular heartbeat by the presence of this payload
+        and reacts by starting the fallback bot immediately, instead of
+        waiting for the silence threshold.
+
+        Any error is logged and swallowed: a missed goodbye is not a fault
+        condition because the silence-based takeover still covers it.
+        """
+        target_host = os.getenv("HEARTBEAT_TARGET_HOST")
+        if not target_host:
+            return
+        try:
+            target_port = int(os.getenv("HEARTBEAT_TARGET_PORT", "9876"))
+        except ValueError:
+            return
+
+        try:
+            _reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(target_host, target_port),
+                timeout=3,
+            )
+            writer.write(b"BYE\n")
+            try:
+                await asyncio.wait_for(writer.drain(), timeout=2)
+            except asyncio.TimeoutError:
+                pass
+            writer.close()
+            try:
+                await asyncio.wait_for(writer.wait_closed(), timeout=2)
+            except (asyncio.TimeoutError, Exception):
+                pass
+            await self.log.logger(
+                f"Goodbye signal sent to {target_host}:{target_port}.",
+                False, "info", False,
+            )
+        except Exception as e:
+            await self.log.logger(
+                f"Failed to send goodbye to {target_host}:{target_port}: {e}",
+                False, "warning", False,
+            )
 
     async def error_handler(self, update: Update, context: CallbackContext) -> None:
         """ Function for unexpted errors """
