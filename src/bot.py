@@ -129,6 +129,27 @@ class Bot:
         self.application.run_polling(
             allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
 
+    def _welcome_button_handlers(self) -> list:
+        """CallbackQueryHandlers for the buttons on the /start welcome message.
+
+        Used both as the VERIFY state handlers and as conversation-level
+        fallbacks, so pressing a welcome button always (re)starts that flow
+        immediately, even if the user is mid-way through a different one —
+        no need to send /stop first.
+        """
+        return [
+            CallbackQueryHandler(
+                self.start.verification, pattern="^(movie_request|serie_request|aanmelden_serie|afmelden_serie)$"),
+            CallbackQueryHandler(
+                self.message.updates_subscribe, pattern="^aanmelden_updates$"),
+            CallbackQueryHandler(
+                self.message.updates_unsubscribe, pattern="^afmelden_updates$"),
+            CallbackQueryHandler(
+                self.start.parse_request, pattern="^account_request$"),
+            CallbackQueryHandler(
+                self.help.help_command_button, pattern="^info$")
+        ]
+
     def _build_normal_conversation(self) -> ConversationHandler:
         """Full conversation handler used on the primary host."""
         return ConversationHandler(
@@ -143,18 +164,7 @@ class Bot:
                           CommandHandler("add_movie", self.message.add_movie, filters.User(self.allowed_users)),
                           MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
-                VERIFY: [
-                    CallbackQueryHandler(
-                        self.start.verification, pattern="^(movie_request|serie_request|aanmelden_serie|afmelden_serie)$"),
-                    CallbackQueryHandler(
-                        self.message.updates_subscribe, pattern="^aanmelden_updates$"),
-                    CallbackQueryHandler(
-                        self.message.updates_unsubscribe, pattern="^afmelden_updates$"),
-                    CallbackQueryHandler(
-                        self.start.parse_request, pattern="^account_request$"),
-                    CallbackQueryHandler(
-                        self.help.help_command_button, pattern="^info$")
-                ],
+                VERIFY: self._welcome_button_handlers(),
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
                 REQUEST_ACCOUNT_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_email)],
@@ -196,7 +206,7 @@ class Bot:
                 ADD_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_user)],
                 ADD_MOVIE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_id)],
             },
-            fallbacks=[CommandHandler("stop", self.stop)],
+            fallbacks=[CommandHandler("stop", self.stop)] + self._welcome_button_handlers(),
             conversation_timeout=1800,
             per_chat=True,
             per_user=True
@@ -222,21 +232,10 @@ class Bot:
                           CommandHandler("add_movie", self.message.add_movie, filters.User(self.allowed_users)),
                           MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
             states={
-                VERIFY: [
-                    # Film / Serie / Serie-updates go through verification so
-                    # blocked-user / first-time-password checks still apply,
-                    # but parse_request short-circuits to a maintenance reply.
-                    CallbackQueryHandler(
-                        self.start.verification, pattern="^(movie_request|serie_request|aanmelden_serie|afmelden_serie)$"),
-                    CallbackQueryHandler(
-                        self.message.updates_subscribe, pattern="^aanmelden_updates$"),
-                    CallbackQueryHandler(
-                        self.message.updates_unsubscribe, pattern="^afmelden_updates$"),
-                    CallbackQueryHandler(
-                        self.start.parse_request, pattern="^account_request$"),
-                    CallbackQueryHandler(
-                        self.help.help_command_button, pattern="^info$")
-                ],
+                # Film / Serie / Serie-updates go through verification so
+                # blocked-user / first-time-password checks still apply,
+                # but parse_request short-circuits to a maintenance reply.
+                VERIFY: self._welcome_button_handlers(),
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
                 REQUEST_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account)],
                 REQUEST_ACCOUNT_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.account.request_account_email)],
@@ -261,7 +260,7 @@ class Bot:
                 ADD_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_user)],
                 ADD_MOVIE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_id)],
             },
-            fallbacks=[CommandHandler("stop", self.stop)],
+            fallbacks=[CommandHandler("stop", self.stop)] + self._welcome_button_handlers(),
             conversation_timeout=1800,
             per_chat=True,
             per_user=True
