@@ -115,7 +115,7 @@ class Start:
             return await self.parse_request(update, context)
 
         # Ask for user password if not yet verified
-        await self.function.send_message(f"Zo te zien is dit de eerste keer dat je gebruik maakt van deze bot. Om gebruik te maken van de bot heb je een wachtwoord nodig.\n\nVoer nu je wachtwoord in:", update, context)
+        await self.function.send_message(f"Zo te zien is dit de eerste keer dat je gebruik maakt van deze bot. Om gebruik te maken van de bot heb je een wachtwoord nodig (wachtwoord vergeten? vraag deze opnieuw aan bij de serverbeheerder).\n\nVoer nu je wachtwoord in:\n\n stuur /stop om opnieuw te beginnen.", update, context)
 
         # Set amount on login tries
         context.user_data["login_tries"] = 0

@@ -3,3 +3,7 @@
 - overal debug logging toevoegen
 - /help info toevoegen over account delen
 - overal woord AIVD naar vairable primmary en shared naar secondary var zetten
+- bericht bij eerste inlog, aangeven dat wachtwoord bij serverbeheerd opgevraagd kan worden
+- bericht bij eerste inlog (en begin usage van bot), ook /stop sturen
+- bij originele knop van menu drukken, override waar je was. Dus als je al op nieuwe account hebt geklikt, en klikt daarna op nieuwe serie, dan stopt ie met nieuwe account en door naar nieuwe serie
+-
