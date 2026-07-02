@@ -16,6 +16,8 @@ bot_state.pkl
 *.bak
 plex-download-bot-watcher.env
 .claude/
+.stignore
+.stfolder/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
