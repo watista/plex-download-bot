@@ -171,11 +171,15 @@ class Message:
 
         # Send the message for all users
         subscribed_count = 0
-        skipped_count = 0
+        skipped_users = []
 
         for key in json_data.get("user_id", {}):
             if not self._is_broadcast_subscribed(json_data, str(key)):
-                skipped_count += 1
+                # Value format is "gebruiker, username"
+                name_parts = [part.strip() for part in json_data["user_id"].get(str(key), "Unknown, Unknown").split(",", 1)]
+                gebruiker = name_parts[0]
+                username = name_parts[1] if len(name_parts) > 1 else "Unknown"
+                skipped_users.append(f"{username} ({gebruiker})")
                 continue
             try:
                 await self._send_admin_broadcast(update.message.text, int(key), context)
@@ -186,8 +190,9 @@ class Message:
             await asyncio.sleep(1)
 
         # Send the message
+        skipped_overview = "".join(f"\n- {user}" for user in skipped_users)
         await self.function.send_message(
-            f"Berichten zijn verstuurd.\n\nVerstuurd naar: {subscribed_count}\nOvergeslagen (afgemeld): {skipped_count}",
+            f"Berichten zijn verstuurd.\n\nVerstuurd naar: {subscribed_count}\nOvergeslagen (afgemeld): {len(skipped_users)}{skipped_overview}",
             update,
             context,
         )
