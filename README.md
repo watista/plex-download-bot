@@ -22,7 +22,9 @@ PLEX_API: Your Plex API key
 PLEX_ID: Your Plex server ID
 CHAT_ID_GROUP: The Telegram Chat ID
 CHAT_ID_ADMIN: User telegram ID
-LOG_TYPE: Log severity (Options are: ERROR, WARNING, INFO, DEBUG)
+LOG_TYPE: Log severity (Options are: ERROR, WARNING, INFO, DEBUG). On DEBUG the chatter of
+libraries like httpcore, httpx and telegram (the getUpdates poll loop) is written to a separate
+`<name>-<date>-debug.log` file instead of the main log; their warnings and errors stay in both
 LOG_FOLDER: Folder to write logs to
 TRANSMISSION_IP: The external IP of your Transmission instance
 TRANSMISSION_PORT: Transmission port

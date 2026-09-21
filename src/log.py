@@ -10,6 +10,30 @@ from telegram import Bot
 from telegram.error import TelegramError, RetryAfter
 
 
+# Libraries that log on every poll cycle when DEBUG is enabled (getUpdates
+# calls, HTTP internals, connection handling). Below WARNING these only go to
+# the separate debug log file, so they can't drown out the bot's own messages.
+NOISY_LOGGERS = (
+    "httpcore",
+    "httpx",
+    "telegram",
+    "urllib3",
+    "asyncio",
+    "aiohttp",
+    "apscheduler",
+    "charset_normalizer",
+)
+
+
+class NoLibraryChatter(logging.Filter):
+    """ Drop third party DEBUG/INFO records, keep their warnings and errors """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return not record.name.startswith(NOISY_LOGGERS)
+
+
 class Log:
 
     def __init__(self, args=False):
@@ -20,39 +44,57 @@ class Log:
         # Set logging format and config
         logging.root.handlers = []
         log_level = os.getenv('LOG_TYPE', 'INFO').upper()
+        logging_level = getattr(logging, log_level, logging.INFO)
+        debug_mode = logging_level <= logging.DEBUG
 
-        # set higher logging level for httpx to avoid all GET and POST requests being logged and apscheduler to avoid every executed schedule task
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("apscheduler").setLevel(logging.WARNING)
         fmt = "%(asctime)s - %(levelname)s - %(name)s: %(message)s"
-        if log_level == "DEBUG":
-            logging.getLogger("httpx").setLevel(logging.INFO)
-            fmt += " - {%(pathname)s - %(module)s - %(funcName)s - %(lineno)d}"
+        detailed_fmt = fmt + " - {%(pathname)s - %(module)s - %(funcName)s - %(lineno)d}"
+        datefmt = '%d-%m-%Y %H:%M:%S'
+
+        # Outside debug mode there is no debug file catching the chatter, so
+        # silence httpx (every GET and POST) and apscheduler (every executed
+        # schedule task) at the source
+        if not debug_mode:
+            logging.getLogger("httpx").setLevel(logging.WARNING)
+            logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
         # Set name and create the log file and folder if not exist
         log_folder = os.getenv("LOG_FOLDER", "log")
         file_name = "wouter-thuisserver-bot" if args.env == "live" else "dev-wouter-thuisserver-bot"
-        log_file = f"{log_folder}/{file_name}-{time.strftime('%m-%d-%Y')}.log"
+        base_name = f"{log_folder}/{file_name}-{time.strftime('%m-%d-%Y')}"
+        log_file = f"{base_name}.log"
         Path(log_folder).mkdir(parents=True, exist_ok=True)
         Path(log_file).touch(exist_ok=True)
 
-        # Set logging level
-        logging_level = getattr(logging, log_level, logging.INFO)
-
         # Setup the logging config
-        logging.basicConfig(
-            filename=log_file,
-            level=logging_level,
-            format=fmt,
-            datefmt='%d-%m-%Y %H:%M:%S'
-        )
+        logging.root.setLevel(logging_level)
+
+        # Main log file, on DEBUG without the third party polling noise
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging_level)
+        file_handler.setFormatter(logging.Formatter(detailed_fmt if debug_mode else fmt, datefmt))
+        if debug_mode:
+            file_handler.addFilter(NoLibraryChatter())
+        logging.root.addHandler(file_handler)
+
+        # On DEBUG everything, library chatter included, also goes to a
+        # separate file so the main log stays readable
+        if debug_mode:
+            debug_file = f"{base_name}-debug.log"
+            Path(debug_file).touch(exist_ok=True)
+            debug_handler = logging.FileHandler(debug_file)
+            debug_handler.setLevel(logging.DEBUG)
+            debug_handler.setFormatter(logging.Formatter(detailed_fmt, datefmt))
+            logging.root.addHandler(debug_handler)
 
         # Set console logging
         if args.verbose:
             console = logging.StreamHandler()
             console.setLevel(logging_level)
-            console.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S"))
-            logging.getLogger("wouter-thuisserver-bot").addHandler(console)
+            console.setFormatter(logging.Formatter(fmt, "%Y-%m-%d %H:%M:%S"))
+            if debug_mode:
+                console.addFilter(NoLibraryChatter())
+            logging.root.addHandler(console)
 
         # Set chat_id
         self.own_chatid = os.getenv('CHAT_ID_GROUP') if getattr(args, 'env', 'dev') == "live" else os.getenv('CHAT_ID_ADMIN')
