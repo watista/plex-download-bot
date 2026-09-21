@@ -39,7 +39,9 @@ class Plex:
             return None
         try:
             # Shorter than default 30s so a dead host does not block for ages on each retry window.
+            await self.log.debug_call("plex", "connect", url=self._plex_url)
             self._plex = PlexServer(self._plex_url, self._plex_token, timeout=10)
+            await self.log.debug_call("plex", "connected", url=self._plex_url)
             return self._plex
         except Exception as e:
             await self.log.logger(
@@ -85,7 +87,9 @@ class Plex:
 
         # Get movie by name from Plex
         try:
+            await self.log.debug_call("plex", "library search", section=section, title=title)
             media = plex.library.section(section).search(title)
+            await self.log.debug_call("plex", "library search result", section=section, title=title, results=[m.title for m in media])
         except Exception as e:
             await self.log.logger(
                 f"❌ *Error while querying Plęx library* ❌\n\n{e}",

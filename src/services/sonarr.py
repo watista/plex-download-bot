@@ -20,8 +20,8 @@ class Sonarr(ArrApiHandler):
 
         # Check if return value is empty
         if response is False:
-            await self.log.logger(f"❌ *Error while fetching serie list for term {serie_name}.*\nCheck the error log for more information. ❌", False, "error")
-            await self.log.logger(f"Response: {response}", False, "error", False)
+            await self.log.logger(f"❌ *Error while fetching serie list for term {serie_name}.*\nReason: {self.last_error}\nCheck the error log for more information. ❌", False, "error")
+            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
             return None
 
         # Return the data
@@ -35,8 +35,8 @@ class Sonarr(ArrApiHandler):
 
         # Check if return value is empty
         if response is False:
-            await self.log.logger(f"❌ *Error while queueing serie downløad.*\nCheck the error log for more information. ❌", False, "error")
-            await self.log.logger(f"Response: {response}", False, "error", False)
+            await self.log.logger(f"❌ *Error while queueing serie downløad.*\nReason: {self.last_error}\nCheck the error log for more information. ❌", False, "error")
+            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
             return None
 
         # Return the data
@@ -54,8 +54,8 @@ class Sonarr(ArrApiHandler):
 
         # Check if return value is empty
         if response is False:
-            await self.log.logger(f"❌ *Error while scanning for missing series.*\nCheck the error log for more information. ❌", False, "warning")
-            await self.log.logger(f"Response: {response}", False, "error", False)
+            await self.log.logger(f"❌ *Error while scanning for missing series.*\nReason: {self.last_error}\nCheck the error log for more information. ❌", False, "warning")
+            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
             return None
 
         # Return the data

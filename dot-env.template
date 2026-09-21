@@ -12,6 +12,11 @@ CHAT_ID_ADMIN=123
 # ERROR, WARNING, INFO or DEBUG. On DEBUG the library polling chatter goes to a
 # separate <name>-<date>-debug.log file so the main log stays readable.
 LOG_TYPE=INFO
+
+# Max length of a request or response body in the log file. With LOG_TYPE=DEBUG
+# every Radarr/Sonarr call logs its URL, status, duration and response body, so
+# this keeps the log file readable. Set to 0 for no truncating at all.
+LOG_MAX_BODY=2000
 TRANSMISSION_IP=0.0.0.0
 TRANSMISSION_PORT=9091
 TRANSMISSION_USER=user

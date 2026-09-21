@@ -32,8 +32,10 @@ class TransmissionService:
             # Any RPC call is enough to validate connectivity/auth.
             c = self._client()
             c.get_session()
+            await self.log.debug_call("transmission", "session check", host=os.getenv("TRANSMISSION_IP"), port=os.getenv("TRANSMISSION_PORT"), response="available")
             return True
-        except Exception:
+        except Exception as e:
+            await self.log.debug_call("transmission", "session check", host=os.getenv("TRANSMISSION_IP"), port=os.getenv("TRANSMISSION_PORT"), error=f"{type(e).__name__}: {' '.join(map(str, e.args))}")
             return False
 
     async def get_active_torrents(self) -> Tuple[bool, list[Any]]:
@@ -44,6 +46,7 @@ class TransmissionService:
         try:
             c = self._client()
             torrents = c.get_torrents(arguments=["name"])
+            await self.log.debug_call("transmission", "get_torrents", response=[t.name for t in torrents])
             return True, torrents
         except Exception as e:
             await self.log.logger(

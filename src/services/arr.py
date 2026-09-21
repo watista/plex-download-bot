@@ -4,6 +4,7 @@ import aiohttp
 import json
 import traceback
 import asyncio
+import time
 from datetime import date
 from typing import Union
 from abc import ABC, abstractmethod
@@ -53,21 +54,27 @@ class ArrApiHandler(ABC):
 
         # Make the async request
         for attempt in range(1, 3 + 1):
+            started = time.monotonic()
             try:
+                await self.log.debug_call(self.label, "GET request", url=url, attempt=attempt)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.get(url, params=params) as response:
 
                         # Continue if 2xx
                         if 200 <= response.status < 300:
                             try:
-                                return await response.json()
+                                data = await response.json()
                             except ContentTypeError:
                                 # Some endpoints may return non-JSON on success
-                                return {"raw": await response.text()}
+                                data = {"raw": await response.text()}
+
+                            await self.log.debug_call(self.label, "GET response", url=url, status=response.status, duration=time.monotonic() - started, response=data)
+                            return data
 
                         # Retry if 5xx
                         if response.status in (500, 502, 503, 504):
                             if attempt < 3:
+                                await self.log.debug_call(self.label, "GET retry", url=url, status=response.status, duration=time.monotonic() - started, response=await response.text())
                                 await asyncio.sleep(3)
                                 continue
                             else:
@@ -90,6 +97,7 @@ class ArrApiHandler(ABC):
             except (ClientError, asyncio.TimeoutError) as e:
 
                 if attempt < 3:
+                    await self.log.debug_call(self.label, "GET retry", url=url, error=f"{type(e).__name__}: {' '.join(map(str, e.args))}", duration=time.monotonic() - started)
                     await asyncio.sleep(3)
                     continue
 
@@ -115,23 +123,33 @@ class ArrApiHandler(ABC):
         params = {"apikey": self.token}
         timeout = ClientTimeout(total=30)
 
+        # Reset the last error
+        self.last_error = None
+
         # Make the async request
         for attempt in range(1, 3 + 1):
+            started = time.monotonic()
             try:
+                await self.log.debug_call(self.label, "POST request", url=url, payload=payload, attempt=attempt)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, params=params, json=payload) as response:
                         # Continue if 2xx
                         if 200 <= response.status < 300:
                             try:
-                                return await response.json()
+                                data = await response.json()
                             except ContentTypeError:
-                                return {"raw": await response.text()}
+                                data = {"raw": await response.text()}
+
+                            await self.log.debug_call(self.label, "POST response", url=url, status=response.status, duration=time.monotonic() - started, response=data)
+                            return data
 
                         # Retry if 5xx
                         if response.status in (500, 502, 503, 504) and attempt < 3:
+                            await self.log.debug_call(self.label, "POST retry", url=url, status=response.status, duration=time.monotonic() - started, response=await response.text())
                             await asyncio.sleep(3)
                             continue
 
+                        self.last_error = f"HTTP {response.status} {response.reason}"
                         await self.log.logger(
                             f"Not OK response for {self.label} API POST. Error: {response.status} {response.reason} {await response.text()} - URL: {url} - Payload: {payload}",
                             False, "error", False
@@ -140,14 +158,17 @@ class ArrApiHandler(ABC):
 
             except (ClientError, asyncio.TimeoutError) as e:
                 if attempt < 3:
+                    await self.log.debug_call(self.label, "POST retry", url=url, error=f"{type(e).__name__}: {' '.join(map(str, e.args))}", duration=time.monotonic() - started)
                     await asyncio.sleep(3)
                     continue
+                self.last_error = f"{type(e).__name__} (after 3 retries)"
                 await self.log.logger(
                     f"Error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url} - Payload: {payload}",
                     False, "error", False
                 )
                 return False
             except Exception as e:
+                self.last_error = type(e).__name__
                 await self.log.logger(
                     f"Unexpected error during {self.label} API POST request. Error: {' '.join(map(str, e.args))} - Traceback: {traceback.format_exc()} - URL: {url} - Payload: {payload}",
                     False, "error", False
@@ -162,8 +183,9 @@ class ArrApiHandler(ABC):
 
         # Check if return value is empty
         if not disks:
-            await self.log.logger(f"❌ *Error while fetching {self.label} diskspace information.*\nCheck the error log for more information. ❌", False, "error")
-            await self.log.logger(f"Response: {disks}", False, "error", False)
+            reason = self.last_error if disks is False else "empty response"
+            await self.log.logger(f"❌ *Error while fetching {self.label} diskspace information.*\nReason: {reason}\nCheck the error log for more information. ❌", False, "error")
+            await self.log.logger(f"Error while fetching {self.label} diskspace information. Reason: {reason} - Request: GET {self.base_url}/diskspace? - Response: {self.log.truncate(disks)}", False, "error", False)
             return None
 
         # Return the data
@@ -185,13 +207,13 @@ class ArrApiHandler(ABC):
 
         # API call was OK, but there is no result for this TMDB ID
         if not lookup:
-            await self.log_not_found(tmdbid, url_label)
+            await self.log_not_found(tmdbid, url_label, lookup)
             return None
 
         # Return the data
         return lookup
 
-    async def log_not_found(self, tmdbid: str, url_label: str) -> None:
+    async def log_not_found(self, tmdbid: str, url_label: str, response) -> None:
         """ Logs a TMDB ID without lookup result, sends a Telegram message only once a day per ID """
 
         # Set the service name
@@ -207,4 +229,4 @@ class ArrApiHandler(ABC):
         # Send Telegram message only the first time today, always log to file with the daily count
         if count == 1:
             await self.log.logger(f"⚠️ *No {self.label} found with TMDB ID {tmdbid}.*\nThe TMDB ID may not exist (anymore) or is not linked in {service}. This message is sent once a day. ⚠️", False, "warning")
-        await self.log.logger(f"No {self.label} found with TMDB ID {tmdbid}: {service} API returned an empty result for /{url_label}/lookup?term=tmdb:{tmdbid}. Occurrence {count} today.", False, "warning", False)
+        await self.log.logger(f"No {self.label} found with TMDB ID {tmdbid}: {service} API returned an empty result. Occurrence {count} today. Request: GET {self.base_url}/{url_label}/lookup?term=tmdb:{tmdbid} - Response: {self.log.truncate(response)}", False, "warning", False)

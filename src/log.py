@@ -169,6 +169,47 @@ class Log:
                     break
 
 
+    def is_debug(self) -> bool:
+        """ Returns True if the log level is DEBUG """
+        return logging.getLogger().isEnabledFor(logging.DEBUG)
+
+
+    def truncate(self, value) -> str:
+        """ Shorten a request or response body so the log file stays readable """
+
+        # Set max length, LOG_MAX_BODY=0 means no truncating at all
+        try:
+            max_length = int(os.getenv("LOG_MAX_BODY", "2000"))
+        except ValueError:
+            max_length = 2000
+
+        # Return the value as string, shortened if needed
+        text = value if isinstance(value, str) else str(value)
+        if max_length <= 0 or len(text) <= max_length:
+            return text
+        return f"{text[:max_length]}... [truncated, {len(text)} chars total]"
+
+
+    async def debug_call(self, service: str, action: str, **details) -> None:
+        """ Log a request and its response to file, only when the log level is DEBUG """
+
+        # Skip the work completely when not debugging
+        if not self.is_debug():
+            return
+
+        # Build the message from the given details
+        parts = [f"{service} {action}"]
+        for key, value in details.items():
+            if value is None:
+                continue
+            if key == "duration":
+                parts.append(f"duration: {value:.2f}s")
+            else:
+                parts.append(f"{key}: {self.truncate(value)}")
+
+        await self.logger(" | ".join(parts), False, "debug", False)
+
+
     def clean_message(self, msg: str) -> str:
         """ Sanitize the log message to avoid formatting issues """
         msg = msg.encode('ascii', 'ignore').decode('ascii')
