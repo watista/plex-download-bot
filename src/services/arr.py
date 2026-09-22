@@ -2,6 +2,7 @@
 
 import aiohttp
 import json
+import os
 import traceback
 import asyncio
 import time
@@ -14,8 +15,8 @@ from aiohttp import ClientError, ClientTimeout, ContentTypeError
 class ArrApiHandler(ABC):
     """ Base class for usage of the Radarr/Sonarr API """
 
-    # Daily counter for TMDB ID lookups without result, shared between all instances: {(label, tmdbid): (date, count)}
-    _not_found_counter = {}
+    # Failed TMDB ID lookups in a row, shared between all instances: {(label, tmdbid): {"count": int, "alerted": date}}
+    _lookup_failures = {}
 
     def __init__(self, logger, token, base_url, label):
 
@@ -25,6 +26,13 @@ class ArrApiHandler(ABC):
         self.base_url = base_url
         self.label = label
         self.last_error = None
+
+        # Amount of failed lookups in a row before a Telegram message is sent.
+        # SkyHook hiccups are almost always gone on the next schedule tick.
+        try:
+            self.failure_threshold = max(1, int(os.getenv("LOOKUP_ALERT_THRESHOLD", "3")))
+        except ValueError:
+            self.failure_threshold = 3
 
     @abstractmethod
     async def lookup_by_name(self, media_name: str) -> Union[list[dict], dict]:
@@ -202,31 +210,52 @@ class ArrApiHandler(ABC):
 
         # API error (timeout, 4xx, 5xx), details are already logged to file by get()
         if lookup is False:
-            await self.log.logger(f"❌ *Error while fetching {self.label} with TMDB ID {tmdbid}.*\nReason: {self.last_error}\nCheck the error log for more information. ❌", False, "error")
+            await self.log_lookup_failure(tmdbid, url_label, f"API error: {self.last_error}", lookup)
             return None
 
         # API call was OK, but there is no result for this TMDB ID
         if not lookup:
-            await self.log_not_found(tmdbid, url_label, lookup)
+            await self.log_lookup_failure(tmdbid, url_label, "API returned an empty result", lookup)
             return None
+
+        # When SkyHook is having a bad day it sometimes answers a tmdb: search with a
+        # completely different serie/movie. Acting on that gives wrong notifications,
+        # so only accept a result that really is the requested TMDB ID.
+        first = lookup[0] if isinstance(lookup, list) else lookup
+        returned_id = str(first.get("tmdbId") or "") if isinstance(first, dict) else ""
+        if returned_id and returned_id != str(tmdbid):
+            await self.log_lookup_failure(tmdbid, url_label, f"API returned a different {self.label}: {first.get('title', 'unknown')} (TMDB ID {returned_id})", lookup)
+            return None
+
+        # A good answer ends the failure streak for this ID
+        self._lookup_failures.pop((self.label, str(tmdbid)), None)
 
         # Return the data
         return lookup
 
-    async def log_not_found(self, tmdbid: str, url_label: str, response) -> None:
-        """ Logs a TMDB ID without lookup result, sends a Telegram message only once a day per ID """
+    async def log_lookup_failure(self, tmdbid: str, url_label: str, reason: str, response) -> None:
+        """ Counts failed lookups in a row, only sends a Telegram message from the threshold on """
 
         # Set the service name
         service = "Sonarr" if self.label == "serie" else "Radarr"
 
-        # Update the daily counter for this ID
+        # Count how many times in a row this ID failed
         key = (self.label, str(tmdbid))
-        today = date.today()
-        day, count = self._not_found_counter.get(key, (today, 0))
-        count = count + 1 if day == today else 1
-        self._not_found_counter[key] = (today, count)
+        state = self._lookup_failures.setdefault(key, {"count": 0, "alerted": None})
+        state["count"] += 1
+        count = state["count"]
 
-        # Send Telegram message only the first time today, always log to file with the daily count
-        if count == 1:
-            await self.log.logger(f"⚠️ *No {self.label} found with TMDB ID {tmdbid}.*\nThe TMDB ID may not exist (anymore) or is not linked in {service}. This message is sent once a day. ⚠️", False, "warning")
-        await self.log.logger(f"No {self.label} found with TMDB ID {tmdbid}: {service} API returned an empty result. Occurrence {count} today. Request: GET {self.base_url}/{url_label}/lookup?term=tmdb:{tmdbid} - Response: {self.log.truncate(response)}", False, "warning", False)
+        # Always write the details to the log file
+        await self.log.logger(f"Lookup failed for {self.label} with TMDB ID {tmdbid}: {reason}. Failure {count} in a row, alerting from {self.failure_threshold}. Request: GET {self.base_url}/{url_label}/lookup?term=tmdb:{tmdbid} - Response: {self.log.truncate(response)}", False, "warning", False)
+
+        # Below the threshold it is almost always a temporary SkyHook/TMDB hiccup, stay silent
+        if count < self.failure_threshold:
+            return
+
+        # Past the threshold, send at most one Telegram message a day per ID
+        today = date.today()
+        if state["alerted"] == today:
+            return
+        state["alerted"] = today
+
+        await self.log.logger(f"⚠️ *No {self.label} found with TMDB ID {tmdbid}.*\n{count} lookups in a row failed: {reason}.\nThe TMDB ID may not exist (anymore) or is not linked in {service}. This message is sent once a day. ⚠️", False, "warning")

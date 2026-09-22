@@ -17,6 +17,12 @@ LOG_TYPE=INFO
 # every Radarr/Sonarr call logs its URL, status, duration and response body, so
 # this keeps the log file readable. Set to 0 for no truncating at all.
 LOG_MAX_BODY=2000
+
+# Amount of failed TMDB lookups in a row before a Telegram message is sent.
+# SkyHook (the metadata proxy of Radarr/Sonarr) drops a lookup now and then,
+# and it is fixed again on the next schedule run. Everything is always written
+# to the log file, this only controls the Telegram messages.
+LOOKUP_ALERT_THRESHOLD=3
 TRANSMISSION_IP=0.0.0.0
 TRANSMISSION_PORT=9091
 TRANSMISSION_USER=user

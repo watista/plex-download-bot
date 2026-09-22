@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 
 import json
+import os
 import re
 import time
 import aiofiles
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from telegram.ext import CallbackContext
 from typing import Any
 
@@ -28,6 +29,15 @@ class Schedule:
 
         # Set data.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
+
+        # Media ID's without a path in the JSON in a row: {media_id: {"count": int, "alerted": date}}
+        self._missing_path = {}
+
+        # Amount of runs in a row without a path before a Telegram message is sent
+        try:
+            self.failure_threshold = max(1, int(os.getenv("LOOKUP_ALERT_THRESHOLD", "3")))
+        except ValueError:
+            self.failure_threshold = 3
 
     async def check_notify_list(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list """
@@ -308,9 +318,11 @@ class Schedule:
         # Check if path exists in the JSON
         media_folder = media_json.get("path")
         if not media_folder:
-            await self.log.logger(f"❌ *No path present in JSON for media with ID {media_id}.*\nCheck the error log for more information. ❌", False, "error")
-            await self.log.logger(f"Path not in the JSON. JSON: {media_json}", False, "error", False)
+            await self.log_missing_path(media_id, media_json)
             return False, False, False
+
+        # A JSON with a path ends the failure streak for this ID
+        self._missing_path.pop(str(media_id), None)
 
         # Check if media_folder exists
         media_folder = Path(media_folder)
@@ -318,6 +330,30 @@ class Schedule:
             return False, False, False
 
         return True, media_folder, media_json
+
+
+    async def log_missing_path(self, media_id: str | int, media_json: dict) -> None:
+        """ Counts runs without a path in a row, only sends a Telegram message from the threshold on """
+
+        # Count how many times in a row this ID came back without a path
+        state = self._missing_path.setdefault(str(media_id), {"count": 0, "alerted": None})
+        state["count"] += 1
+        count = state["count"]
+
+        # Always write the details to the log file
+        await self.log.logger(f"Path not in the JSON for media with ID {media_id}. Failure {count} in a row, alerting from {self.failure_threshold}. JSON: {self.log.truncate(media_json)}", False, "warning", False)
+
+        # Below the threshold it is almost always a temporary Sonarr/Radarr hiccup, stay silent
+        if count < self.failure_threshold:
+            return
+
+        # Past the threshold, send at most one Telegram message a day per ID
+        today = date.today()
+        if state["alerted"] == today:
+            return
+        state["alerted"] = today
+
+        await self.log.logger(f"❌ *No path present in JSON for media with ID {media_id}.*\n{count} runs in a row came back without a path.\nCheck the error log for more information. This message is sent once a day. ❌", False, "error")
 
 
     def format_episode_list(self, episodes) -> str:
