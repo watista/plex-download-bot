@@ -93,14 +93,21 @@ class Media(ABC):
         await self.function.send_message(f"De volgende {context.user_data['label']}s zijn gevonden met de term {sanitize_message}:", update, context)
         await asyncio.sleep(1)
 
-        # Set counter
-        counter = 0
+        # Show the first 5 options
+        return await self.send_media_options(update, context, 0)
 
-        # Loop to all media hits with a max of 5
-        for item in context.user_data["media_object"][:5]:
+    async def send_media_options(self, update: Update, context: CallbackContext, start: int) -> Optional[int]:
+        """ Sends 5 media options starting at the given index, together with the options keyboard """
+
+        # Remember how many options are shown, so 'toon meer' can only be used once
+        end = start + 5
+        context.user_data["options_shown"] = end
+
+        # Loop to the media hits of this page
+        for counter, item in enumerate(context.user_data["media_object"][start:end], start=start):
 
             # Get the values with backup if non-existing
-            title = item.get('title', sanitize_message)
+            title = item.get('title', context.user_data["requested_media"])
             sanitize_title = self.function.sanitize_text(title)
             year = item.get('year', 'Jaartal onbekend')
             overview = item.get('overview', 'Geen beschrijving beschikbaar')
@@ -117,31 +124,38 @@ class Media(ABC):
             else:
                 await self.function.send_message(f"*Optie {counter + 1} - {sanitize_title} ({year})*\n*IMDB: {score} ⭐️*\n\n{sanitize_overview}", update, context)
 
-            # Bump counter
-            counter += 1
             await asyncio.sleep(1)
 
-        # Create the options keyboard
-        reply_markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(f"Optie {i + 1}", callback_data=f"{i}")
-                for i in range(len(context.user_data["media_object"][:2]))
-            ],
-            [
-                InlineKeyboardButton(f"Optie {i + 3}", callback_data=f"{i + 2}")
-                for i in range(len(context.user_data["media_object"][2:4]))
-            ],
-            [
-                InlineKeyboardButton(f"Optie {i + 5}", callback_data=f"{i + 4}")
-                for i in range(len(context.user_data["media_object"][4:5]))
-            ]
-        ])
+        # Create the options keyboard (2 options per row) for all shown options
+        shown = range(min(end, len(context.user_data["media_object"])))
+        keyboard = [
+            [InlineKeyboardButton(f"Optie {i + 1}", callback_data=f"{i}") for i in shown[j:j + 2]]
+            for j in range(0, len(shown), 2)
+        ]
+
+        # Only offer 'toon meer' on the first page and when there are more hits
+        if start == 0 and len(context.user_data["media_object"]) > end:
+            keyboard.append([InlineKeyboardButton("🔎 Toon meer", callback_data="more")])
+        keyboard.append([InlineKeyboardButton("🔄 Probeer opnieuw", callback_data="retry")])
 
         # Send the message with the keyboard options
-        await self.function.send_message(f"Welke optie wil je graag op Plęx zien?\n\n_Staat je keuze er niet tussen? Stuur dan /stop om opnieuw te beginnen_", update, context, reply_markup)
+        await self.function.send_message(f"Welke optie wil je graag op Plęx zien?\n\n_Staat je keuze er niet tussen? Kies dan voor 'Probeer opnieuw' om een andere titel in te voeren_", update, context, InlineKeyboardMarkup(keyboard))
 
         # Return to the next state
         return context.user_data['option_state']
+
+    async def media_show_more(self, update: Update, context: CallbackContext) -> Optional[int]:
+        """ Shows the next 5 media options (only once) """
+
+        # Answer query and remove the keyboard of the previous options message
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_reply_markup(reply_markup=None)
+
+        # Ignore if 'toon meer' was already used
+        if context.user_data.get("options_shown", 0) > 5:
+            return context.user_data['option_state']
+
+        return await self.send_media_options(update, context, 5)
 
     async def request_media_again(self, update: Update, context: CallbackContext):
 
@@ -152,6 +166,10 @@ class Media(ABC):
             await self.function.send_message(f"Oke, je kan de bot altijd opnieuw starten door /start te sturen.", update, context)
             return ConversationHandler.END
 
+        # Remove the options keyboard when coming from the 'probeer opnieuw' button
+        if update.callback_query.data == "retry":
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+
         # Try again based on the previously chosen media type
         media_type = context.user_data.get("media_type")
 
@@ -159,6 +177,7 @@ class Media(ABC):
         context.user_data.pop("requested_media", None)
         context.user_data.pop("media_object", None)
         context.user_data.pop("media_data", None)
+        context.user_data.pop("options_shown", None)
 
         if media_type == "serie":
             await self.function.send_message("Welke serie wil je graag op Plęx zien?", update, context)
