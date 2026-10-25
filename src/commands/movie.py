@@ -66,7 +66,7 @@ class Movie(Media):
                 "next_state": MOVIE_NOTIFY
             },
             "already_downloaded": {
-                "condition": lambda movie, _: movie.get("movieFileId") != 0 and movie.get("monitored"),
+                "condition": lambda movie, _: movie.get("movieFileId", 0) != 0,
                 "next_state": MOVIE_UPGRADE
             },
         }
