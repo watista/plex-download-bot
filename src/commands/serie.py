@@ -222,7 +222,7 @@ class Serie(Media):
             entry["last"] = latest
         except (KeyError, TypeError, ValueError) as e:
             entry["last"] = "S00E00"
-            await self.log.logger(f"*ℹ️ No Path is found in JSON for {self.function.sanitize_text(str(e))}. See logs for more details.", False, "error")
+            await self.log.logger(f"ℹ️ *No Path is found in JSON for {self.function.sanitize_text(str(e))}.*\nSee logs for more details.", False, "error")
             await self.log.logger(f"Media JSON:\n{context.user_data.get('media_data')}", False, "error", False)
 
         # Save JSON
