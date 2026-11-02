@@ -198,6 +198,9 @@ class Media(ABC):
         await update.callback_query.answer()
         context.user_data['media_data'] = context.user_data["media_object"][int(update.callback_query.data)]
 
+        # Only the size check below may unmonitor this download, user_data is persisted between requests
+        context.user_data.pop("set_monitored", None)
+
         # Check Transmission and fetch active torrents
         transmission = TransmissionService(self.log)
         transmission_up, active_torrents = await transmission.get_active_torrents()
