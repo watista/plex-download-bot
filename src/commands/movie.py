@@ -21,6 +21,8 @@ class Movie(Media):
     async def get_media_states(self) -> dict:
         """ Function that defines the states """
 
+        # Only a movie that is in Radarr has an id. Do not use monitored for this:
+        # it is also False for a movie in Radarr that has been unmonitored.
         return {
             "downloading": {
                 # "condition": lambda movie, torrents: any(movie["title"].lower() in t.name.lower() for t in torrents),
@@ -38,8 +40,8 @@ class Movie(Media):
                 "state_message": True,
                 "next_state": MOVIE_NOTIFY
             },
-            "not_available_not_monitored": {
-                "condition": lambda movie, _: movie.get("movieFileId") == 0 and not movie.get("monitored") and movie.get("status") != "released",
+            "not_available": {
+                "condition": lambda movie, _: not movie.get("id") and movie.get("status") != "released",
                 "message": "Op dit moment is {title} nog niet downløadbaar, hij is toegevoegd aan de te-downløaden-lijst. Zodra {title} gedownløad kan worden gebeurt dit automatisch.",
                 "action": "start_download",
                 "state_message": True,
@@ -52,7 +54,7 @@ class Movie(Media):
                 "next_state": MOVIE_NOTIFY
             },
             "available_to_download": {
-                "condition": lambda movie, _: movie.get("movieFileId") == 0 and not movie.get("monitored") and movie.get("status") == "released",
+                "condition": lambda movie, _: not movie.get("id") and movie.get("status") == "released",
                 "message": "De downløad voor {title} is nu gestart, gemiddeld duurt het 1 uur voordat een film online staat, nog even geduld 😄",
                 "action": "start_download",
                 "extra_action": "scan_missing_media",
@@ -62,6 +64,13 @@ class Movie(Media):
             "available_to_download_but": {
                 "condition": lambda movie, _: movie.get("movieFileId") == 0 and movie.get("monitored") and movie.get("status") == "released",
                 "message": "Zo te zien is {title} wel al downloadbaar, alleen is er al een tijdje geen downløad-match gevonden. Misschien wordt er nog een downløad-match gevonden maar het kan ook zijn dat dit nog lang gaat duren of helemaal niet meer. Wil je deze film echt super graag, dan kan je contact opnemen met de serverbeheerder om te kijken of de film toch handmatig gedownløad kan worden.",
+                "state_message": True,
+                "next_state": MOVIE_NOTIFY
+            },
+            "unmonitored": {
+                "condition": lambda movie, _: movie.get("movieFileId") == 0 and not movie.get("monitored"),
+                "message": "{title} staat op dit moment aangemerkt als 'niet downløaden', dit kan verschillende redenen hebben. De serverbeheerder is op de hoogte gesteld van de aanvraag en zal deze beoordelen en er bij je op terug komen.",
+                "inform_unmonitored": True,
                 "state_message": True,
                 "next_state": MOVIE_NOTIFY
             },
