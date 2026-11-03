@@ -199,6 +199,12 @@ class Subscribe:
         user_node = data.setdefault("notify_list", {}).setdefault(user_id, {})
         serie_episode = user_node.setdefault("serie_episode", {})
 
+        # Only a serie from the list is a TMDB ID, a button of an older message (like option 1
+        # of an earlier search) is not. Wait for a choice from the list.
+        if serie_id not in serie_episode:
+            await self.function.send_message("Deze knop hoort niet bij de lijst met series waarvoor je bent aangemeld. Kies een serie uit de lijst, of stuur /stop om te stoppen.", update, context)
+            return AFMELDEN_OPTIE
+
         # Remove serie from list
         serie_episode.pop(serie_id, None)
 

@@ -203,9 +203,11 @@ class Bot:
                 MESSAGE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_id)],
                 MESSAGE_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_send)],
                 MESSAGE_ALL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.message_all_id)],
-                AFMELDEN_OPTIE: [CallbackQueryHandler(self.subscribe.afmelden_optie)],
+                # Only digits (a tmdbId, an option index), so a welcome button of an older
+                # message goes to the fallbacks instead of being used as a choice
+                AFMELDEN_OPTIE: [CallbackQueryHandler(self.subscribe.afmelden_optie, pattern="^[0-9]+$")],
                 AANMELD_OPTIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.subscribe.aanmeld_optie)],
-                AANMELD_CHOICE: [CallbackQueryHandler(self.subscribe.aanmeld_keus)],
+                AANMELD_CHOICE: [CallbackQueryHandler(self.subscribe.aanmeld_keus, pattern="^[0-9]+$")],
                 AANMELDEN_SERIE: [CallbackQueryHandler(self.serie.aanmelden, pattern="^(yes|no)$")],
                 ADD_MOVIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_user)],
                 ADD_MOVIE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_id)],
