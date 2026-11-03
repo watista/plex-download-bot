@@ -27,8 +27,12 @@ Reeks gebruikersacties van één Gebruiker of Bezoeker, van het begin (`/start`,
 _Avoid_: conversatie, sessie, flow
 
 **Interactie**:
-Eén Gebruikersactie plus alles wat de bot doet om die af te handelen, of één run van een geplande taak. Heeft een eigen code waarmee alle logregels ervan en de meldingen erover terug te vinden zijn. Een Gesprek bestaat uit meerdere Interacties.
+Eén Gebruikersactie plus alles wat de bot doet om die af te handelen, of één run van een Geplande taak. Heeft een eigen code waarmee alle logregels ervan en de meldingen erover terug te vinden zijn. Een Gesprek bestaat uit meerdere Interacties.
 _Avoid_: request, verzoek, fout-ID
+
+**Geplande taak**:
+Werk dat de bot uit zichzelf doet, op vaste momenten of eenmalig bij de start, zonder Gebruikersactie: kijken of aangevraagde media online staat, Transmission controleren, Sonarr en Radarr laten zoeken naar ontbrekende media. Elke run is een Interactie.
+_Avoid_: schedule, cronjob
 
 ### Logging en meldingen
 
@@ -57,7 +61,7 @@ Tekst die een gebruiker te zien krijgt als er iets misgaat.
 _Avoid_: errorbericht
 
 **Gebruikersbericht**:
-Bericht dat de bot uit zichzelf aan een Gebruiker stuurt, en dus niet als antwoord op een Gebruikersactie van die Gebruiker: dat iets online staat, dat er nieuwe afleveringen zijn, of een bericht van de Beheerder.
+Bericht dat de bot uit zichzelf aan een Gebruiker stuurt, en dus niet als antwoord op een Gebruikersactie van die Gebruiker: dat iets online staat, dat er een nieuw seizoen of nieuwe afleveringen zijn, of een bericht van de Beheerder.
 _Avoid_: notificatie, notify, melding
 
 ### Fouten
