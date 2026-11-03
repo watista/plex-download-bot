@@ -6,7 +6,7 @@ Label: wayfinder:map
 
 Een logging-spec (`.scratch/logging/spec.md`) die vastlegt hoe de bot logregels, gebruikersacties en admin-meldingen bij fouten produceert, zodat de beheerder (1) via SSH en via `/log <gebruiker>` kan terugzoeken wat een gebruiker deed, (2) kan zien waar een fout ontstond, en (3) uit een admin-melding bij een fout direct begrijpt wat er mis is. Klaar om in implementatie-issues op te knippen.
 
-Bereikt op 2026-11-03: alle tickets zijn dicht en de besluiten staan samengevoegd in [spec.md](spec.md).
+Bereikt op 2026-11-03: alle tickets zijn dicht en de besluiten staan samengevoegd in [spec.md](spec.md). De implementatie is opgeknipt in [implementatie/](implementatie/index.md).
 
 ## Notes
 

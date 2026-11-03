@@ -799,20 +799,9 @@ Nagekeken tijdens de tickets. Regelnummers zijn van 2026-11-03.
 
 ---
 
-## 15. Mogelijke volgorde
+## 15. Implementatie
 
-Een suggestie om de spec op te knippen; de volgorde is niet besloten. Elke stap gebruikt alleen wat ervoor komt.
-
-1. **Logregels en bestanden**: `src/log/` met de formatter, de dagbestanden, het debug-bestand, de console, het maskeren en het onderscheid tussen eigen code en libraries; `captureWarnings`. De contextvars kunnen hier al bestaan, nog zonder processor.
-2. **Interactie-context**: `InteractionProcessor`, `account_for`, de Code. Vanaf hier hebben alle regels `user_id`, `account` of `tg_name` en `interaction_id`.
-3. **Verzendfunctie**: `send`, `send_admin_message`, `send_user_message`, `TelegramRequest`.
-4. **Meldfunctie**: `Fault`, `faults.json`, de afremming, de opmaak van de admin-melding, de excepthook.
-5. **Requestregel en diensten**: `call`, de omzetting per client, het weghalen van `last_error` en de oude tellers.
-6. **Wrappers en Foutmelding**: `guard`, `guard_job`, `guard_task`, `error_handler` als vangnet, het weghalen van lokale `try/except`-blokken en eigen meldingen.
-7. **Gebruikersacties**: de catalogus in de handlers, het vangnet voor `ignored`, `conversation_expired`.
-8. **Geplande taken**: namen, `job_finished`, `tally`, `notify_check`, `check_transmission`.
-9. **`/log`**: de loglezer en het command.
-10. **README, `dot-env.template` en `.gitignore`**.
+Opgeknipt in vijftien issues in [implementatie/](implementatie/index.md), met de volgorde, de afhankelijkheden en de issues die dezelfde bestanden raken. Na elke issue werkt de bot nog: issue 01 laat de klasse `Log` tijdelijk bestaan als dunne laag op de nieuwe logging, en issue 15 haalt die weg.
 
 ---
 
