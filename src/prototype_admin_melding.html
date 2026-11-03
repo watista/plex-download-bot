@@ -1,0 +1,696 @@
+<!doctype html>
+<!--
+  PROTOTYPE, wegwerpcode. Ticket 10 van de logging-map:
+  "Hoe ziet een admin-melding bij een fout eruit?"
+  Vier varianten (A-D), de huidige meldingen (now) en de gekozen opzet (E),
+  schakelbaar via ?variant= en de balk onderin. Hoort niet op main; bewaard op de
+  wegwerp-branch prototype/admin-melding-bij-fout. Het besluit staat in ticket 10.
+-->
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin-melding prototype</title>
+<style>
+  :root {
+    --page: #dfe5ec;
+    --chat: #c9d4df;
+    --bubble: #ffffff;
+    --text: #13181e;
+    --muted: #64717f;
+    --accent: #2b7cd3;
+    --code: #b8432f;
+    --pre-bg: #eef2f6;
+    --panel: #f7f9fb;
+    --border: #cdd5de;
+    --ghost: #7a8794;
+    --bar: #13181e;
+    --bar-text: #ffffff;
+    --bar-muted: #9aa6b2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0b1118;
+      --chat: #0e1621;
+      --bubble: #182533;
+      --text: #e7edf3;
+      --muted: #8796a6;
+      --accent: #6ab3f3;
+      --code: #f0a08f;
+      --pre-bg: #0f1a25;
+      --panel: #121c27;
+      --border: #263443;
+      --ghost: #6f7f8f;
+      --bar: #f2f5f8;
+      --bar-text: #13181e;
+      --bar-muted: #5d6a77;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text);
+    font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 120px; }
+  header h1 { font-size: 20px; margin: 0 0 6px; }
+  header p { margin: 6px 0; color: var(--muted); }
+  header ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); }
+  header li { margin: 2px 0; }
+  .variant-intro {
+    margin: 20px 0 8px;
+    padding: 12px 14px;
+    border-left: 3px solid var(--accent);
+    background: var(--panel);
+    border-radius: 6px;
+  }
+  .variant-intro b { display: block; margin-bottom: 2px; }
+  .chat { background: var(--chat); border-radius: 12px; padding: 14px 12px 4px; }
+  .case { margin-bottom: 18px; }
+  .caption { font-size: 12px; color: var(--muted); margin: 0 4px 6px; }
+  .caption .n { font-weight: 600; color: var(--text); }
+  .bubble {
+    position: relative;
+    background: var(--bubble);
+    border-radius: 12px 12px 12px 4px;
+    padding: 7px 11px 18px;
+    margin: 0 0 6px;
+    max-width: 92%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-shadow: 0 1px 1px rgba(0,0,0,.08);
+  }
+  .bubble .time { position: absolute; right: 9px; bottom: 3px; font-size: 11px; color: var(--muted); }
+  .bubble .sender { display: block; font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 1px; }
+  .bubble code { font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; color: var(--code); }
+  .bubble pre {
+    font-family: ui-monospace, Consolas, monospace; font-size: 13px;
+    background: var(--pre-bg); border-radius: 6px; padding: 6px 8px; margin: 4px 0;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .bubble a, .bubble .tag { color: var(--accent); text-decoration: none; }
+  .bubble blockquote {
+    margin: 4px 0; padding: 2px 8px 2px 9px;
+    border-left: 3px solid var(--accent); border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    position: relative;
+  }
+  .bubble blockquote[data-expandable] { cursor: pointer; }
+  .bubble blockquote[data-expandable].collapsed { max-height: 4.4em; overflow: hidden; }
+  .bubble blockquote[data-expandable]::after {
+    content: "⌄"; position: absolute; right: 6px; bottom: 0; color: var(--accent);
+  }
+  .bubble blockquote[data-expandable]:not(.collapsed)::after { content: "⌃"; }
+  .bubble.plain { font-family: inherit; }
+  .ghost {
+    color: var(--ghost); font-style: italic; font-size: 13px;
+    border: 1px dashed var(--border); border-radius: 10px;
+    padding: 8px 11px; margin: 0 0 6px; max-width: 92%;
+  }
+  .meta { font-size: 12px; color: var(--muted); margin: 0 4px 4px; }
+  .meta .warn { color: var(--code); }
+  .source {
+    font-size: 12.5px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; margin: 4px 0 6px;
+  }
+  .source table { border-collapse: collapse; width: 100%; }
+  .source td { padding: 1px 6px 1px 0; vertical-align: top; }
+  .source td:first-child { color: var(--muted); white-space: nowrap; width: 1%; }
+  .source code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .source .new { color: var(--code); font-size: 11px; }
+  .questions { margin-top: 28px; }
+  .questions h2 { font-size: 16px; margin: 0 0 6px; }
+  .questions ol { padding-left: 20px; color: var(--muted); }
+  .questions li { margin: 4px 0; }
+
+  .switcher {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px;
+    background: var(--bar); color: var(--bar-text);
+    border-radius: 999px; padding: 5px 6px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.28);
+    font-size: 13px; max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center;
+  }
+  .switcher button {
+    background: transparent; color: inherit; border: 0; cursor: pointer;
+    font: inherit; padding: 6px 10px; border-radius: 999px;
+  }
+  .switcher button:hover { background: color-mix(in srgb, var(--bar-text) 12%, transparent); }
+  .switcher .label { min-width: 210px; text-align: center; font-weight: 600; }
+  .switcher .sep { width: 1px; height: 18px; background: var(--bar-muted); opacity: .5; margin: 0 4px; }
+  .switcher .toggle[aria-pressed="true"] { background: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Admin-melding bij een Fout: prototype</h1>
+    <p>Dit is wegwerpcode voor ticket 10. Hieronder staan acht gevallen uit de live-logs van oktober (ticket 03), zoals de Beheerder ze in de Telegram-groep zou krijgen. Namen, user ID's en de koppeling tussen titels en ID's zijn verzonnen.</p>
+    <ul>
+      <li>Blader met <b>←&nbsp;→</b> of met de balk onderin door de varianten. <b>Nu</b> toont wat de bot vandaag stuurt.</li>
+      <li><b>Bron</b> toont uit welke gegevens van de Fout en de Interactie een melding is opgebouwd. Een rood label betekent dat dat gegeven nog niet bestaat.</li>
+      <li><b>Platte tekst</b> toont wat er aankomt als Telegram de opmaak weigert en de bot het opnieuw stuurt zonder <code>parse_mode</code>.</li>
+      <li>Aannames: de opmaak is HTML in plaats van MarkdownV2, waarbij je alleen <code>&lt; &gt; &amp;</code> escapet, en de taal is Engels, net als de logregels.</li>
+    </ul>
+  </header>
+
+  <div class="variant-intro" id="variant-intro"></div>
+  <div class="chat" id="chat"></div>
+
+  <section class="questions">
+    <h2>Om op te reageren</h2>
+    <ol>
+      <li>Welke variant komt het dichtst bij wat je wilt, en welk stuk wil je uit een andere variant?</li>
+      <li>Het ID kun je als inline code laten zien (tikken kopieert het, zie A en D) of als hashtag (tikken zoekt alle meldingen met dat ID in de groep, zodat een Storing en zijn Herstelmelding bij elkaar komen, zie B).</li>
+      <li>Een traceback kan wegblijven (A, C), alleen de eigen code laten zien (A: één regel, B: uitgeklapt) of volledig uitklapbaar zijn (B, bij een Bug buiten de wrapper).</li>
+      <li>De taal kan Engels zijn, net als de logregels en de huidige meldingen, of Nederlands, net als de woorden in <code>CONTEXT.md</code>.</li>
+      <li>Moet de melding na een Telegram-storing noemen welke meldingen in die tijd niet zijn aangekomen (A, B)?</li>
+      <li>D heeft per Fout een "to do"-zin nodig. Die bestaat nog niet in de <code>Fout</code> (09).</li>
+    </ol>
+  </section>
+</main>
+
+<div class="switcher" role="toolbar" aria-label="Prototype-schakelaar">
+  <button id="prev" title="Vorige variant (←)">‹</button>
+  <span class="label" id="label"></span>
+  <button id="next" title="Volgende variant (→)">›</button>
+  <span class="sep"></span>
+  <button class="toggle" id="t-source" aria-pressed="false">Bron</button>
+  <button class="toggle" id="t-plain" aria-pressed="false">Platte tekst</button>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Gevallen: wat de Fout en de context van de Interactie meegeven (09, 06, 08).
+// ---------------------------------------------------------------------------
+
+const DATE = '2026-11-03';
+
+const CASES = [
+  {
+    key: 'radarr400', basis: '03 · geval 4', title: 'Bug: Radarr weigert een aanvraag (4xx)',
+    time: '10:08', kind: 'fault', fault: 'bug', service: 'radarr', iid: 'k7p2qx',
+    who: { account: 'anna', user_id: 123456789 },
+    media: { title: 'Dune: Part Two', year: 2024, id: 'tmdb 693134' },
+    headline: 'Radarr refused the movie request',
+    story: 'anna requested Dune: Part Two (2024), but Radarr refused it',
+    http: 400, reason: 'This movie has already been added',
+    frames: ['src/services/arr.py:98 in post', 'src/services/radarr.py:31 in add_movie', 'src/commands/movie.py:84 in start_download', 'src/commands/media.py:242 in media_choice'],
+    told: true,
+    todo: 'find out why the bot offered a movie that is already in Radarr',
+    link: 'Open in Radarr',
+    now: [`❌ <b>Error while queueing movie downløad.</b> ❌\nReason: HTTP 400 Bad Request\nCheck the error log for more information.`],
+  },
+  {
+    key: 'nostate', basis: '03 · geval 5', title: 'Bug: er past geen state bij de film',
+    time: '17:30', kind: 'fault', fault: 'bug', iid: 'w3f8na',
+    who: { account: 'bram', user_id: 223456789 },
+    media: { title: 'Mickey 17', year: 2025, id: 'tmdb 696506' },
+    headline: 'No media state matched',
+    story: 'bram picked Mickey 17 (2025), but none of the 7 movie states matched',
+    decided: { movieFileId: '(missing)', monitored: 'true', status: 'inCinemas', torrent: 'no match' },
+    frames: ['src/commands/media.py:333 in media_choice'],
+    told: true,
+    todo: 'add a state for this combination, or fix the conditions in movie.py',
+    now: [`Error happened during media state filtering, see the logs for the media JSON.`],
+  },
+  {
+    key: 'outside', basis: 'error_handler (in oktober niet gezien)', title: 'Bug buiten de wrapper, bij een Bezoeker',
+    time: '13:12', kind: 'fault', fault: 'bug', iid: 'p6c2vd', outside: true,
+    who: { tg_name: 'Kees', user_id: 323456789 },
+    headline: 'Unexpected exception outside the wrapper',
+    story: 'Visitor Kees pressed a button, and help_choice raised an exception that the wrapper did not catch',
+    exc_type: 'AttributeError', exc_msg: "'NoneType' object has no attribute 'data'",
+    frames: ['src/commands/help.py:88 in help_choice'],
+    traceback:
+`Traceback (most recent call last):
+  File "env/lib/python3.12/site-packages/telegram/ext/_application.py", line 1335, in process_update
+    await coroutine
+  File "env/lib/python3.12/site-packages/telegram/ext/_handlers/basehandler.py", line 158, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "src/commands/help.py", line 88, in help_choice
+    choice = update.callback_query.data
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'data'`,
+    told: true,
+    todo: 'wrap help_choice in src/bot.py and fix src/commands/help.py:88',
+    now: 'traceback',
+  },
+  {
+    key: 'nopath-job', basis: '03 · geval 1', title: 'Inrichtingsfout in een job: serie zonder pad',
+    time: '08:00', kind: 'fault', fault: 'setup', service: 'sonarr', iid: 'h9x4tr', job: 'check_notify_list',
+    media: { title: 'Slow Horses', id: 'tvdb 288673', series: true },
+    headline: 'Series has no path in Sonarr',
+    story: 'check_notify_list found Slow Horses in Sonarr without a path, and skipped it',
+    reason: 'no "path" in the Sonarr series',
+    repeat: '3rd run in a row, next alert tomorrow',
+    todo: 'give Slow Horses a path in Sonarr',
+    link: 'Open in Sonarr',
+    now: [`❌ <b>No path present in JSON for media with ID 288673.</b>\n3 runs in a row came back without a path.\nCheck the error log for more information. This message is sent once a day. ❌`],
+  },
+  {
+    key: 'nopath-user', basis: '03 · geval 2', title: 'Inrichtingsfout bij een Gebruiker, melden en doorwerken',
+    time: '19:42', kind: 'fault', fault: 'setup', service: 'sonarr', iid: 'b5q7ym',
+    who: { account: 'carla', user_id: 423456789 },
+    media: { title: 'Slow Horses', id: 'tvdb 288673', series: true },
+    headline: 'Series has no path in Sonarr',
+    story: 'carla subscribed to Slow Horses, which has no path in Sonarr. The subscription went through and starts at S00E00',
+    reason: 'no "path" in the Sonarr series',
+    continued: 'subscription saved, starting at S00E00',
+    told: false,
+    todo: 'give Slow Horses a path in Sonarr',
+    link: 'Open in Sonarr',
+    now: 'never',
+  },
+  {
+    key: 'disruption', basis: '03 · geval 7', title: 'Storing: Radarr houdt aan',
+    time: '05:17', kind: 'fault', fault: 'disruption', service: 'radarr', iid: 'm4t9cw',
+    headline: 'Radarr is not responding',
+    story: 'Radarr has been failing since 05:02',
+    http: 503, reason: 'Unable to communicate with RadarrAPI',
+    since: '05:02', attempts: 14, affected: 'job scan_missing_media, no users yet',
+    todo: 'nothing yet; if it lasts, check Radarr',
+    link: 'Radarr status',
+    now: 'none-503',
+  },
+  {
+    key: 'restored', basis: '03 · geval 7', title: 'Herstelmelding: Radarr is terug',
+    time: '06:07', kind: 'restored', service: 'radarr', iid: 'm4t9cw', iid_ok: 'r8h3ze',
+    since: '05:02', until: '06:07', duration: '1 h 5 min', attempts: 23,
+    now: 'none',
+  },
+  {
+    key: 'telegram', basis: '03 · geval 8', title: 'Na een Telegram-storing: begin en eind',
+    date: '2026-11-02', time: '17:06', kind: 'telegram', service: 'telegram',
+    from: '01-11 17:37', until: '02-11 17:06', duration: '23 h 29 min', polls: 805,
+    missed: [{ fault: 'disruption', service: 'sonarr', iid: 'q2w8ke' }],
+    now: 'none',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Hulpjes voor Telegram-HTML
+// ---------------------------------------------------------------------------
+
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const b = s => `<b>${esc(s)}</b>`;
+const i = s => `<i>${esc(s)}</i>`;
+const code = s => `<code>${esc(s)}</code>`;
+const pre = s => `<pre>${esc(s)}</pre>`;
+const link = s => `<a href="#">${esc(s)}</a>`;
+const quote = s => `<blockquote expandable>${s}</blockquote>`;
+
+const EMOJI = { bug: '🐞', disruption: '🌩', setup: '🔧', restored: '✅' };
+const NAME = { bug: 'Bug', disruption: 'Disruption', setup: 'Setup' };
+const SERVICE = { radarr: 'Radarr', sonarr: 'Sonarr', telegram: 'Telegram' };
+
+const mediaStr = m => `${m.title}${m.year ? ` (${m.year})` : ''} · ${m.id}`;
+const whoStr = w => w.account ? w.account : `visitor ${w.tg_name} (id ${w.user_id})`;
+const logFile = c => `log/plex-download-bot-${c.date || DATE}.jsonl`;
+
+// ---------------------------------------------------------------------------
+// Varianten. Elke variant is een functie van een geval naar Telegram-HTML.
+// ---------------------------------------------------------------------------
+
+const VARIANTS = {
+  now: {
+    name: 'Nu',
+    long: 'Nu: de huidige meldingen',
+    intro: 'Wat de bot vandaag stuurt (MarkdownV2, in stukken van 1024 tekens). Hier weergegeven zoals Telegram ze toont.',
+    render: renderNow,
+  },
+  A: {
+    name: 'A · Kaart',
+    long: 'A · Kaart: kop plus velden',
+    intro: 'Een kop met de soort en wat er misging, daaronder één regel per gegeven. Bij een Bug staat er één regel uit de eigen code, verder geen traceback. Het ID staat onderaan als inline code (tikken kopieert het). Bij elke soort zie je dezelfde volgorde.',
+    render: c => {
+      if (c.kind === 'restored') return [
+        `${EMOJI.restored} ${b('Restored')} · ${esc(SERVICE[c.service])} is responding again`,
+        `Down: ${c.since} – ${c.until} (${c.duration}), ${c.attempts} failed attempts`,
+        `Code: ${code(c.iid)} → ${code(c.iid_ok)}`,
+      ].join('\n');
+      if (c.kind === 'telegram') return [
+        `${EMOJI.restored} ${b('Restored')} · Telegram was unreachable`,
+        `Down: ${c.from} – ${c.until} (${c.duration}), ${c.polls} failed polls`,
+        `Not sent meanwhile: ${c.missed.map(m => `${NAME[m.fault].toLowerCase()} ${m.service} ${code(m.iid)}`).join(', ')}`,
+      ].join('\n');
+      const L = [`${EMOJI[c.fault]} ${b(NAME[c.fault])} · ${esc(c.headline)}`];
+      if (c.reason) L.push(`Reason: ${i(c.reason)}${c.http ? ` (HTTP ${c.http})` : ''}`);
+      if (c.exc_type) L.push(`Exception: ${code(c.exc_type)}: ${esc(c.exc_msg)}`);
+      if (c.since) L.push(`Since: ${c.since}, ${c.attempts} failed attempts`);
+      if (c.affected) L.push(`Affected: ${esc(c.affected)}`);
+      if (c.who) L.push(`${c.who.account ? 'User' : 'Visitor'}: ${esc(c.who.account || `${c.who.tg_name} (id ${c.who.user_id})`)}`);
+      if (c.job) L.push(`Job: ${code(c.job)}`);
+      if (c.media) L.push(`Media: ${esc(mediaStr(c.media))}`);
+      if (c.decided) L.push(`Checked: ${esc(Object.entries(c.decided).map(([k, v]) => `${k}=${v}`).join(', '))}`);
+      if (c.fault === 'bug') L.push(`Where: ${code(c.frames[0])}`);
+      if (c.outside) L.push(`Caught by error_handler, outside the wrapper`);
+      if (c.continued) L.push(`Continued: ${esc(c.continued)}`);
+      if (c.repeat) L.push(`Repeat: ${esc(c.repeat)}`);
+      if (c.who) L.push(`User told: ${c.told ? 'yes' : 'no'}`);
+      L.push(`Code: ${code(c.iid)}${c.since ? ' (first failed attempt)' : ''}`);
+      return L.join('\n');
+    },
+  },
+  B: {
+    name: 'B · Verhaal',
+    long: 'B · Verhaal: één zin plus uitklapbare details',
+    intro: 'Bovenaan staan hashtags voor de soort, de dienst en het ID. Tikken zoekt in de groep, dus een Storing en zijn Herstelmelding staan samen onder #m4t9cw. Daarna volgt één zin die het hele verhaal vertelt. Alle details, de eigen code en bij een Bug buiten de wrapper de volledige traceback zitten in een uitklapbaar blok. Tik op het blok om het uit te klappen.',
+    render: c => {
+      if (c.kind === 'restored') return [
+        `#restored #${c.service} #${c.iid}`,
+        `${b(SERVICE[c.service])} is responding again after ${c.duration} (${c.since} – ${c.until}).`,
+        quote([`${c.attempts} failed attempts`, `first failed: #${c.iid}`, `first success: #${c.iid_ok}`].join('\n')),
+      ].join('\n');
+      if (c.kind === 'telegram') return [
+        `#restored #telegram`,
+        `${b('Telegram')} was unreachable for ${c.duration} (${c.from} – ${c.until}). Admin messages from that time were not sent:`,
+        quote([`${c.polls} failed polls`, ...c.missed.map(m => `not sent: ${m.fault} ${m.service} #${m.iid}`)].join('\n')),
+      ].join('\n');
+      const tags = [`#${c.fault}`, c.service ? `#${c.service}` : null, c.job ? `#${c.job}` : null, `#${c.iid}`].filter(Boolean).join(' ');
+      let sentence = esc(c.story);
+      if (c.reason && c.fault !== 'setup') sentence += `: “${i(c.reason)}”${c.http ? ` (HTTP ${c.http})` : ''}`;
+      if (c.exc_type) sentence += `: ${code(c.exc_type)}`;
+      sentence += '.';
+      const D = [];
+      if (c.who) D.push(c.who.account ? `user ${c.who.account} · id ${c.who.user_id}` : `visitor ${c.who.tg_name} · id ${c.who.user_id}`);
+      if (c.media) D.push(mediaStr(c.media));
+      if (c.reason && c.fault === 'setup') D.push(`reason: ${c.reason}`);
+      if (c.since) D.push(`since ${c.since}, ${c.attempts} failed attempts`);
+      if (c.affected) D.push(`affected: ${c.affected}`);
+      if (c.decided) Object.entries(c.decided).forEach(([k, v]) => D.push(`${k}: ${v}`));
+      if (c.continued) D.push(`continued: ${c.continued}`);
+      if (c.repeat) D.push(`repeat: ${c.repeat}`);
+      if (c.who) D.push(`user told: ${c.told ? 'yes' : 'no'}`);
+      let details = esc(D.join('\n'));
+      if (c.fault === 'bug' && !c.traceback) details += '\n' + code(c.frames.join('\n'));
+      if (c.traceback) details += '\n' + code(c.traceback);
+      return [tags, sentence, quote(details)].join('\n');
+    },
+  },
+  C: {
+    name: 'C · Wijzer',
+    long: 'C · Wijzer: kop plus grep-commando',
+    intro: 'Bewust kaal. Eén regel zegt wat er misging, daaronder staat een commando dat je via SSH plakt om de hele Interactie in het log te zien. Alle details staan in de logregels. Zo blijft een melding altijd kort en heeft hij weinig opmaak die mis kan gaan.',
+    render: c => {
+      if (c.kind === 'restored') return [
+        `${EMOJI.restored} Restored: ${SERVICE[c.service]} after ${c.duration}`,
+        pre(`grep -E '${c.iid}|${c.iid_ok}' ${logFile(c)} | jq`),
+      ].join('\n');
+      if (c.kind === 'telegram') return [
+        `${EMOJI.restored} Restored: Telegram after ${c.duration} (${c.from} – ${c.until})`,
+        pre(`jq 'select(.service == "telegram")' log/plex-download-bot-2026-11-0{1,2}.jsonl`),
+      ].join('\n');
+      const who = c.who ? ` (${c.who.account || `visitor ${c.who.tg_name}`})` : c.job ? ` (${c.job})` : '';
+      return [
+        `${EMOJI[c.fault]} ${NAME[c.fault]}: ${esc(c.headline)}${esc(who)}`,
+        pre(`grep ${c.iid} ${logFile(c)} | jq`),
+      ].join('\n');
+    },
+  },
+  D: {
+    name: 'D · Actie eerst',
+    long: 'D · Actie eerst: wat moet je doen',
+    intro: 'De eerste regel zegt wat de Beheerder moet doen, de tweede waarom. Daarna komen een link naar de plek waar je het oplost en het ID. Hiervoor krijgt de Fout een "to do"-zin die de plek meegeeft waar de Fout ontstaat (nieuw, zie Bron).',
+    render: c => {
+      if (c.kind === 'restored') return [
+        `${EMOJI.restored} ${b('Nothing to do:')} ${esc(SERVICE[c.service])} is back`,
+        i(`Down ${c.since} – ${c.until} (${c.duration})`),
+        `${code(c.iid)} → ${code(c.iid_ok)}`,
+      ].join('\n');
+      if (c.kind === 'telegram') return [
+        `${EMOJI.restored} ${b('Nothing to do:')} Telegram is back`,
+        i(`Unreachable ${c.from} – ${c.until} (${c.duration}), ${c.polls} failed polls`),
+      ].join('\n');
+      const why = [];
+      if (c.who) why.push(c.who.account || `visitor ${c.who.tg_name}`);
+      if (c.job) why.push(c.job);
+      why.push(c.headline);
+      if (c.media) why.push(`${c.media.title}${c.media.year ? ` (${c.media.year})` : ''}`);
+      if (c.reason) why.push(`“${c.reason}”`);
+      if (c.exc_type) why.push(c.exc_type);
+      if (c.since) why.push(`since ${c.since}`);
+      if (c.repeat) why.push(c.repeat);
+      const L = [
+        `${EMOJI[c.fault]} ${b('To do:')} ${esc(c.todo)}`,
+        i(why.join(' · ')),
+      ];
+      const tail = [];
+      if (c.link) tail.push(link(c.link));
+      else if (c.fault === 'bug') tail.push(code(c.frames[0]));
+      tail.push(code(c.iid));
+      L.push(tail.join(' · '));
+      return L.join('\n');
+    },
+  },
+  E: {
+    name: 'E · Gekozen',
+    long: 'E · Gekozen: A plus het blok van B',
+    intro: 'Dit is het resultaat van de grilling op 2026-11-03. De kop en de belangrijkste regels staan in beeld, de details zitten in een uitklapbaar blok en de code staat altijd onderaan. De opmaak is HTML en de taal Engels. Een titel in Sonarr of Radarr is een link. Een Herstelmelding komt stil binnen. Met Platte tekst zie je de terugval als Telegram de opmaak weigert.',
+    render: c => {
+      const title = m => `${m.title}${m.year ? ` (${m.year})` : ''}`;
+      if (c.kind === 'restored') return [
+        `${EMOJI.restored} ${b('Restored')} · ${esc(SERVICE[c.service])} is responding again`,
+        `Down: ${c.since} – ${c.until} (${c.duration}), ${c.attempts} failed attempts`,
+        `Code: ${code(c.iid)} → ${code(c.iid_ok)}`,
+      ].join('\n');
+      if (c.kind === 'telegram') return [
+        `${EMOJI.restored} ${b('Restored')} · Telegram was unreachable`,
+        `Down: ${c.from} – ${c.until} (${c.duration}), ${c.polls} failed polls`,
+        `Not sent meanwhile (${c.missed.length}):`,
+        ...c.missed.map(m => `• ${NAME[m.fault]} · ${esc(SERVICE[m.service])} · ${code(m.iid)}`),
+      ].join('\n');
+      const L = [`${EMOJI[c.fault]} ${b(NAME[c.fault])} · ${esc(c.headline)}`];
+      if (c.reason) L.push(`Reason: ${i(c.reason)}${c.http ? ` (HTTP ${c.http})` : ''}`);
+      if (c.exc_type) L.push(`Exception: ${code(c.exc_type)}: ${esc(c.exc_msg)}`);
+      if (c.since) L.push(`Since: ${c.since}, ${c.attempts} failed attempts`);
+      if (c.who) L.push(c.who.account ? `User: ${esc(c.who.account)}` : `Visitor: ${esc(c.who.tg_name)}`);
+      if (c.job) L.push(`Job: ${code(c.job)}`);
+      if (c.media) L.push(`Media: ${c.service ? link(title(c.media)) : esc(title(c.media))}`);
+      if (c.outside) L.push(`Caught by error_handler, outside the wrapper`);
+      if (c.continued) L.push(`Continued: ${esc(c.continued)}`);
+      if (c.repeat) L.push(`Repeat: ${esc(c.repeat)}`);
+      const D = [];
+      if (c.decided) Object.entries(c.decided).forEach(([k, v]) => D.push(esc(`${k}: ${v}`)));
+      if (c.frames && c.fault === 'bug') D.push(code(c.frames.join('\n')));
+      if (c.media) D.push(esc(c.media.id));
+      if (c.who) D.push(esc(`user_id: ${c.who.user_id}`));
+      if (c.who) D.push(`user told: ${c.told ? 'yes' : 'no'}`);
+      if (D.length) L.push(quote(D.join('\n')));
+      L.push(`Code: ${code(c.iid)}${c.since ? ' (first failed attempt)' : ''}`);
+      return L.join('\n');
+    },
+  },
+};
+const ORDER = ['now', 'A', 'B', 'C', 'D', 'E'];
+
+// ---------------------------------------------------------------------------
+// De huidige meldingen, inclusief het opknippen in stukken van 1024 tekens
+// na MarkdownV2-escaping (send_telegram_message in src/log.py).
+// ---------------------------------------------------------------------------
+
+function renderNow(c) {
+  if (c.now === 'never') return { ghost: 'Komt nooit aan. De tekst opent vet met * maar sluit niet af, dus Telegram weigert hem (BadRequest: Can\'t parse entities). Daarna gaat er alleen een ERROR "Telegram API error" naar het logbestand.' };
+  if (c.now === 'none') return { ghost: 'Geen admin-melding. Er komt alleen een regel in het logbestand.' };
+  if (c.now === 'none-503') return [
+    { ghost: 'Geen admin-melding bij een 503 (telegram=False in src/services/arr.py:91). Alleen bij een timeout tijdens de diskspace-check komt er tot 3× een melding, bijvoorbeeld:' },
+    `❌ <b>Error while fetching movie diskspace information.</b>\nReason: TimeoutError (after 3 retries)\nCheck the error log for more information. ❌`,
+  ];
+  if (c.now === 'traceback') {
+    const raw = `Unexpected error happened with Telegram dispatcher\n${c.traceback}`;
+    return chunk1024(raw).map(esc);
+  }
+  return c.now;
+}
+
+function chunk1024(text) {
+  const special = /([_\[\]()~`>#+\-=|{}.!])/g;
+  const escaped = text.replace(special, '\\$1');
+  const chunks = [];
+  let cur = '';
+  for (const word of escaped.split(' ')) {
+    if (cur.length + word.length + 1 > 1024) { chunks.push(cur); cur = word; }
+    else cur += (cur ? ' ' : '') + word;
+  }
+  if (cur) chunks.push(cur);
+  return chunks.map(ch => ch.replace(/\\([_\[\]()~`>#+\-=|{}.!])/g, '$1'));
+}
+
+// ---------------------------------------------------------------------------
+// Bron: welke gegevens de melding gebruikt, en of ze al bestaan (09, 08, 06).
+// ---------------------------------------------------------------------------
+
+function sourceRows(c, variant) {
+  const R = [];
+  const add = (k, v, isNew) => { if (v !== undefined && v !== null && v !== '') R.push([k, v, isNew]); };
+  if (c.kind === 'fault') {
+    add('Fout.soort', c.fault);
+    add('Fout.dienst', c.service);
+    add('Fout.reden', c.reason ? `${c.http ? c.http + ' ' : ''}${c.reason}` : null);
+    add('Fout.exceptie', c.exc_type ? `${c.exc_type}: ${c.exc_msg}` : null);
+    add('interaction_id', c.iid);
+    add('job', c.job);
+    add('user_id / account / tg_name', c.who ? `${c.who.user_id} / ${c.who.account || '–'} / ${c.who.tg_name || '–'}` : null);
+    add('media', c.media ? mediaStr(c.media) : null, true);
+    add('velden van de beslissing', c.decided ? Object.entries(c.decided).map(([k, v]) => `${k}=${v}`).join(', ') : null, true);
+    add('eigen frames', c.frames ? c.frames.join(' ← ') : null);
+    add('buiten de wrapper', c.outside ? 'ja (error_handler)' : null);
+    add('Foutmelding met "beheerder op de hoogte"', c.who ? (c.told ? 'ja' : 'nee, doorgewerkt') : null);
+    add('Storing: begin, pogingen, getroffen', c.since ? `${c.since}, ${c.attempts}, ${c.affected}` : null, true);
+    add('afremmen', c.repeat, true);
+    if (variant === 'D') add('to do (zin voor de Beheerder)', c.todo, true);
+  } else if (c.kind === 'restored') {
+    add('dienst', c.service);
+    add('ID eerste mislukte / eerste geslaagde poging', `${c.iid} / ${c.iid_ok}`);
+    add('begin, eind, pogingen', `${c.since}, ${c.until}, ${c.attempts}`, true);
+  } else {
+    add('begin, eind, mislukte polls', `${c.from}, ${c.until}, ${c.polls}`, true);
+    add('niet verstuurde meldingen', c.missed.map(m => m.iid).join(', '), true);
+    add('interaction_id', 'geen: pollen valt buiten een Interactie (08)');
+  }
+  return R;
+}
+
+// ---------------------------------------------------------------------------
+// Pagina
+// ---------------------------------------------------------------------------
+
+const state = { variant: 'E', source: false, plain: false };
+
+function readUrl() {
+  const p = new URLSearchParams(location.search);
+  if (ORDER.includes(p.get('variant'))) state.variant = p.get('variant');
+  state.source = p.get('bron') === '1';
+  state.plain = p.get('plat') === '1';
+}
+
+function writeUrl() {
+  const p = new URLSearchParams();
+  p.set('variant', state.variant);
+  if (state.source) p.set('bron', '1');
+  if (state.plain) p.set('plat', '1');
+  try { history.replaceState(null, '', `${location.pathname}?${p}`); } catch (e) { /* data:-preview */ }
+}
+
+function toDom(html) {
+  const el = document.createElement('div');
+  el.innerHTML = html;
+  return el;
+}
+
+function decorate(el) {
+  // Telegram toont #hashtags als link en klapt een expandable blockquote in
+  el.querySelectorAll('blockquote[expandable]').forEach(q => {
+    q.dataset.expandable = '1';
+    q.classList.add('collapsed');
+    q.addEventListener('click', () => q.classList.toggle('collapsed'));
+  });
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    if (n.parentElement.closest('code, pre, a')) return;
+    if (!/#[a-z0-9_]+/i.test(n.nodeValue)) return;
+    const span = document.createElement('span');
+    span.innerHTML = esc(n.nodeValue).replace(/#[a-z0-9_]+/gi, m => `<span class="tag">${m}</span>`);
+    n.replaceWith(...span.childNodes);
+  });
+}
+
+function bubble(html, c) {
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble' + (state.plain ? ' plain' : '');
+  const sender = document.createElement('span');
+  sender.className = 'sender';
+  sender.textContent = 'Plex Download Bot';
+  wrap.appendChild(sender);
+  const parsed = toDom(html);
+  const visible = parsed.textContent;
+  const body = document.createElement('div');
+  if (state.plain && state.variant === 'E') body.textContent = `⚠️ Telegram rejected the formatting: Can't parse entities\n${visible}`;
+  else if (state.plain) body.textContent = visible;
+  else { body.innerHTML = parsed.innerHTML; decorate(body); }
+  wrap.appendChild(body);
+  const t = document.createElement('span');
+  t.className = 'time';
+  t.textContent = c.time;
+  wrap.appendChild(t);
+  return { el: wrap, length: visible.length };
+}
+
+function render() {
+  const v = VARIANTS[state.variant];
+  document.getElementById('label').textContent = v.long;
+  document.getElementById('variant-intro').innerHTML = `<b>${esc(v.long)}</b>${esc(v.intro)}`;
+  document.getElementById('t-source').setAttribute('aria-pressed', state.source);
+  document.getElementById('t-plain').setAttribute('aria-pressed', state.plain);
+
+  const chat = document.getElementById('chat');
+  chat.innerHTML = '';
+  CASES.forEach((c, idx) => {
+    const box = document.createElement('div');
+    box.className = 'case';
+    box.innerHTML = `<div class="caption"><span class="n">${idx + 1}. ${esc(c.title)}</span> · ${esc(c.basis)}</div>`;
+
+    let out = v.render(c);
+    if (!Array.isArray(out)) out = [out];
+    const lengths = [];
+    out.forEach(m => {
+      if (m && m.ghost) {
+        const g = document.createElement('div');
+        g.className = 'ghost';
+        g.textContent = m.ghost;
+        box.appendChild(g);
+        return;
+      }
+      const { el, length } = bubble(m, c);
+      box.appendChild(el);
+      lengths.push(length);
+    });
+
+    if (lengths.length) {
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const total = lengths.reduce((a, n) => a + n, 0);
+      const parts = lengths.length > 1 ? ` in ${lengths.length} berichten` : '';
+      const silent = state.variant === 'E' && c.kind !== 'fault' && !(c.missed && c.missed.length) ? ' · stil (zonder geluid)' : '';
+      meta.innerHTML = `${total} tekens${parts}${silent}${total > 4096 ? ' · <span class="warn">boven de limiet van 4096</span>' : ''}`;
+      box.appendChild(meta);
+    }
+
+    if (state.source && state.variant !== 'now') {
+      const rows = sourceRows(c, state.variant);
+      const src = document.createElement('div');
+      src.className = 'source';
+      src.innerHTML = `<table>${rows.map(([k, val, isNew]) =>
+        `<tr><td>${esc(k)}</td><td><code>${esc(val)}</code>${isNew ? ' <span class="new">nog niet vastgelegd</span>' : ''}</td></tr>`).join('')}</table>`;
+      box.appendChild(src);
+    }
+    chat.appendChild(box);
+  });
+  writeUrl();
+}
+
+function step(d) {
+  const idx = ORDER.indexOf(state.variant);
+  state.variant = ORDER[(idx + d + ORDER.length) % ORDER.length];
+  render();
+}
+
+document.getElementById('prev').addEventListener('click', () => step(-1));
+document.getElementById('next').addEventListener('click', () => step(1));
+document.getElementById('t-source').addEventListener('click', () => { state.source = !state.source; render(); });
+document.getElementById('t-plain').addEventListener('click', () => { state.plain = !state.plain; render(); });
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') step(-1);
+  if (e.key === 'ArrowRight') step(1);
+});
+
+readUrl();
+render();
+</script>
+</body>
+</html>
