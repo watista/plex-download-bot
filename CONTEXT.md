@@ -36,6 +36,10 @@ _Avoid_: request, verzoek, fout-ID
 Technisch record in het logbestand, bedoeld om achteraf terug te zoeken wat er gebeurde.
 _Avoid_: log message, debug log
 
+**Code**:
+Zes tekens in een melding of Foutmelding waarmee de Beheerder de bijbehorende logregels terugvindt. Hoort bij een Interactie. Een Bug buiten een Interactie, zoals een crash, krijgt een eigen Code. Een Storing buiten een Interactie heeft er geen.
+_Avoid_: foutcode, fout-ID, referentie
+
 **Admin-melding**:
 Telegram-bericht aan de beheerder waar de beheerder iets mee moet doen.
 _Avoid_: alert, notificatie, log naar Telegram
