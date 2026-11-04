@@ -22,6 +22,13 @@ Regels voor de Gebruikersacties rond zoeken en aanvragen, in `src/commands/media
 - De admin-berichten in deze bestanden die geen fout zijn, gaan via `send_admin_message`: "User has requested", het kwaliteitsverzoek, aan- en afmelden voor een serie en unmonitored. Hun tekst komt niet meer in het log.
 - Meldingen over Fouten (`❌ …`, "see the logs") blijven voor 07 en 09.
 
+## Besluiten bij de uitvoering
+
+Voorgelegd en besloten op 2026-11-04, en bijgewerkt in de catalogus van de spec:
+
+- **Zoeken om aan te melden** geeft één regel `search_term`, met `media_type: series` en `purpose: series_updates`. `results` is het aantal series dat je kunt kiezen (gedownload en nog niet afgelopen). `results: 0` staat voor "geen resultaten", dus er komt geen aparte regel `series_updates` met die uitkomst.
+- **De uitkomsten van `media_request`**: `download_started`, `already_downloaded`, `not_released`, `no_download_match`, `unmonitored`, `no_space`, `failed`, plus `downloading` als het item al in Transmission staat. `unmonitored` geldt ook voor een serie met meer dan 5 seizoenen; die herken je aan het veld `seasons`. `failed` heet niet `error`, omdat `CONTEXT.md` "error" vermijdt.
+
 ## Spec
 
 - [5. Gebruikersacties](../spec.md#5-gebruikersacties)

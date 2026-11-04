@@ -129,10 +129,10 @@ class Bot:
         # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
         # normal mode; on the standby (maintenance) host they would just fail.
         if self.mode == "normal":
-            self.serie = Serie(args, logger, self.function)
-            self.movie = Movie(args, logger, self.function)
+            self.serie = Serie(args, logger, self.function, self.telegram)
+            self.movie = Movie(args, logger, self.function, self.telegram)
             self.schedule = Schedule(args, logger, self.function, self.telegram)
-            self.subscribe = Subscribe(args, logger, self.function)
+            self.subscribe = Subscribe(args, logger, self.function, self.telegram)
             self.sonarr = Sonarr(logger)
             self.radarr = Radarr(logger)
             self.start.subscribe = self.subscribe

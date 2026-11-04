@@ -90,6 +90,10 @@ class LogFolder:
         """ The lines of a file in the log folder """
         return [json.loads(line) for line in self.raw(name).splitlines()]
 
+    def lines(self, event: str) -> list[dict]:
+        """ The lines of this kind in the main file of 3 November """
+        return [line for line in self.read(MAIN) if line.get("event") == event]
+
 
 class LogLinesTest(LogFolder, unittest.TestCase):
     """ Logregels through setup_logging and get_logger, read back from a temporary log folder """
