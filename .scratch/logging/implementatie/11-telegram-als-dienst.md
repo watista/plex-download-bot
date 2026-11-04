@@ -1,6 +1,6 @@
 # 11 Telegram als dienst
 
-Status: bezig (branch `logging/11-telegram-als-dienst`, sinds 2026-11-04)
+Status: dicht
 Blocked by: 07, 08
 Niet tegelijk met: 12 (`src/faults.py`, `src/bot.py`)
 
@@ -43,3 +43,21 @@ Telegram wordt een dienst met Storingen, zoals de andere diensten. Een melding d
 - `HTTPXRequest.do_request` en `ApplicationBuilder.request()` en `.get_updates_request()` bestaan in PTB 21.10.0.
 - In oktober waren er 805 WARNING-regels in bijna een etmaal storing.
 - Een `http_call` van `TelegramRequest` met `request` en `response` zou de tekst van berichten weer in het debug-bestand zetten: wachtwoorden in de updates, en e-mail en telefoon in de admin-melding van een accountaanvraag. Issue 05 liet daarom de DEBUG-regels van PTB met berichttekst weg (`WithoutMessageText` in `src/log/__init__.py`, en [Nooit in een logregel](../spec.md#nooit-in-een-logregel)). Leg voor wat een `http_call` van Telegram dan wel krijgt, bijvoorbeeld alleen de methode, de status en de duur.
+
+## Besluiten bij de uitvoering
+
+Genomen op 2026-11-04. De eerste drie zijn voorgelegd en besloten op 2026-11-04, en bijgewerkt in de spec ([Inhoud](../spec.md#inhoud), punt 4, [Storingen](../spec.md#storingen), punt 3, en [10. Admin-melding bij een Fout](../spec.md#10-admin-melding-bij-een-fout), punt 11):
+
+- **Een `http_call` van Telegram** heeft `method` (`POST`), `url` met het token als `***` (het eind is de methode van de Bot API, zoals `sendMessage`), `http_status` en `duration_ms`, of bij een exceptie `exc_type`. Geen `request` en `response`. `msg` heeft dezelfde vorm als bij de requestregel van 09: `telegram sendMessage: POST https://api.telegram.org/bot***/sendMessage: HTTP 200 in 84 ms`.
+- **De regel `Down:` van de Herstelmelding na een Telegram-storing** telt alle mislukte pogingen, polls en verzendingen, met dezelfde woorden als bij de andere diensten: `… 23 failed attempts`. Bij één poging: `1 failed attempt`.
+- **Tijdens een Storing van Telegram probeert de meldfunctie niets te versturen.** Een admin-melding over een Fout komt op `Not sent meanwhile`, één keer per Fout: dezelfde handtekening (Bug), sleutel (Inrichtingsfout) of dienst (Storing), met de Code van de eerste keer. De melding wordt teruggenomen zoals bij elke melding die niet aankomt, dus komt de Fout na de Storing terug, dan gaat zijn melding alsnog uit. Zo geeft een kapotte heartbeat (12) tijdens een internetstoring niet elke 5 seconden een verzendpoging en een regel op de lijst.
+- **De regels tijdens een Storing van Telegram** (voorgelegd na de review en besloten op 2026-11-04): de meldfunctie beslist dan geen melding, dus een Fout die terugkomt krijgt na zijn eerste regel korte regels met `repeat`, zoals [Voor alle soorten](../spec.md#voor-alle-soorten) punt 14 zegt. De eerste keer na de Storing gaat zijn melding uit, met een volledige regel. Een Bug waarvan nog geen melding uitging, blijft daarvoor in `faults.json` staan met `last_admin_message: null`; zijn melding heeft dan geen regel `Repeat:`, want er was nog geen eerdere.
+- **Wat er op de lijst staat**: `Bug · Radarr · <code>k7p2qx</code>`, met alleen de dienst en de Code die er zijn (een Storing buiten een Interactie heeft geen Code). Bij een Storing is de Code die van de poging waarbij de melding uit had moeten gaan; die heeft een volledige regel in het log.
+- **Een admin-melding die niet uitgaat** krijgt één WARNING `admin message not sent: <waarover>: Telegram is not responding`: alleen de eerste keer per Fout, en bij elke Herstelmelding van een andere dienst. Die Herstelmeldingen komen niet op de lijst, zoals de spec zegt.
+- **Aanhouden** wordt bij Telegram net zo bekeken als bij de andere diensten, bij elke mislukte poging (`persisted` in `faults.json`). De lijst staat als `not_sent` bij de Storing van Telegram in `faults.json`, met per Fout `key`, `fault`, `service` en `code`.
+- **Komt de Herstelmelding zelf niet aan** omdat Telegram weer niet reageert, dan loopt de Storing door in de nieuwe: met zijn begin, zijn pogingen, of hij aanhield, en zijn lijst. Zo komt de Herstelmelding na een lange Storing toch, ook met een lege lijst, en noemt hij de hele periode (gevonden in de review).
+- **Een Fout bij het beëindigen van de Storing** in `TelegramRequest` (bijv. `faults.json` niet te schrijven) is een Bug met `Continued: gave PTB the answer of Telegram`, en bereikt PTB niet: PTB zou er een `NetworkError` van maken, een Storing van Telegram die geen geslaagd antwoord meer kan beëindigen.
+- **`error_handler`**: een fout van het pollen die `telegram_disruption` als Storing ziet (`NetworkError`, maar niet `BadRequest`) is een poging. `TimedOut` en `RetryAfter` handelt PTB bij het pollen zelf af, dus daar is geen eigen tak voor. Een `BadRequest` bij het pollen is een Bug buiten de wrapper. De Conflict-regel gaat via de nieuwe logger: `Telegram Conflict: another bot instance is polling`, met de tekst van Telegram in `reason`.
+- **De volgorde bij de start**: `TelegramRequest` krijgt de meldfunctie na het aanmaken (`request.faults = …`); tot dan gaat een antwoord alleen naar PTB. De twee requests krijgen de poolgroottes die PTB zijn eigen requests geeft (256 en 1), en de `read_timeout` van 300 seconden die eerder via de builder ging.
+
+Nog te doen: de controle op dev met het netwerk even weg (Klaar als, punt 2). Dat kan alleen de Beheerder.
