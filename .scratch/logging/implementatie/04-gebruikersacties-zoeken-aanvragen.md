@@ -1,6 +1,6 @@
 # 04 Gebruikersacties: zoeken en aanvragen
 
-Status: bezig (branch `logging/04-gebruikersacties-zoeken-aanvragen`, sinds 2026-11-04)
+Status: dicht
 Blocked by: 03
 Niet tegelijk met: 07, 09 (dezelfde handlers in `media.py`, `serie.py` en `subscribe.py`)
 
