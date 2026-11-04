@@ -7,7 +7,6 @@ from pathlib import Path
 from setproctitle import setproctitle
 
 from src.log import setup_logging
-from src.log.legacy import Log
 from src.bot import Bot
 
 
@@ -34,9 +33,9 @@ def validate_env_vars(mode: str) -> None:
         raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 
-def main(args, logger) -> None:
+def main(args) -> None:
     """ Run the bot """
-    Bot(args, logger)
+    Bot(args)
 
 
 if __name__ == '__main__':
@@ -66,8 +65,5 @@ if __name__ == '__main__':
     # Write the log lines to a file per day
     setup_logging(args.env, os.getenv("LOG_TYPE"), os.getenv("LOG_FOLDER"), args.verbose)
 
-    # Init classes
-    logger = Log(args)
-
     # Start the bot
-    main(args, logger)
+    main(args)

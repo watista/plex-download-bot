@@ -13,10 +13,9 @@ log = get_logger(__name__)
 
 class Privacy:
 
-    def __init__(self, logger, functions):
+    def __init__(self, functions):
 
         # Set default values
-        self.log = logger
         self.function = functions
 
     async def privacy_command(self, update: Update, context: CallbackContext) -> None:

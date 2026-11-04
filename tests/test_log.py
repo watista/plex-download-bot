@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import asyncio
 import base64
 import inspect
 import io
@@ -24,8 +25,8 @@ from telegram.request import BaseRequest
 from transmission_rpc.error import TransmissionAuthError
 
 from src.bot import Bot
+from src.functions import Functions
 from src.log import get_logger, mask, setup_logging
-from src.log.legacy import Log
 from src.telegram_out import TelegramOut
 
 
@@ -436,6 +437,22 @@ class MessageTextTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         # The other DEBUG lines of PTB stay
         self.assertIn("Getting updates: [1]", [line["msg"] for line in self.read(DEBUG)])
 
+    async def test_the_answers_of_the_bot_in_a_gesprek_stay_out_of_the_files(self):
+        setup_logging("dev", "DEBUG", str(self.folder), False)
+        update = SimpleNamespace(effective_chat=SimpleNamespace(id=777))
+        context = SimpleNamespace(bot=MagicMock(send_message=AsyncMock(), send_animation=AsyncMock(),
+                                                send_photo=AsyncMock()))
+        functions = Functions()
+
+        with self.at("2026-11-03T14:05:12+01:00"):
+            await functions.send_message("Je bent nu ingelogd als gebruiker: piet", update, context)
+            await functions.send_gif("*Waar kan ik je vandaag mee helpen?*", None, update, context)
+            await functions.send_image("*Dune* (2021)", None, update, context)
+
+        for sent in (context.bot.send_message, context.bot.send_animation, context.bot.send_photo):
+            sent.assert_awaited_once()
+        self.assertEqual((self.raw(MAIN), self.raw(DEBUG)), ("", ""))
+
 
 class StartStopTest(LogFolder, unittest.IsolatedAsyncioTestCase):
     """ The start and stop of the bot replace those of PTB in the main file """
@@ -449,7 +466,6 @@ class StartStopTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         bot.mode = "maintenance"
         bot._heartbeat_task = None
         bot.primary_name, bot.fallback_name = "primary", "fallback"
-        bot.log = MagicMock()
         application = MagicMock()
         application.bot.send_message = AsyncMock()
         bot.telegram = TelegramOut(application.bot, "-1", AsyncMock(return_value=None))
@@ -466,60 +482,53 @@ class StartStopTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         ])
         self.assertEqual(application.bot.send_message.await_args.kwargs["chat_id"], "-1")
 
+    async def goodbye(self, port: int) -> None:
+        """ The goodbye of the primary bot to the watcher on this port of this host """
+        bot = Bot.__new__(Bot)
+        with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": "127.0.0.1", "HEARTBEAT_TARGET_PORT": str(port)}), \
+                self.at("2026-11-03T14:05:12+01:00"):
+            await bot._send_goodbye_to_fallback()
 
-class OldLogClassTest(LogFolder, unittest.IsolatedAsyncioTestCase):
-    """ The old calls of Log keep working on top of the new logging, until the issues after 01 replace them """
-
-    def old_log(self) -> Log:
-        """ Log with a fake Telegram bot """
-        log = Log(SimpleNamespace(env="dev", verbose=False))
-        log.bot = MagicMock()
-        log.bot.send_message = AsyncMock()
-        return log
-
-    async def test_logger_writes_the_text_without_markdown_for_the_caller(self):
+    async def test_the_goodbye_to_the_fallback_host(self):
         setup_logging("dev", "INFO", str(self.folder), False)
-        log = self.old_log()
 
-        with self.at("2026-11-03T14:05:12+01:00"):
-            line_number = inspect.currentframe().f_lineno + 1
-            await log.logger("*ℹ️ Notify: New episode(s) for serie Shōgun ℹ️*\nUser ID: 1", False, "info", chat_id=1)
+        # A watcher that reads the goodbye
+        received = asyncio.get_running_loop().create_future()
+
+        async def watcher(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            received.set_result(await reader.readline())
+            writer.close()
+
+        server = await asyncio.start_server(watcher, "127.0.0.1", 0)
+        self.addAsyncCleanup(server.wait_closed)
+        self.addCleanup(server.close)
+        port = server.sockets[0].getsockname()[1]
+
+        await self.goodbye(port)
+
+        self.assertEqual(await asyncio.wait_for(received, 1), b"BYE\n")
+        [line] = self.read(MAIN)
+        self.assertEqual((line["level"], line["msg"], line["logger"]),
+                         ("INFO", f"goodbye sent to 127.0.0.1:{port}", "bot"))
+        self.assertTrue(line["src"].endswith(" in _send_goodbye_to_fallback"), line["src"])
+        self.assertNotIn("event", line)
+
+    async def test_a_goodbye_that_fails_is_a_warning_and_not_a_fout(self):
+        setup_logging("dev", "INFO", str(self.folder), False)
+
+        # A port that nothing listens on anymore
+        server = await asyncio.start_server(lambda reader, writer: None, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        server.close()
+        await server.wait_closed()
+
+        await self.goodbye(port)
 
         [line] = self.read(MAIN)
-        self.assertEqual(line["level"], "INFO")
-        self.assertEqual(line["msg"], "*ℹ️ Notify: New episode(s) for serie Shōgun ℹ️*\nUser ID: 1")
-        self.assertEqual(line["logger"], __name__)
-        self.assertEqual(line["src"], f"tests/test_log.py:{line_number} in test_logger_writes_the_text_without_markdown_for_the_caller")
+        self.assertEqual((line["level"], line["exc_type"]), ("WARNING", "ConnectionRefusedError"))
+        self.assertTrue(line["msg"].startswith(f"failed to send the goodbye to 127.0.0.1:{port}: "), line["msg"])
+        self.assertNotIn("fault", line)
 
-        # Telegram still gets MarkdownV2
-        self.assertEqual(log.bot.send_message.await_args.kwargs["text"],
-                         "*ℹ️ Notify: New episode\\(s\\) for serie Shōgun ℹ️*\nUser ID: 1")
-
-    async def test_debug_call_writes_an_http_call(self):
-        setup_logging("dev", "DEBUG", str(self.folder), False)
-        log = self.old_log()
-
-        with self.at("2026-11-03T14:05:12+01:00"), patch.dict(os.environ, {"LOG_MAX_BODY": "20"}):
-            line_number = inspect.currentframe().f_lineno + 1
-            await log.debug_call("radarr", "GET response", url="https://radarr/api/v3/movie/lookup?term=dune",
-                                 status=200, duration=0.3204, response=[{"title": "Dune", "year": 2021}])
-
-        self.assertEqual(self.read(MAIN), [])
-        [line] = self.read(DEBUG)
-        self.assertEqual(line, {
-            "ts": "2026-11-03T14:05:12.000+01:00",
-            "level": "DEBUG",
-            "event": "http_call",
-            "msg": "radarr GET response",
-            "method": "GET",
-            "url": "https://radarr/api/v3/movie/lookup?term=dune",
-            "http_status": 200,
-            "duration_ms": 320,
-            "response": '[{"title": "Dune", "... [truncated, 33 chars total]',
-            "service": "radarr",
-            "logger": __name__,
-            "src": f"tests/test_log.py:{line_number} in test_debug_call_writes_an_http_call",
-        })
 
 
 if __name__ == "__main__":

@@ -66,11 +66,10 @@ class Media(ABC):
     # The fields of a media item that the conditions of get_media_states look at
     filter_fields: tuple[str, ...] = ()
 
-    def __init__(self, args, logger, functions, telegram, faults, media_handler, label, media_folder, option_state):
+    def __init__(self, args, functions, telegram, faults, media_handler, label, media_folder, option_state):
 
         # Set default values
         self.args = args
-        self.log = logger
         self.function = functions
         self.telegram = telegram
         self.faults = faults
@@ -79,7 +78,7 @@ class Media(ABC):
         self.media_folder = media_folder
         self.option_state = option_state
         self.plex = Plex(self.faults)
-        self.start = Start(self.args, self.log, self.function)
+        self.start = Start(self.args, self.function)
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"

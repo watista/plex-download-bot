@@ -47,9 +47,9 @@ class CheckNotifyListTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.telegram.send_user_message = AsyncMock(return_value=DELIVERED)
         self.telegram.send_admin_message = AsyncMock()
         functions = MagicMock(sanitize_text=lambda text: text,
-                              episodes_present_in_folder=Functions(MagicMock()).episodes_present_in_folder)
+                              episodes_present_in_folder=Functions().episodes_present_in_folder)
         self.faults = WritingFaults()
-        self.schedule = Schedule(SimpleNamespace(env="dev"), MagicMock(), functions, self.telegram, self.faults)
+        self.schedule = Schedule(SimpleNamespace(env="dev"), functions, self.telegram, self.faults)
         self.schedule.transmission = MagicMock()
         self.schedule.plex.link = AsyncMock(return_value=None)
 
@@ -358,7 +358,7 @@ class CheckTransmissionTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     def restart(self) -> Schedule:
         """ A Schedule as the bot makes it when it starts, with a Transmission that answers """
-        schedule = Schedule(SimpleNamespace(env="dev"), MagicMock(), MagicMock(), MagicMock(), self.faults)
+        schedule = Schedule(SimpleNamespace(env="dev"), MagicMock(), MagicMock(), self.faults)
         schedule.transmission = MagicMock(check=AsyncMock())
         for name in ("sonarr", "radarr"):
             setattr(schedule, name, MagicMock(scan_missing_media=AsyncMock(side_effect=self.search(name))))

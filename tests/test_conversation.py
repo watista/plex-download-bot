@@ -72,7 +72,7 @@ class ConversationTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         data_json = Path(tmp.name) / "data.dev.json"
         data_json.write_text(json.dumps({"notify_list": {"1": {"serie_episode": {"1399": {}}}}}))
         functions = MagicMock(send_message=AsyncMock())
-        self.bot.subscribe = Subscribe(SimpleNamespace(env="dev"), MagicMock(), functions, MagicMock(), FakeFaults())
+        self.bot.subscribe = Subscribe(SimpleNamespace(env="dev"), functions, MagicMock(), FakeFaults())
         self.bot.subscribe.data_json = str(data_json)
         self.bot.subscribe.sonarr = MagicMock(lookup_by_tmdbid=AsyncMock(return_value={"title": "Game of Thrones"}))
 

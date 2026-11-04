@@ -71,11 +71,10 @@ def without_per_message_warning():
 
 class Bot:
 
-    def __init__(self, args, logger):
+    def __init__(self, args):
 
         # Set classes
         self.args = args
-        self.log = logger
         self.mode = getattr(args, "mode", "normal")
         # Cooldown bookkeeping for the "two pollers detected" group-chat notice.
         # Stored as a monotonic timestamp; 0.0 means "never notified yet".
@@ -143,13 +142,13 @@ class Bot:
         # From here on a crash is a Fout too
         install_excepthook(self.faults)
 
-        self.function = Functions(logger)
-        self.privacy = Privacy(logger, self.function)
-        self.help = Help(logger, self.function, self.telegram)
-        self.maintenance = Maintenance(logger, self.function)
-        self.start = Start(args, logger, self.function, self.maintenance, self.telegram)
-        self.account = Account(logger, self.function, self.telegram)
-        self.message = Message(args, logger, self.function, self.telegram)
+        self.function = Functions()
+        self.privacy = Privacy(self.function)
+        self.help = Help(self.function, self.telegram)
+        self.maintenance = Maintenance(self.function)
+        self.start = Start(args, self.function, self.maintenance, self.telegram)
+        self.account = Account(self.function, self.telegram)
+        self.message = Message(args, self.function, self.telegram)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
         # /log reads the day files of this host, and says which host that is
@@ -159,10 +158,10 @@ class Bot:
         # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
         # normal mode; on the standby (maintenance) host they would just fail.
         if self.mode == "normal":
-            self.serie = Serie(args, logger, self.function, self.telegram, self.faults)
-            self.movie = Movie(args, logger, self.function, self.telegram, self.faults)
-            self.schedule = Schedule(args, logger, self.function, self.telegram, self.faults)
-            self.subscribe = Subscribe(args, logger, self.function, self.telegram, self.faults)
+            self.serie = Serie(args, self.function, self.telegram, self.faults)
+            self.movie = Movie(args, self.function, self.telegram, self.faults)
+            self.schedule = Schedule(args, self.function, self.telegram, self.faults)
+            self.subscribe = Subscribe(args, self.function, self.telegram, self.faults)
             self.sonarr = Sonarr(self.faults)
             self.radarr = Radarr(self.faults)
             self.start.subscribe = self.subscribe
@@ -572,15 +571,9 @@ class Bot:
                 await asyncio.wait_for(writer.wait_closed(), timeout=2)
             except (asyncio.TimeoutError, Exception):
                 pass
-            await self.log.logger(
-                f"Goodbye signal sent to {target_host}:{target_port}.",
-                False, "info", False,
-            )
+            log.info(f"goodbye sent to {target_host}:{target_port}")
         except Exception as e:
-            await self.log.logger(
-                f"Failed to send goodbye to {target_host}:{target_port}: {e}",
-                False, "warning", False,
-            )
+            log.warning(f"failed to send the goodbye to {target_host}:{target_port}: {e}", exc_type=type(e).__name__)
 
     async def error_handler(self, update: object, context: CallbackContext) -> None:
         """ The safety net behind the wrappers.

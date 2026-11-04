@@ -36,8 +36,6 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
 
         # Logger and functions without Telegram
-        self.log = MagicMock()
-        self.log.logger = AsyncMock()
         functions = MagicMock()
         functions.sanitize_text = lambda text: text
         functions.send_message = AsyncMock()
@@ -51,7 +49,7 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.data_json = Path(tmp.name) / "data.dev.json"
         self.data_json.write_text(json.dumps({"notify_list": {"1": {"serie_episode": dict(SUBSCRIBED)}}}))
         self.faults = FakeFaults()
-        self.subscribe = Subscribe(SimpleNamespace(env="dev"), self.log, functions, self.telegram, self.faults)
+        self.subscribe = Subscribe(SimpleNamespace(env="dev"), functions, self.telegram, self.faults)
         self.subscribe.data_json = str(self.data_json)
         self.sonarr = MagicMock()
         self.sonarr.lookup_by_tmdbid = AsyncMock(
@@ -127,7 +125,6 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
                          ("unsubscribed", "Game of Thrones", 1399))
         [message] = [c.args[0] for c in self.telegram.send_admin_message.await_args_list]
         self.assertIn("User has ubsubscribed to the serie Game of Thrones", message)
-        self.log.logger.assert_not_awaited()
 
     async def test_a_series_that_sonarr_does_not_find_is_shown_by_its_tmdb_id(self):
         not_found = Fault.setup(service="sonarr", what="Sonarr finds nothing for tmdb 1399", check="tmdb_lookup",
@@ -230,7 +227,6 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
                                                                    {"tmdbId": None}))
         self.assertEqual(fault.media, {"title": "The Bear", "year": 2022, "tvdbId": 1})
         self.subscribe.function.send_message.assert_not_awaited()
-        self.log.logger.assert_not_awaited()
         self.assertEqual(self.subscribed(), SUBSCRIBED)
 
 

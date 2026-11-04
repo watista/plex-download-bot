@@ -736,6 +736,45 @@ class BotHandlersTest(unittest.TestCase):
                     self.assertIs(handler.callback.send, bot.telegram.send)
 
 
+class BotBuildTest(unittest.TestCase):
+    """ The whole bot of dev, built up to polling: every command gets what its constructor takes """
+
+    def build(self, mode: str) -> Bot:
+        """ The bot in this mode, built in a temporary folder, with run_polling and the excepthook left as they are """
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(folder.name)
+        self.enterContext(patch.dict(os.environ, {"BOT_TOKEN_DEV": "123:ABC", "CHAT_ID_ADMIN": "123456789",
+                                                  "LOG_FOLDER": "log"}))
+        self.enterContext(patch("sys.excepthook"))
+        run_polling = self.enterContext(patch.object(Application, "run_polling"))
+
+        bot = Bot(SimpleNamespace(env="dev", mode=mode))
+
+        run_polling.assert_called_once()
+        return bot
+
+    def test_normal_mode(self):
+        bot = self.build("normal")
+
+        for command in (bot.serie, bot.movie, bot.schedule, bot.subscribe):
+            self.assertIs(command.function, bot.function)
+            self.assertIs(command.faults, bot.faults)
+        self.assertEqual([job.name for job in bot.application.job_queue.jobs()], [
+            "publish_command_list", "notify_admin_startup", "check_notify_list", "check_transmission",
+            "scan_missing_sonarr", "scan_missing_radarr",
+        ])
+
+    def test_maintenance_mode(self):
+        bot = self.build("maintenance")
+
+        self.assertFalse(hasattr(bot, "movie"))
+        self.assertIs(bot.start.maintenance, bot.maintenance)
+        self.assertEqual([job.name for job in bot.application.job_queue.jobs()],
+                         ["publish_command_list", "notify_admin_startup"])
+
+
 class ErrorHandlerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
     """ error_handler: the safety net behind the wrappers """
 

@@ -25,8 +25,7 @@ class Maintenance:
         "Probeer het later opnieuw zodra Plęx weer online is."
     )
 
-    def __init__(self, logger, functions):
-        self.log = logger
+    def __init__(self, functions):
         self.function = functions
 
     async def media_maintenance(self, update: Update, context: CallbackContext) -> int:

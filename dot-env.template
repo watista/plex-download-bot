@@ -14,9 +14,10 @@ CHAT_ID_ADMIN=123
 # from DEBUG, including the library polling chatter. Any other value logs on INFO.
 LOG_TYPE=INFO
 
-# Max length of a request or response body in the log file. With LOG_TYPE=DEBUG
-# every Radarr/Sonarr call logs its URL, status, duration and response body, so
-# this keeps the log file readable. Set to 0 for no truncating at all.
+# Max length of a request or response body in the debug file. With LOG_TYPE=DEBUG
+# every request to Radarr, Sonarr, Plex or Transmission gets an http_call line
+# with its URL, status, duration and bodies, so this keeps the debug file
+# readable. Set to 0 for no truncating at all.
 LOG_MAX_BODY=2000
 TRANSMISSION_IP=0.0.0.0
 TRANSMISSION_PORT=9091

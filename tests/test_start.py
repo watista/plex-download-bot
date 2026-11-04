@@ -31,8 +31,6 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
 
         # Logger and functions without Telegram
-        self.log = MagicMock()
-        self.log.logger = AsyncMock()
         self.functions = MagicMock(send_message=AsyncMock(), send_gif=AsyncMock())
         self.telegram = MagicMock(send_admin_message=AsyncMock())
         self.maintenance = MagicMock(notice=AsyncMock(return_value=ConversationHandler.END))
@@ -51,7 +49,7 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     def start(self, mode: str = "normal") -> Start:
         """ Start in this mode, on the data.json and stats.json of the test """
-        start = Start(SimpleNamespace(env="dev", mode=mode), self.log, self.functions, self.maintenance, self.telegram)
+        start = Start(SimpleNamespace(env="dev", mode=mode), self.functions, self.maintenance, self.telegram)
         start.data_json, start.stats_json = str(self.data_json), str(self.stats_json)
         start.subscribe = MagicMock(afmelden=AsyncMock(return_value=ConversationHandler.END))
         return start
@@ -105,7 +103,7 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((line["event"], line["outcome"]), ("menu_choice", "maintenance"))
 
     async def test_in_maintenance_mode_a_command_for_series_updates_gets_the_maintenance_message(self):
-        state = await Maintenance(self.log, self.functions).media_maintenance(message("/aanmelden_serie"),
+        state = await Maintenance(self.functions).media_maintenance(message("/aanmelden_serie"),
                                                                               MagicMock(user_data={}))
 
         self.assertEqual(state, ConversationHandler.END)
@@ -114,7 +112,6 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(line["msg"], "command /aanmelden_serie: maintenance message")
         self.assertEqual((line["event"], line["command"], line["outcome"]),
                          ("command", "/aanmelden_serie", "maintenance"))
-        self.log.logger.assert_not_awaited()
 
     async def test_in_maintenance_mode_a_new_account_can_still_be_requested(self):
         state = await self.start("maintenance").account_request(press("account_request"), MagicMock(user_data={}))
@@ -133,7 +130,6 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((login["event"], login["msg"], login["outcome"]),
                          ("login", "login refused: on the blocklist", "refused"))
         self.assertEqual(self.admin_messages(), ["blocked user tried to log in"])
-        self.log.logger.assert_not_awaited()
 
     async def test_a_bezoeker_is_asked_for_the_password(self):
         context = MagicMock(user_data={})
@@ -156,7 +152,6 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("maintenance", line)
         self.assertEqual(self.admin_messages(), ["first login"])
         self.assertNotIn(PASSWORD, self.raw(MAIN))
-        self.log.logger.assert_not_awaited()
 
     async def test_in_maintenance_mode_a_login_ends_with_the_maintenance_message(self):
         context = MagicMock(user_data={"media_option": "serie_request", "login_tries": 0})
@@ -198,7 +193,6 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((fault.kind, fault.what, fault.details),
                          (FaultKind.BUG, "Unknown request type", {"media_option": "film_request"}))
         self.functions.send_message.assert_not_awaited()
-        self.log.logger.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -13,10 +13,9 @@ log = get_logger(__name__)
 
 class Help:
 
-    def __init__(self, logger, functions, telegram):
+    def __init__(self, functions, telegram):
 
         # Set default values
-        self.log = logger
         self.function = functions
         self.telegram = telegram
 

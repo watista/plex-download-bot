@@ -27,8 +27,6 @@ class MessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.enterContext(patch("src.commands.message.asyncio.sleep", AsyncMock()))
 
         # Logger and functions without Telegram; user 3 has blocked the bot
-        self.log = MagicMock()
-        self.log.logger = AsyncMock()
         self.functions = MagicMock(send_message=AsyncMock(), format_admin_broadcast_html=lambda text: text)
         self.telegram = MagicMock(send_user_message=AsyncMock(
             side_effect=lambda user_id, kind, text: Delivery("Forbidden: bot was blocked by the user")
@@ -41,7 +39,7 @@ class MessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.data_json.write_text(json.dumps({
             "user_id": {"1": "wouter, Wouter", "2": "anna, Anna", "3": "piet, Piet"},
             "update_messages": {"2": False}, "notify_list": {"555": {"film": {}}}}))
-        self.message = Message(SimpleNamespace(env="live"), self.log, self.functions, self.telegram)
+        self.message = Message(SimpleNamespace(env="live"), self.functions, self.telegram)
         self.message.data_json = str(self.data_json)
 
     async def test_general_updates_on_while_they_are_on(self):
@@ -113,7 +111,6 @@ class MessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             "/add_movie: tmdb 438631 for 555",
         ])
         self.assertEqual((lines[3]["recipient"], lines[3]["tmdb_id"]), (555, 438631))
-        self.log.logger.assert_not_awaited()
 
 
 if __name__ == "__main__":
