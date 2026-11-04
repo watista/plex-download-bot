@@ -60,17 +60,25 @@ class FakeSend:
 
 
 class FakeFaults:
-    """ The meldfunctie: keeps every Fout it gets with how it came, and answers report() with known """
+    """ The meldfunctie: keeps every Fout it gets with how it came and every service that answered, and answers
+    report() with known. ok raises ok_error, when there is one. """
 
-    def __init__(self, known: bool = True):
+    def __init__(self, known: bool = True, ok_error: Exception | None = None):
         self.known = known
         self.reports = []
+        self.answered = []
+        self._ok_error = ok_error
 
     async def report(self, fault: Fault, user_told: bool = False, continued: str | None = None, *,
                      outside_wrapper: bool = False) -> bool:
         self.reports.append(SimpleNamespace(fault=fault, user_told=user_told, continued=continued,
                                             outside_wrapper=outside_wrapper, code=current_code()))
         return self.known
+
+    async def ok(self, service: str) -> None:
+        self.answered.append(service)
+        if self._ok_error is not None:
+            raise self._ok_error
 
 
 def raising(error: Exception):
@@ -590,7 +598,6 @@ class ErrorHandlerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.bot.mode = "normal"
         self.bot.faults = FakeFaults()
         self.bot.telegram = SimpleNamespace(send=FakeSend())
-        self.bot.log = MagicMock(logger=AsyncMock())
 
     @staticmethod
     def context(error: Exception, job: str | None = None, coroutine=None) -> SimpleNamespace:
@@ -626,20 +633,40 @@ class ErrorHandlerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bot.telegram.send.messages, [])
 
     async def test_an_error_without_an_update_job_or_task_that_polling_does_not_give_is_a_bug(self):
-        # Like PTB writing bot_state.pkl, which hands error_handler its error without an update, a job or a task
-        await self.bot.error_handler(None, self.context(PermissionError("bot_state.pkl")))
-
-        [report] = self.bot.faults.reports
-        self.assertEqual((report.fault.kind, report.outside_wrapper, report.user_told), (FaultKind.BUG, True, False))
-        self.bot.log.logger.assert_not_awaited()
-
-    async def test_the_errors_of_polling_stay_as_they_were(self):
-        for error in (NetworkError("httpx.ConnectError"), TimedOut(), RetryAfter(30),
-                      Conflict("terminated by other getUpdates request")):
+        # Like PTB writing bot_state.pkl, which hands error_handler its error without an update, a job or a task. A
+        # BadRequest is a NetworkError too, but Telegram did answer.
+        for error in PermissionError("bot_state.pkl"), BadRequest("Bad Request: invalid offset"):
             await self.bot.error_handler(None, self.context(error))
 
+        self.assertEqual([(report.fault.kind, report.outside_wrapper, report.user_told)
+                          for report in self.bot.faults.reports], [(FaultKind.BUG, True, False)] * 2)
+
+    async def test_a_network_error_of_polling_is_a_failed_attempt_of_a_disruption_of_telegram(self):
+        errors = NetworkError("httpx.ConnectError: [Errno -3] Temporary failure in name resolution"), NetworkError(
+            "Bad Gateway")
+        for error in errors:
+            await self.bot.error_handler(None, self.context(error))
+
+        self.assertEqual([(report.fault.kind, report.fault.service, report.fault.reason, report.code, report.user_told,
+                           report.outside_wrapper) for report in self.bot.faults.reports], [
+            (FaultKind.DISRUPTION, "telegram", "httpx.ConnectError: [Errno -3] Temporary failure in name resolution",
+             None, False, False),
+            (FaultKind.DISRUPTION, "telegram", "Bad Gateway", None, False, False),
+        ])
+        self.assertEqual([report.fault.__cause__ for report in self.bot.faults.reports], list(errors))
+        self.assertEqual(self.bot.telegram.send.messages, [])
+
+    async def test_a_conflict_of_polling_is_one_warning_without_a_fault(self):
+        await self.bot.error_handler(None, self.context(Conflict("terminated by other getUpdates request; make sure "
+                                                                 "that only one bot instance is running")))
+
         self.assertEqual(self.bot.faults.reports, [])
-        self.assertEqual(self.bot.log.logger.await_count, 4)
+        [line] = self.read(MAIN)
+        self.assertEqual((line["level"], line["msg"]), ("WARNING", "Telegram Conflict: another bot instance is "
+                                                                   "polling"))
+        self.assertNotIn("fault", line)
+        # Only the standby bot tells the Beheerder
+        self.assertEqual(self.bot.telegram.send.messages, [])
 
 
 class AccountForTest(unittest.IsolatedAsyncioTestCase):

@@ -8,6 +8,8 @@ import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+from telegram.error import NetworkError
+
 from src.faults import Fault, FaultKind, FaultReporter, admin_message_html
 from src.interaction import Interaction, InteractionProcessor, current_code, guard, guard_job, working_on
 from src.log import PROJECT_DIR, setup_logging
@@ -95,6 +97,13 @@ def radarr_not_responding(reason: str = "Unable to communicate with RadarrAPI", 
                                http_status=http_status)
     except Fault as fault:
         return fault
+
+
+def telegram_not_responding(reason: str = "httpx.ConnectError: [Errno -3] Temporary failure in name resolution") -> Fault:
+    """ One failed attempt of a Storing of Telegram, as error_handler reports a poll that failed """
+    fault = Fault.disruption(service="telegram", what="Telegram is not responding", reason=reason)
+    fault.__cause__ = NetworkError(reason)
+    return fault
 
 
 SLOW_HORSES = {"title": "Slow Horses", "year": 2022, "tvdbId": 288673}
@@ -813,18 +822,6 @@ class DisruptionTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored.text.splitlines()[1:], ["Down: 05:02 – 05:47 (45 min), 2 failed attempts",
                                                           f"Code: <code>{first}</code>"])
 
-    async def test_a_disruption_of_telegram_sends_nothing(self):
-        reporter = self.reporter()
-        telegram = lambda: Fault.disruption(service="telegram", what="Telegram is not responding", reason="Bad Gateway")
-
-        await reporter.report(telegram())
-        self.clock.advance(minutes=15)
-        self.assertFalse(await reporter.report(telegram()))
-        await reporter.ok("telegram")
-
-        self.assertEqual(self.send.messages, [])
-        self.assertEqual([line["level"] for line in self.faults()], ["WARNING", "WARNING"])
-
     async def test_a_disruption_of_another_service_is_another_disruption(self):
         reporter = self.reporter()
         await reporter.report(radarr_not_responding())
@@ -832,6 +829,225 @@ class DisruptionTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
 
         sonarr = Fault.disruption(service="sonarr", what="Sonarr is not responding", reason="Bad Gateway")
         self.assertFalse(await reporter.report(sonarr))
+        self.assertEqual(self.send.messages, [])
+
+
+class TelegramDisruptionTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
+    """ A Storing of Telegram: no admin message about it can arrive, so it only counts its attempts, keeps the list Not
+    sent meanwhile, and gives a Herstelmelding when it is over """
+
+    def setUp(self):
+        super().setUp()
+        self.clock = FakeClock("2026-11-03T05:02:00+01:00")
+
+    async def test_it_sends_nothing_and_every_failed_poll_gets_a_line_short_after_the_first(self):
+        reporter = self.reporter()
+
+        for minutes in 0, 1, 30:
+            self.clock.advance(minutes=minutes)
+            self.assertFalse(await reporter.report(telegram_not_responding()))
+
+        self.assertEqual(self.send.messages, [])
+        lines = self.faults()
+        self.assertEqual([(line["level"], line["fault"], line["service"], line.get("repeat")) for line in lines],
+                         [("WARNING", "disruption", "telegram", None), ("WARNING", "disruption", "telegram", 1),
+                          ("WARNING", "disruption", "telegram", 2)])
+        self.assertEqual(lines[0]["msg"], "Telegram is not responding: httpx.ConnectError: [Errno -3] Temporary "
+                                          "failure in name resolution")
+        # Polling is outside an Interaction
+        self.assertNotIn("interaction_id", lines[0])
+
+    async def test_after_it_persisted_a_silent_herstelmelding_without_a_code(self):
+        reporter = self.reporter()
+
+        # The first failed attempt is that of a Foutmelding in an update, with a Code; the next is a poll
+        await self.in_an_update(lambda: reporter.report(telegram_not_responding()))
+        self.clock.advance(minutes=15)
+        await reporter.report(telegram_not_responding())
+        self.clock.advance(minutes=50)
+        await reporter.ok("telegram")
+
+        [restored] = self.send.messages
+        self.assertEqual((restored.text, restored.fmt, restored.silent), ("\n".join([
+            "✅ <b>Restored</b> · Telegram is responding again",
+            "Down: 05:02 – 06:07 (1 h 5 min), 2 failed attempts",
+        ]), "HTML", True))
+        [sent] = self.lines("admin_message_sent")
+        self.assertEqual((sent["msg"], sent["fault"], sent["service"], sent["restored"]),
+                         ("admin message sent: Restored · Telegram is responding again", "disruption", "telegram",
+                          True))
+
+        # It is over: another successful answer gives nothing
+        await reporter.ok("telegram")
+        self.assertEqual(len(self.send.messages), 1)
+
+    async def test_meanwhile_nothing_is_sent_and_the_herstelmelding_lists_what_was_not(self):
+        reporter = self.reporter()
+        await reporter.report(telegram_not_responding())
+
+        # Meanwhile a job runs into a Bug and an Inrichtingsfout, and Radarr persists in not responding, which the
+        # heartbeat-like attempts outside an Interaction find
+        told = [(await self.in_a_run(lambda: reporter.report(radarr_refused())))]
+        told.append(await self.in_a_run(lambda: reporter.report(no_path())))
+        await reporter.report(radarr_not_responding())
+        self.clock.advance(minutes=15)
+        await reporter.report(radarr_not_responding())
+        self.assertEqual(self.send.messages, [])
+        self.assertEqual([known for known, _ in told], [False, False])
+
+        # After a restart Telegram responds again, after 1 failed attempt in 20 minutes: it did not persist
+        self.clock.advance(minutes=5)
+        await self.reporter().ok("telegram")
+
+        [restored] = self.send.messages
+        (_, bug), (_, setup) = told
+        self.assertEqual((restored.text, restored.silent), ("\n".join([
+            "✅ <b>Restored</b> · Telegram is responding again",
+            "Down: 05:02 – 05:22 (20 min), 1 failed attempt",
+            "Not sent meanwhile (3):",
+            f"Bug · Radarr · <code>{bug}</code>",
+            f"Setup · Sonarr · <code>{setup}</code>",
+            "Disruption · Radarr",
+        ]), False))
+        not_sent = [line for line in self.read(MAIN) if line["msg"].startswith("admin message not sent")]
+        self.assertEqual([(line["level"], line["msg"]) for line in not_sent], [
+            ("WARNING", "admin message not sent: Bug · Radarr refused the movie request: Telegram is not responding"),
+            ("WARNING", "admin message not sent: Setup · Slow Horses has no path in Sonarr: Telegram is not "
+                        "responding"),
+            ("WARNING", "admin message not sent: Disruption · Radarr is not responding: Telegram is not responding"),
+        ])
+
+    async def test_a_fout_that_comes_again_meanwhile_gets_short_lines_and_its_admin_message_after_it(self):
+        reporter = self.reporter()
+        await reporter.report(telegram_not_responding())
+
+        # A Bug, an Inrichtingsfout and a Storing of Radarr that persists, each 3 times while Telegram is down
+        fouten = radarr_refused, no_path, radarr_not_responding
+        for minutes in 0, 15, 1:
+            self.clock.advance(minutes=minutes)
+            for fout in fouten:
+                self.assertFalse(await reporter.report(fout()))
+        lines = [line for line in self.faults() if line["service"] != "telegram"]
+        self.assertEqual([(line["fault"], line.get("repeat"), "exc" in line) for line in lines], [
+            ("bug", None, True), ("setup", None, False), ("disruption", None, False),
+            ("bug", 1, False), ("setup", 1, False), ("disruption", 1, False),
+            ("bug", 2, False), ("setup", 2, False), ("disruption", 2, False),
+        ])
+
+        # The first time after the Storing, each one's admin message goes out, with a full line
+        await reporter.ok("telegram")
+        for fout in fouten:
+            self.assertTrue(await reporter.report(fout()))
+
+        restored, *alerts = self.send.messages
+        self.assertEqual(restored.text.splitlines()[2], "Not sent meanwhile (3):")
+        self.assertEqual([alert.text.splitlines()[0] for alert in alerts], [
+            "🐞 <b>Bug</b> · Radarr refused the movie request",
+            "🔧 <b>Setup</b> · Slow Horses has no path in Sonarr",
+            "🌩 <b>Disruption</b> · Radarr is not responding",
+        ])
+        # No alert went out before, so there is nothing to repeat
+        self.assertFalse(any("Repeat:" in alert.text for alert in alerts))
+        self.assertIn("Since: 05:02, 4 failed attempts", alerts[2].text.splitlines())
+        after = [line for line in self.faults() if line["service"] != "telegram"][-3:]
+        self.assertEqual([(line["fault"], line.get("repeat"), "exc" in line) for line in after],
+                         [("bug", None, True), ("setup", None, False), ("disruption", None, False)])
+
+    async def test_an_admin_message_that_telegram_does_not_answer_starts_it_and_its_fout_is_listed_once(self):
+        self.send = FakeSend(telegram_not_responding("Bad Gateway"))
+        reporter = self.reporter()
+
+        # The admin message about a Bug in an update is the first failed attempt; the same Bug in the next update is
+        # the same Fout
+        _, first = await self.in_an_update(lambda: reporter.report(radarr_refused()))
+        self.clock.advance(minutes=5)
+        await self.in_an_update(lambda: reporter.report(radarr_refused()))
+        self.clock.advance(minutes=1)
+        await reporter.ok("telegram")
+
+        self.assertEqual([(line["fault"], line["service"]) for line in self.faults()],
+                         [("bug", "radarr"), ("disruption", "telegram"), ("bug", "radarr")])
+        attempt, restored = self.send.messages
+        self.assertEqual(restored.text.splitlines()[1:], ["Down: 05:02 – 05:08 (6 min), 1 failed attempt",
+                                                          "Not sent meanwhile (1):",
+                                                          f"Bug · Radarr · <code>{first}</code>"])
+
+    async def test_the_herstelmelding_names_at_most_10_fouten(self):
+        reporter = self.reporter()
+        await reporter.report(telegram_not_responding())
+
+        # 12 series without a path, each an Inrichtingsfout of its own, found outside an Interaction
+        for tvdb_id in range(12):
+            await reporter.report(Fault.setup(service="sonarr", what=f"Series {tvdb_id} has no path in Sonarr",
+                                              check="series_path", item=tvdb_id))
+        await reporter.ok("telegram")
+
+        [restored] = self.send.messages
+        self.assertEqual(restored.text.splitlines()[2:], ["Not sent meanwhile (12):", *["Setup · Sonarr"] * 10,
+                                                          "+2 more"])
+
+    async def test_a_herstelmelding_of_another_service_meanwhile_is_not_tried_and_not_listed(self):
+        reporter = self.reporter()
+        await reporter.report(radarr_not_responding())
+        self.clock.advance(minutes=15)
+        await reporter.report(radarr_not_responding())
+
+        await reporter.report(telegram_not_responding())
+        await reporter.ok("radarr")
+        self.clock.advance(minutes=15)
+        await reporter.report(telegram_not_responding())
+        await reporter.ok("telegram")
+
+        alert, restored = self.send.messages
+        self.assertEqual(restored.text.splitlines(), ["✅ <b>Restored</b> · Telegram is responding again",
+                                                      "Down: 05:17 – 05:32 (15 min), 2 failed attempts"])
+        [not_sent] = [line for line in self.read(MAIN) if line["msg"].startswith("admin message not sent")]
+        self.assertEqual(not_sent["msg"], "admin message not sent: Restored · Radarr is responding again: Telegram "
+                                          "is not responding")
+
+    async def test_a_herstelmelding_that_telegram_does_not_answer_goes_on_in_the_next_disruption(self):
+        self.send = FakeSend(telegram_not_responding("Bad Gateway"))
+        reporter = self.reporter()
+        await reporter.report(telegram_not_responding())
+        _, bug = await self.in_a_run(lambda: reporter.report(radarr_refused()))
+
+        # The first successful answer, and then Telegram does not answer the Herstelmelding
+        self.clock.advance(minutes=1)
+        await reporter.ok("telegram")
+        self.clock.advance(minutes=1)
+        await reporter.ok("telegram")
+
+        failed, restored = self.send.messages
+        self.assertEqual(restored.text.splitlines()[1:], ["Down: 05:02 – 05:04 (2 min), 2 failed attempts",
+                                                          "Not sent meanwhile (1):",
+                                                          f"Bug · Radarr · <code>{bug}</code>"])
+
+    async def test_a_herstelmelding_that_did_not_arrive_still_comes_after_it_persisted(self):
+        self.send = FakeSend(telegram_not_responding("Bad Gateway"))
+        reporter = self.reporter()
+        await reporter.report(telegram_not_responding())
+        self.clock.advance(minutes=15)
+        await reporter.report(telegram_not_responding())
+
+        self.clock.advance(minutes=13)
+        await reporter.ok("telegram")
+        self.clock.advance(minutes=1)
+        await reporter.ok("telegram")
+
+        failed, restored = self.send.messages
+        self.assertEqual((restored.text.splitlines()[1:], restored.silent),
+                         (["Down: 05:02 – 05:31 (29 min), 3 failed attempts"], True))
+
+    async def test_one_that_did_not_persist_leaves_only_its_lines(self):
+        reporter = self.reporter()
+
+        # Persisting is looked at on every failed attempt: the last was 14 minutes after the first
+        await reporter.report(telegram_not_responding())
+        self.clock.advance(minutes=14)
+        await reporter.report(telegram_not_responding())
+        self.clock.advance(minutes=5)
+        await reporter.ok("telegram")
+
         self.assertEqual(self.send.messages, [])
 
 

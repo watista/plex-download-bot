@@ -28,10 +28,10 @@ from src.faults import FaultReporter
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, guard, guard_job,
                              report_outside_wrapper)
 from src.log import get_logger
-from src.telegram_out import TelegramOut
+from src.telegram_out import TelegramOut, TelegramRequest, telegram_disruption
 
 from itertools import chain
-from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict
+from telegram.error import Conflict
 from telegram import Update, BotCommand
 from telegram.warnings import PTBUserWarning
 from telegram.ext import (
@@ -106,13 +106,19 @@ class Bot:
         # bot shuts down (e.g. after the primary comes back).
         # The InteractionProcessor handles the updates one by one, each as an
         # Interaction with a Code and the person who sent it. The job queue
-        # keeps its scheduler outside those Interactions.
+        # keeps its scheduler outside those Interactions. Every successful
+        # answer of Telegram, also to polling, ends a Storing of Telegram:
+        # the requests get the meldfunctie below, once it exists. The pool
+        # sizes are those PTB gives its own requests.
+        request = TelegramRequest(connection_pool_size=256, read_timeout=300)
+        polling = TelegramRequest(connection_pool_size=1)
         self.application = (
             Application.builder()
             .token(token)
+            .request(request)
+            .get_updates_request(polling)
             .concurrent_updates(InteractionProcessor(1, self.account_for))
             .job_queue(JobQueueOutsideInteractions())
-            .read_timeout(300)
             .persistence(persistence)
             .post_init(self._post_init)
             .post_stop(self._post_stop)
@@ -124,6 +130,7 @@ class Bot:
 
         # The meldfunctie: the line of every Fout, and an admin message when one is due. Its state is next to data.json.
         self.faults = FaultReporter(self.telegram.send, admin_chat_id, faults_json)
+        request.faults = polling.faults = self.faults
 
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
@@ -560,30 +567,25 @@ class Bot:
         err = context.error
 
         from_polling = update is None and context.job is None and context.coroutine is None
-        if not (from_polling and isinstance(err, (NetworkError, RetryAfter, Conflict))):
-            await report_outside_wrapper(update, err, self.faults, self.telegram.send)
-            return
-
-        # --- the errors of polling, which become a Storing of Telegram in issue 11 ---
-        if isinstance(err, RetryAfter):
-            await self.log.logger(f"Rate limited by Telegram. Retry after {err.retry_after} seconds.", False, "warning", False)
-            return
-
-        if isinstance(err, TimedOut):
-            await self.log.logger("Telegram request timed out.", False, "warning", False)
-            return
-
-        if isinstance(err, NetworkError):
-            await self.log.logger(f"Network error while calling Telegram: {err}", False, "warning", False)
-            return
-
-        if isinstance(err, Conflict):
-            await self.log.logger("Telegram Conflict: Another bot instance is running.", False, "warning", False)
+        if from_polling and isinstance(err, Conflict):
+            # Not a Fout: another instance of the bot polls with the same token
+            log.warning("Telegram Conflict: another bot instance is polling", reason=err.message)
             # Only the standby surfaces this to the group chat — both instances
             # will see the Conflict (Telegram alternates winners), so notifying
             # from one side keeps the chat from getting two messages per cycle.
             if self.mode == "maintenance":
                 await self._notify_conflict_to_group(context)
+            return
+
+        # A failed attempt of a Storing of Telegram, outside an Interaction. PTB handles a TimedOut of polling itself
+        # (a DEBUG line, and at once again), and RetryAfter too; after any other error it waits from 1 up to 30
+        # seconds before the next poll.
+        if from_polling and (fault := telegram_disruption(err)) is not None:
+            fault.__cause__ = err
+            await self.faults.report(fault)
+            return
+
+        await report_outside_wrapper(update, err, self.faults, self.telegram.send)
 
     async def _notify_conflict_to_group(self, context: CallbackContext) -> None:
         """Send a rate-limited heads-up to the group when both bot instances

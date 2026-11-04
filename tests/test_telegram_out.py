@@ -4,14 +4,16 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 
+import httpx
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
+from telegram.ext import ExtBot
 
 from src.faults import Fault, FaultKind
 from src.interaction import guard_job
 from src.log import setup_logging
-from src.telegram_out import Delivery, TelegramOut
+from src.telegram_out import Delivery, TelegramOut, TelegramRequest
 from test_interaction import FakeFaults
-from test_log import MAIN, SECRETS, LogFolder
+from test_log import DEBUG, MAIN, SECRETS, LogFolder
 
 
 ADMIN_CHAT = "-1001234"
@@ -235,6 +237,116 @@ class SendUserMessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         [line] = self.read(MAIN)
         self.assertEqual(line["user_id"], 777)
         self.assertFalse({"account", "tg_name"} & line.keys())
+
+
+# The token of the bot in the tests of TelegramRequest
+TOKEN = "123456:secret-token"
+
+# The message that Telegram gives back for a message it delivered
+SENT = {"message_id": 2, "date": 0, "chat": {"id": 555, "type": "private"}, "text": "hunter2"}
+
+
+def answer(status: int, result=None, description: str | None = None):
+    """ What Telegram answers to a request: the result of a successful one, or the description of a failed one """
+    if 200 <= status < 300:
+        return lambda request: httpx.Response(status, json={"ok": True, "result": result})
+    return lambda request: httpx.Response(status, json={"ok": False, "error_code": status, "description": description})
+
+
+def unreachable(request: httpx.Request) -> httpx.Response:
+    """ Telegram cannot be reached at all """
+    raise httpx.ConnectError("[Errno -3] Temporary failure in name resolution", request=request)
+
+
+class TelegramRequestTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ TelegramRequest: the requests of a bot to Telegram, on a fake network, with a fake meldfunctie """
+
+    def setUp(self):
+        super().setUp()
+        setup_logging("dev", "INFO", str(self.folder), False)
+        self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
+        self.faults = FakeFaults()
+
+    def bot(self, *answers) -> ExtBot:
+        """ A bot whose requests get these answers of Telegram one by one, for messages and for polling alike """
+        answers = list(answers)
+        transport = httpx.MockTransport(lambda request: answers.pop(0)(request))
+        requests = [TelegramRequest(httpx_kwargs={"transport": transport}) for _ in range(2)]
+        for request in requests:
+            # The meldfunctie is given after the bot is built
+            request.faults = self.faults
+        return ExtBot(TOKEN, request=requests[0], get_updates_request=requests[1])
+
+    async def test_every_successful_answer_ends_a_disruption_of_telegram_also_one_to_polling(self):
+        bot = self.bot(answer(200, SENT), answer(200, []))
+
+        await bot.send_message(555, "hunter2")
+        self.assertEqual(self.faults.answered, ["telegram"])
+        await bot.get_updates()
+        self.assertEqual(self.faults.answered, ["telegram", "telegram"])
+
+    async def test_a_failed_attempt_is_not_counted_here_and_reaches_ptb_as_it_was(self):
+        bot = self.bot(answer(502, description="Bad Gateway"), unreachable, answer(400, description="Bad Request: "
+                                                                                     "chat not found"))
+
+        with self.assertRaisesRegex(NetworkError, "^Bad Gateway$"):
+            await bot.get_updates()
+        with self.assertRaisesRegex(NetworkError, "^httpx.ConnectError: "):
+            await bot.send_message(555, "hunter2")
+        # Telegram did answer, but not with success
+        with self.assertRaises(BadRequest):
+            await bot.send_message(1, "hunter2")
+
+        self.assertEqual((self.faults.answered, self.faults.reports), ([], []))
+
+    async def test_every_request_but_polling_gets_an_http_call_without_the_text_or_the_token(self):
+        setup_logging("dev", "DEBUG", str(self.folder), False)
+        bot = self.bot(answer(200, []), answer(200, SENT), answer(502, description="Bad Gateway"), unreachable)
+
+        await bot.get_updates()
+        await bot.send_message(555, "hunter2")
+        for _ in range(2):
+            with self.assertRaises(NetworkError):
+                await bot.send_message(555, "hunter2")
+
+        calls = [line for line in self.read(DEBUG) if line.get("event") == "http_call"]
+        self.assertEqual([(line["level"], line["service"], line["method"], line["url"], line.get("http_status"),
+                           line.get("exc_type")) for line in calls], [
+            ("DEBUG", "telegram", "POST", "https://api.telegram.org/bot***/sendMessage", 200, None),
+            ("DEBUG", "telegram", "POST", "https://api.telegram.org/bot***/sendMessage", 502, None),
+            ("DEBUG", "telegram", "POST", "https://api.telegram.org/bot***/sendMessage", None, "NetworkError"),
+        ])
+        self.assertRegex(calls[0]["msg"], r"^telegram sendMessage: POST https://api\.telegram\.org/bot\*\*\*/"
+                                          r"sendMessage: HTTP 200 in \d+ ms$")
+        self.assertRegex(calls[2]["msg"], r": NetworkError: httpx\.ConnectError: \[Errno -3\] Temporary failure "
+                                          r"in name resolution in \d+ ms$")
+        self.assertIsInstance(calls[0]["duration_ms"], int)
+        self.assertFalse({"request", "response"} & calls[0].keys())
+        self.assertNotIn("hunter2", self.raw(DEBUG))
+        # Without the token, also when it is not one of the secrets of dot-env, which every line has masked
+        self.assertNotIn(TOKEN, str(calls))
+        self.assertEqual(self.read(MAIN), [])
+
+    async def test_a_fout_in_ending_the_disruption_is_a_bug_and_ptb_still_gets_the_answer(self):
+        # PTB would make a NetworkError of it: a Storing of Telegram that no successful answer could end
+        error = PermissionError("faults.json")
+        self.faults = FakeFaults(ok_error=error)
+        bot = self.bot(answer(200, SENT))
+
+        message = await bot.send_message(555, "hunter2")
+
+        self.assertEqual(message.message_id, 2)
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.what, report.continued),
+                         (FaultKind.BUG, "Ending the Storing of Telegram failed", "gave PTB the answer of Telegram"))
+        self.assertIs(report.fault.__cause__, error)
+
+    async def test_before_the_meldfunctie_is_given_an_answer_only_goes_to_ptb(self):
+        request = TelegramRequest(httpx_kwargs={"transport": httpx.MockTransport(answer(200, SENT))})
+
+        message = await ExtBot(TOKEN, request=request).send_message(555, "hunter2")
+
+        self.assertEqual(message.message_id, 2)
 
 
 if __name__ == "__main__":

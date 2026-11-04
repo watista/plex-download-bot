@@ -181,13 +181,7 @@ class FaultReporter:
             return await self._report_bug(occurrence)
         if fault.kind == FaultKind.SETUP:
             return await self._report_setup(occurrence)
-        if fault.service != "telegram":
-            return await self._report_disruption(occurrence)
-
-        # A Storing of Telegram gets no admin message: it could not arrive. Counting its attempts, Not sent
-        # meanwhile and its Herstelmelding follow in issue 11.
-        self._write(occurrence, full=True)
-        return False
+        return await self._report_disruption(occurrence)
 
     async def ok(self, service: str) -> None:
         """ A successful answer of service, to any request: it ends the Storing of that service.
@@ -202,15 +196,44 @@ class FaultReporter:
             if ended is None:
                 return
             self._save()
+        since = datetime.fromisoformat(ended["since"])
+        if service == "telegram":
+            await self._telegram_restored(ended, since, now)
+            return
         if not ended["admin_messages"]:
             # Over before it persisted: it leaves only its lines
             return
 
         code = current_code()
-        text = restored_html(service, datetime.fromisoformat(ended["since"]), now, ended["attempts"],
-                             ended["first_code"], code)
+        text = restored_html(service, since, now, ended["attempts"], ended["first_code"], code)
         await self._send_admin_message(text, f"Restored · {_service_name(service)} is responding again",
                                        FaultKind.DISRUPTION, service, code, restored=True)
+
+    async def _telegram_restored(self, ended: dict, since: datetime, now: datetime) -> None:
+        """ The Herstelmelding after the Storing of Telegram that ended, when it persisted or an admin message about
+        a Fout did not go out meanwhile.
+
+        It has no Code: polling is outside an Interaction. It comes with sound when it lists admin messages that
+        did not go out.
+        """
+        not_sent = ended.get("not_sent", [])
+        if not ended.get("persisted") and not not_sent:
+            return
+        text = restored_html("telegram", since, now, ended["attempts"], None, None, not_sent)
+        if await self._send_admin_message(text, "Restored · Telegram is responding again", FaultKind.DISRUPTION,
+                                          "telegram", None, restored=True, silent=not not_sent):
+            return
+
+        # When Telegram stopped responding again, this Storing goes on in the new one: its Herstelmelding then
+        # covers both, from the begin of this one, with its attempts and its list
+        async with self._lock:
+            if (current := self._disruptions.get("telegram")) is not None:
+                current["since"] = ended["since"]
+                current["first_code"] = ended["first_code"]
+                current["attempts"] += ended["attempts"]
+                current["persisted"] = bool(ended.get("persisted") or current.get("persisted"))
+                current["not_sent"] = _with_not_sent(not_sent, current.get("not_sent", []))
+                self._save()
 
     async def fixed(self, service: str, check: str, item: int | str | None, msg: str) -> None:
         """ The check of an Inrichtingsfout succeeded; msg says what is right now, like "Carrie now has a path in
@@ -250,7 +273,10 @@ class FaultReporter:
             current["last_code"] = code
             current["last_seen"] = now.isoformat()
             due = _admin_message_due(current, now)
-            current["repeat"] = 0 if due else current["repeat"] + 1
+            held = due and self._telegram_is_down()
+            due = due and not held
+            full = before is None or due
+            current["repeat"] = 0 if full else current["repeat"] + 1
             if due:
                 current["admin_messages"] += 1
                 current["last_admin_message"] = now.isoformat()
@@ -260,8 +286,10 @@ class FaultReporter:
             self._setup[key] = current
             self._save()
 
-        self._write(occurrence, full=due, repeat=None if due else current["repeat"])
+        self._write(occurrence, full=full, repeat=None if full else current["repeat"])
         known = before is not None and before["admin_messages"] > 0
+        if held:
+            await self._hold_back(_about(fault), fault.kind, fault.service, code, key)
         if not due:
             return known
 
@@ -273,7 +301,9 @@ class FaultReporter:
 
     async def _report_disruption(self, occurrence: _Occurrence) -> bool:
         """ A failed attempt of a Storing: an admin message once the Storing persists, and then a Herinnering at
-        the first failed attempt after each wait
+        the first failed attempt after each wait.
+
+        No admin message about Telegram can arrive: its Storing only counts, for the Herstelmelding when it is over.
         """
         fault, now = occurrence.fault, self._now()
         async with self._lock:
@@ -284,7 +314,14 @@ class FaultReporter:
             current["attempts"] += 1
             current["last_reason"] = _cause(fault)
             since = datetime.fromisoformat(current["since"])
-            due = current["attempts"] >= 2 and now - since >= PERSISTS_AFTER and _admin_message_due(current, now)
+            persists = current["attempts"] >= 2 and now - since >= PERSISTS_AFTER
+            if fault.service == "telegram":
+                current["persisted"] = persists
+                due = held = False
+            else:
+                due = persists and _admin_message_due(current, now)
+                held = due and self._telegram_is_down()
+                due = due and not held
             full = before is None or due
             current["repeat"] = 0 if full else current["repeat"] + 1
             if due:
@@ -295,6 +332,8 @@ class FaultReporter:
 
         self._write(occurrence, full, repeat=None if full else current["repeat"])
         known = before is not None and before["admin_messages"] > 0
+        if held:
+            await self._hold_back(_about(fault), fault.kind, fault.service, occurrence.code, fault.service)
         if not due:
             return known
 
@@ -312,7 +351,7 @@ class FaultReporter:
         One that did not arrive is taken back, so the next time the Fout comes sends it again.
         """
         fault = occurrence.fault
-        if await self._send_admin_message(text, _about(fault), fault.kind, fault.service, occurrence.code):
+        if await self._send_admin_message(text, _about(fault), fault.kind, fault.service, occurrence.code, key):
             return True
         async with self._lock:
             if _take_back_admin_message(entries, key, before, now):
@@ -329,24 +368,33 @@ class FaultReporter:
         async with self._lock:
             last = self._bugs.get(signature)
             times = last["repeat"] + 1 if last else 0
-            due = last is None or now - datetime.fromisoformat(last["last_admin_message"]) >= BUG_THROTTLE
-            if due:
+            alerted = last["last_admin_message"] if last else None
+            due = alerted is None or now - datetime.fromisoformat(alerted) >= BUG_THROTTLE
+            held = due and self._telegram_is_down()
+            if held:
+                # Kept without an admin message, so the next time is not its first
+                self._bugs[signature] = {"last_admin_message": alerted, "repeat": times}
+            elif due:
                 self._bugs[signature] = {"last_admin_message": now.isoformat(), "repeat": 0}
             else:
                 self._bugs[signature] = {**last, "repeat": times}
             self._save()
 
-        self._write(occurrence, full=due, repeat=None if due else times)
+        full = last is None or (due and not held)
+        self._write(occurrence, full=full, repeat=None if full else times)
+        if held:
+            await self._hold_back(_about(fault), fault.kind, fault.service, code, signature)
+            return False
         if not due:
             return True
 
         repeat = None
-        if last:
-            previous = _day_and_time(datetime.fromisoformat(last["last_admin_message"]), now)
+        if alerted:
+            previous = _day_and_time(datetime.fromisoformat(alerted), now)
             repeat = f"{times}× since the last alert ({previous})"
         text = admin_message_html(fault, occurrence.interaction or Interaction(code), occurrence.frames,
                                   occurrence.user_told, occurrence.continued, occurrence.outside_wrapper, repeat)
-        if await self._send_admin_message(text, _about(fault), fault.kind, fault.service, code):
+        if await self._send_admin_message(text, _about(fault), fault.kind, fault.service, code, signature):
             return True
 
         # The Beheerder does not know yet, so the next time sends the message again. A Bug that came again
@@ -381,16 +429,26 @@ class FaultReporter:
                 exc=exc)
 
     async def _send_admin_message(self, text: str, about: str, kind: FaultKind, service: str | None,
-                                  code: str | None, restored: bool = False) -> bool:
+                                  code: str | None, key: str | None = None, restored: bool = False,
+                                  silent: bool | None = None) -> bool:
         """ Sends an admin message about a Fout through the verzendfunctie; True when it arrived.
 
-        about is what the line admin_message_sent says it was about. A Herstelmelding (restored) comes in silently.
+        about is what the line admin_message_sent says it was about, and key what makes the Fout the same Fout: the
+        signature of a Bug, the key of an Inrichtingsfout or the service of a Storing. A Herstelmelding (restored) has
+        no key, and comes in silently unless silent says otherwise.
+
+        While Telegram is not responding nothing is tried: an admin message about a Fout goes on the list Not sent
+        meanwhile instead.
         """
+        if await self._hold_back(about, kind, service, code, key):
+            return False
         try:
-            reason = (await self._send(self._admin_chat_id, text, "HTML", silent=restored)).reason
+            reason = (await self._send(self._admin_chat_id, text, "HTML",
+                                       silent=restored if silent is None else silent)).reason
         except Fault as unsent:
-            # Telegram is not responding: a Storing of its own. Not sent meanwhile follows in issue 11.
+            # Telegram is not responding: a Storing of its own, which holds back this admin message too
             await self.report(unsent)
+            await self._hold_back(about, kind, service, code, key)
             return False
         except TelegramError as e:
             # Telegram did answer, but not with the message, like a chat that does not exist
@@ -402,15 +460,48 @@ class FaultReporter:
                  restored=restored or None, interaction_id=code)
         return True
 
+    async def _hold_back(self, about: str, kind: FaultKind, service: str | None, code: str | None,
+                         key: str | None) -> bool:
+        """ Holds back an admin message while Telegram is not responding: False when there is no Storing of Telegram.
+
+        One about a Fout goes on the list Not sent meanwhile of that Storing: once per Fout, with the Code of the
+        first time. A Herstelmelding (no key) does not. Only an admin message that is not on the list yet gets a
+        line, so a Fout that comes every few seconds does not add one each time.
+        """
+        if not self._telegram_is_down():
+            return False
+        reason = "Telegram is not responding"
+        async with self._lock:
+            # Looked at again under the lock: a successful answer may have ended the Storing meanwhile
+            if (telegram := self._disruptions.get("telegram")) is None:
+                return False
+            listed = telegram.get("not_sent", [])
+            entry = {"key": f"{kind} {key}", "fault": kind, "service": service, "code": code}
+            telegram["not_sent"] = _with_not_sent(listed, [entry] if key is not None else [])
+            new = len(telegram["not_sent"]) > len(listed)
+            if new:
+                self._save()
+        if new or key is None:
+            log.warning(f"admin message not sent: {about}: {reason}", reason=reason, interaction_id=code)
+        return True
+
+    def _telegram_is_down(self) -> bool:
+        """ Whether a Storing of Telegram is open. Then no admin message is decided or tried: a Fout whose admin
+        message is due goes on the list Not sent meanwhile, gets a short line after its first, and its admin message
+        goes out the first time it comes after the Storing.
+        """
+        return "telegram" in self._disruptions
+
     @property
     def _bugs(self) -> dict:
-        """ Per signature of a Bug: the last admin message, and how often it came since """
+        """ Per signature of a Bug: the last admin message, None while none went out, and how often it came since """
         return self._state["bugs"]
 
     @property
     def _disruptions(self) -> dict:
         """ Per service with an open Storing: since when, the Code of the first failed attempt, the attempts, the
-        last reason, the admin messages so far with the last, and the short lines since the last full one
+        last reason, the admin messages so far with the last, and the short lines since the last full one. That of
+        Telegram also has whether it persisted, and the list Not sent meanwhile (not_sent).
         """
         return self._state["disruptions"]
 
@@ -535,6 +626,13 @@ def _take_back_admin_message(entries: dict, key: str, before: dict | None, now: 
     entries[key] = {**current, "admin_messages": before["admin_messages"] if before else 0,
                     "last_admin_message": before["last_admin_message"] if before else None}
     return True
+
+
+def _with_not_sent(listed: list[dict], more: list[dict]) -> list[dict]:
+    """ The list Not sent meanwhile with more added, each Fout once: of a Fout already on it, the entry of the first
+    time stays """
+    keys = {entry["key"] for entry in listed}
+    return [*listed, *(entry for entry in more if entry["key"] not in keys)]
 
 
 def _forget_old_setup_faults(setup: dict, now: datetime) -> None:
@@ -666,21 +764,44 @@ def admin_message_html(fault: Fault, interaction: Interaction | None, frames: li
     return _fit(lines, block, tail)
 
 
+# The most Fouten that the Herstelmelding after a Storing of Telegram lists by name; the rest is +N more
+MAX_NOT_SENT = 10
+
 # How a service is called in the head of a Herstelmelding
 SERVICE_NAMES = {"radarr": "Radarr", "sonarr": "Sonarr", "plex": "Plex", "transmission": "Transmission",
                  "tmdb": "TMDB", "telegram": "Telegram", "fallback": "The fallback host"}
 
 
 def restored_html(service: str, since: datetime, now: datetime, attempts: int, first_code: str | None,
-                  code: str | None) -> str:
+                  code: str | None, not_sent: list[dict] | None = None) -> str:
     """ The Herstelmelding after a Storing that persisted, in HTML: its begin and end, how long, how many failed
-    attempts, and the Code of the first failed attempt → that of the first successful answer
+    attempts, and the Code of the first failed attempt → that of the first successful answer.
+
+    After a Storing of Telegram, not_sent are the Fouten whose admin message did not go out meanwhile, each with
+    the kind, the service and the Code in faults.json: at most MAX_NOT_SENT of them, and how many more.
     """
+    listed = []
+    if not_sent:
+        listed = [f"Not sent meanwhile ({len(not_sent):,}):", *map(_not_sent_line, not_sent[:MAX_NOT_SENT])]
+        if len(not_sent) > MAX_NOT_SENT:
+            listed.append(f"+{len(not_sent) - MAX_NOT_SENT:,} more")
     return "\n".join([
         f"✅ <b>Restored</b> · {_escape(_service_name(service))} is responding again",
-        f"Down: {_period(since, now)} ({_duration(since, now)}), {attempts:,} failed attempts",
+        f"Down: {_period(since, now)} ({_duration(since, now)}), {attempts:,} failed "
+        f"{'attempt' if attempts == 1 else 'attempts'}",
+        *listed,
         *_codes(first_code, code),
     ])
+
+
+def _not_sent_line(entry: dict) -> str:
+    """ A Fout on the list Not sent meanwhile, like Bug · Radarr · k7p2qx, with only the service and the Code it has """
+    parts = [_escape(str(entry["fault"]).title())]
+    if entry["service"]:
+        parts.append(_escape(_service_name(entry["service"])))
+    if entry["code"]:
+        parts.append(f"<code>{_escape(entry['code'])}</code>")
+    return " · ".join(parts)
 
 
 def fixed_html(msg: str, since: datetime, now: datetime, times: int, first_code: str | None,
