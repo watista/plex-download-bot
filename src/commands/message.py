@@ -7,18 +7,18 @@ import aiofiles
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
-from telegram.error import BadRequest, TelegramError
 from src.states import MESSAGE_ID, MESSAGE_MESSAGE, MESSAGE_ALL_ID, ADD_MOVIE, ADD_MOVIE_USER
 
 
 class Message:
 
-    def __init__(self, args, logger, functions):
+    def __init__(self, args, logger, functions, telegram):
 
         # Set default values
         self.args = args
         self.log = logger
         self.function = functions
+        self.telegram = telegram
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
 
     async def _load_data(self) -> dict:
@@ -30,15 +30,6 @@ class Message:
     async def _save_data(self, data: dict) -> None:
         async with aiofiles.open(self.data_json, "w") as file:
             await file.write(json.dumps(data, indent=4))
-
-    async def _send_admin_broadcast(self, text: str, chat_id: int, context: CallbackContext) -> None:
-        """Underscore pairs → italic (HTML); rest escaped. Falls back to plain text if Telegram rejects HTML."""
-        html_body = self.function.format_admin_broadcast_html(text)
-        try:
-            await self.function.send_message(html_body, chat_id, context, None, "HTML", False)
-        except BadRequest as e:
-            await self.log.logger(f"Admin broadcast HTML failed; sending plain text. Error: {e}", False, "warning", False)
-            await self.function.send_message(text, chat_id, context, None, None, False)
 
     @staticmethod
     def _is_broadcast_subscribed(data: dict, user_id: str) -> bool:
@@ -128,12 +119,16 @@ class Message:
 
     async def message_send(self, update: Update, context: CallbackContext) -> None:
 
-        # Send the message to designated user and pop data
-        await self._send_admin_broadcast(update.message.text, context.user_data["id_to_send_msg"], context)
+        # Send the message to designated user and pop data: underscore pairs become italic,
+        # and send falls back to plain text if Telegram rejects the HTML
+        delivery = await self.telegram.send_user_message(
+            context.user_data["id_to_send_msg"], "message", self.function.format_admin_broadcast_html(update.message.text))
         context.user_data.pop("id_to_send_msg", None)
 
         # Send the message
-        await self.function.send_message(f"Bericht is verstuurd.", update, context)
+        await self.function.send_message(
+            "Bericht is verstuurd." if delivery.delivered else f"Bericht is niet afgeleverd: {delivery.reason}",
+            update, context)
 
         # End convo
         return ConversationHandler.END
@@ -159,18 +154,24 @@ class Message:
 
     async def message_all_id(self, update: Update, context: CallbackContext) -> None:
 
+        # Underscore pairs become italic, and send falls back to plain text if Telegram rejects the HTML
+        html_body = self.function.format_admin_broadcast_html(update.message.text)
+
         # Send the message to all users
         # if dev
         if self.args.env != "live":
-            await self._send_admin_broadcast(update.message.text, os.getenv("CHAT_ID_ADMIN"), context)
-            await self.function.send_message(f"Bericht is verstuurd.", update, context)
+            delivery = await self.telegram.send_user_message(os.getenv("CHAT_ID_ADMIN"), "broadcast", html_body)
+            await self.function.send_message(
+                "Bericht is verstuurd." if delivery.delivered else f"Bericht is niet afgeleverd: {delivery.reason}",
+                update, context)
             return ConversationHandler.END
 
         # Load JSON file
         json_data = await self._load_data()
 
-        # Send the message for all users
+        # Send the message for all users. One that does not arrive is a user_message on WARNING.
         subscribed_count = 0
+        not_delivered = 0
         skipped_users = []
 
         for key in json_data.get("user_id", {}):
@@ -181,18 +182,17 @@ class Message:
                 username = name_parts[1] if len(name_parts) > 1 else "Unknown"
                 skipped_users.append(f"{username} ({gebruiker})")
                 continue
-            try:
-                await self._send_admin_broadcast(update.message.text, int(key), context)
+            delivery = await self.telegram.send_user_message(int(key), "broadcast", html_body)
+            if delivery.delivered:
                 subscribed_count += 1
-            except TelegramError as e:
-                await self.log.logger(f"Error happened during message_all to {key}, see the logs for more info.", False, "error")
-                await self.log.logger(f"Exception: {e}", False, "error", False)
+            else:
+                not_delivered += 1
             await asyncio.sleep(1)
 
         # Send the message
         skipped_overview = "".join(f"\n- {user}" for user in skipped_users)
         await self.function.send_message(
-            f"Berichten zijn verstuurd.\n\nVerstuurd naar: {subscribed_count}\nOvergeslagen (afgemeld): {len(skipped_users)}{skipped_overview}",
+            f"Berichten zijn verstuurd.\n\nVerstuurd naar: {subscribed_count}\nNiet afgeleverd: {not_delivered}\nOvergeslagen (afgemeld): {len(skipped_users)}{skipped_overview}",
             update,
             context,
         )

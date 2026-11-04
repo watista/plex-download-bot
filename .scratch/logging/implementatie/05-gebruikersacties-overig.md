@@ -46,3 +46,4 @@ De rest van de catalogus, en vangnetten zodat ook genegeerde invoer en een verlo
 - Genegeerde invoer heeft nu geen handler: de ConversationHandler laat die stil vallen (`src/bot.py:153`).
 - Nu niet gelogd: algemene updates aan of uit (`src/commands/message.py:51`), en foute wachtwoordpogingen 1 en 2 (`src/commands/start.py:166`).
 - E-mail en telefoon staan nu in het log via de kopie van de admin-melding (`src/commands/account.py:89`).
+- Een knop uit een oud bericht terwijl de bot wacht op de keuze van een serie om af te melden, vangt `Subscribe.afmelden_optie` zelf af ("Deze knop hoort niet bij de lijst", `src/commands/subscribe.py`). Het vangnet ziet die dus niet: hij heeft daar een eigen regel `ignored` nodig. Issue 04 liet hem liggen voor 05.

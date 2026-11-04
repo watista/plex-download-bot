@@ -1,6 +1,6 @@
 # 03 Verzendfunctie en Gebruikersberichten
 
-Status: open
+Status: dicht
 Blocked by: 02
 Niet tegelijk met: –
 

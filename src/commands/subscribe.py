@@ -8,20 +8,24 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
 from src.services.sonarr import Sonarr
-from src.commands.schedule import Schedule
+from src.commands.media import results_text, title_and_year
+from src.log import get_logger
 
 from src.states import AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE
 
 
+log = get_logger(__name__)
+
+
 class Subscribe:
 
-    def __init__(self, args, logger, functions):
+    def __init__(self, args, logger, functions, telegram):
 
         # Set default values
         self.log = logger
         self.function = functions
+        self.telegram = telegram
         self.sonarr = Sonarr(logger)
-        self.schedule = Schedule(args, logger, self.function)
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
@@ -47,20 +51,27 @@ class Subscribe:
         # Make the API request
         context.user_data["aanmeld_object"] = await self.sonarr.lookup_by_name(sanitize_message)
 
-        # End conversation if no results are found
-        if not context.user_data["aanmeld_object"]:
-            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de serie *{sanitize_message}*. Misschien heb je een typfout gemaakt in de titel? Stuur /aanmelden om het nogmaals te proberen.", update, context)
-            return ConversationHandler.END
-
         # Get first max 10 items which are downløaden
-        results = [
+        found = context.user_data["aanmeld_object"] or []
+        options = [
             (idx, item)
-            for idx, item in enumerate(context.user_data["aanmeld_object"])
+            for idx, item in enumerate(found)
             if isinstance(item, dict) and item.get("path") and not item.get("ended", False)
         ][:10]
 
+        # The search term as the user typed it, with the series that can be chosen
+        in_sonarr = f" ({len(found)} found in Sonarr)" if len(found) != len(options) else ""
+        log.info(f"searched '{update.message.text}' for series updates: {results_text(len(options))}{in_sonarr}",
+                 event="search_term", query=update.message.text, media_type="series", purpose="series_updates",
+                 results=len(options))
+
         # End conversation if no results are found
-        if not results:
+        if not found:
+            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de serie *{sanitize_message}*. Misschien heb je een typfout gemaakt in de titel? Stuur /aanmelden om het nogmaals te proberen.", update, context)
+            return ConversationHandler.END
+
+        # End conversation if no results are found
+        if not options:
             await self.function.send_message(f"Er zijn geen resultaten gevonden voor de serie *{sanitize_message}*. Het kan zijn dat de serie nog niet gedownløad is of dat deze al is afgelopen. Stuur /aanmelden om het nogmaals te proberen.", update, context)
             return ConversationHandler.END
 
@@ -68,7 +79,7 @@ class Subscribe:
         await asyncio.sleep(1)
 
         # Loop to all media hits
-        for display_index, (orig_index, item) in enumerate(results, start=1):
+        for display_index, (orig_index, item) in enumerate(options, start=1):
 
             # Get the values with backup if non-existing
             title = item.get('title', sanitize_message)
@@ -90,7 +101,7 @@ class Subscribe:
         # create the keyboard with 2 per row
         buttons = [
             InlineKeyboardButton(f"Option {display_index}", callback_data=f"{orig_index}")
-            for display_index, (orig_index, _) in enumerate(results, start=1)
+            for display_index, (orig_index, _) in enumerate(options, start=1)
         ]
         keyboard = [buttons[i:i+2] for i in range(0, len(buttons), 2)]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -142,9 +153,13 @@ class Subscribe:
         async with aiofiles.open(self.data_json, "w") as f:
             await f.write(json.dumps(data, indent=4))
 
+        log.info(f"subscribed to new episodes of {title_and_year(context.user_data['aanmeld_data'])}",
+                 event="series_updates", outcome="subscribed", media=context.user_data['aanmeld_data'])
+
         title = context.user_data['aanmeld_data'].get("title", "")
         await self.function.send_message(f"✅ Je bent nu aangemeld voor nieuwe afleveringen van *{self.function.sanitize_text(title)}*.", update, context)
-        await self.log.logger(f"*ℹ️ User has subscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.telegram.send_admin_message(f"*ℹ️ User has subscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                                               "series subscribed")
 
         return ConversationHandler.END
 
@@ -163,6 +178,7 @@ class Subscribe:
         )
 
         if not serie_episode:
+            log.info("nothing to unsubscribe from", event="series_updates", outcome="nothing_to_unsubscribe")
             await self.function.send_message("Je bent niet aangemeld voor serie updates, dus er is ook niks om voor af te melden. 😀",update, context)
             return ConversationHandler.END
 
@@ -216,8 +232,13 @@ class Subscribe:
         media_json = self.first_item(await self.sonarr.lookup_by_tmdbid(serie_id))
         title = media_json.get("title") if media_json else f"Serie {serie_id}"
 
+        media = media_json or {"tmdbId": int(serie_id)}
+        log.info(f"unsubscribed from new episodes of {title_and_year(media)}", event="series_updates",
+                 outcome="unsubscribed", media=media)
+
         await self.function.send_message(f"✅ Je bent nu afgemeld voor serie updates van *{self.function.sanitize_text(title)}*",update, context)
-        await self.log.logger(f"*ℹ️ User has ubsubscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.telegram.send_admin_message(f"*ℹ️ User has ubsubscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                                               "series unsubscribed")
         return ConversationHandler.END
 
 

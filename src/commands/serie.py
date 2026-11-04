@@ -10,15 +10,19 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
 from src.states import SERIE_OPTION, SERIE_NOTIFY, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, SERIE_UPGRADE_INFO, AANMELDEN_SERIE
-from src.commands.media import Media
+from src.commands.media import Media, chosen_media, title_and_year
 from src.services.sonarr import Sonarr
+from src.log import get_logger
+
+
+log = get_logger(__name__)
 
 
 class Serie(Media):
     """ Specific class for serie handling """
 
-    def __init__(self, args, logger, functions):
-        super().__init__(args, logger, functions, Sonarr(logger),
+    def __init__(self, args, logger, functions, telegram):
+        super().__init__(args, logger, functions, telegram, Sonarr(logger),
                          "serie", os.getenv('SERIE_FOLDERS'), SERIE_OPTION)
 
     async def get_media_states(self) -> dict:
@@ -26,6 +30,7 @@ class Serie(Media):
 
         return {
             "downloading": {
+                "outcome": "downloading",
                 # "condition": lambda serie, torrents: any(serie["title"].lower() in t.name.lower() for t in torrents),
                 "condition": lambda serie, torrents: any(
                     re.search(
@@ -42,6 +47,7 @@ class Serie(Media):
                 "next_state": SERIE_NOTIFY
             },
             "not_available": {
+                "outcome": "not_released",
                 "condition": lambda serie, _: not serie.get("path") and serie.get("status") == "upcoming",
                 "size_check": True,
                 "message": "Op dit moment is {title} nog niet downløadbaar, hij is toegevoegd aan de te-downløaden-lijst. Zodra {title} gedownløad kan worden gebeurt dit automatisch.",
@@ -50,12 +56,14 @@ class Serie(Media):
                 "next_state": SERIE_NOTIFY
             },
             "not_available_already_requested": {
+                "outcome": "not_released",
                 "condition": lambda serie, _: serie.get("path") and serie.get("status") == "upcoming",
                 "message": "Op dit moment is {title} nog niet downløadbaar, hij is toegevoegd aan de te-downløaden-lijst. Zodra {title} gedownløad kan worden gebeurt dit automatisch.",
                 "state_message": True,
                 "next_state": SERIE_NOTIFY
             },
             "available_to_downl0ad": {
+                "outcome": "download_started",
                 "condition": lambda serie, _: not serie.get("path") and serie.get("status") != "upcoming",
                 "size_check": True,
                 "message": "De downløad voor {title} is nu gestart, gemiddeld duurt het 1 uur voordat een serie online staat, nog even geduld 😄",
@@ -65,6 +73,7 @@ class Serie(Media):
                 "next_state": SERIE_NOTIFY
             },
             "unmonitored": {
+                "outcome": "unmonitored",
                 "condition": lambda serie, _: not serie.get("monitored"),
                 "message": "{title} staat op dit moment aangemerkt als 'niet downløaden', dit kan verschillende redenen hebben. De serverbeheerder is op de hoogte gesteld van de aanvraag en zal deze beoordelen en er bij je op terug komen.",
                 "inform_unmonitored": True,
@@ -72,6 +81,7 @@ class Serie(Media):
                 "next_state": SERIE_NOTIFY
             },
             "already_downloaded": {
+                "outcome": "already_downloaded",
                 "condition": lambda serie, _: serie.get("path"),
                 "next_state": SERIE_UPGRADE
             }
@@ -107,9 +117,12 @@ class Serie(Media):
 
         # Answer query
         await update.callback_query.answer()
+        choice = "no" if update.callback_query.data == "serie_upgrade_no" else "yes"
+        log.info(f"something wrong with the download of {title_and_year(chosen_media(context.user_data))}: {choice}",
+                 event="quality_request", choice=choice, media=chosen_media(context.user_data))
 
         # Finish conversation if chosen
-        if update.callback_query.data == f"serie_upgrade_no":
+        if choice == "no":
             if not context.user_data['media_data'].get("ended", False):
                 # Create keyboard
                 reply_markup = InlineKeyboardMarkup([
@@ -160,7 +173,10 @@ class Serie(Media):
         """ Handles the specific info about the media upgrade """
 
         # Answer query
-        context.user_data["serie_upgrade_option"] = update.callback_query.data
+        reason = update.callback_query.data
+        context.user_data["serie_upgrade_option"] = reason
+        log.info(f"quality request for {title_and_year(chosen_media(context.user_data))}: {reason}",
+                 event="quality_request", reason=reason, media=chosen_media(context.user_data))
         await update.callback_query.answer()
 
         # Aks question which season/episode needs to be upgrade
@@ -170,8 +186,15 @@ class Serie(Media):
     async def media_upgrade_option(self, update: Update, context: CallbackContext) -> None:
         """ Handles the answer for which season/episode the serie should be upgraded """
 
+        # The season and episode as the user typed them
+        text = update.message.text
+        reason = context.user_data['serie_upgrade_option']
+        log.info(f"quality request for {title_and_year(chosen_media(context.user_data))}: {reason}: '{text}'",
+                 event="quality_request", reason=reason, text=text, media=chosen_media(context.user_data))
+
         # Send the confirmation message and notify option
-        await self.log.logger(f"*⚠️ User did a quality request for {context.user_data['media_data']['title']} ({context.user_data['media_data']['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(update.message.text)}\nReason: {context.user_data['serie_upgrade_option']}\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.telegram.send_admin_message(f"*⚠️ User did a quality request for {context.user_data['media_data']['title']} ({context.user_data['media_data']['tmdbId']}) ⚠️*\nSeason/Episode: {self.function.sanitize_text(text)}\nReason: {reason}\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                                               "quality request for a series")
         await self.function.send_message(f"Duidelijk! De aangegeven seizoenen/episodes worden zo snel mogelijk gefixt. Je ontvangt een bericht zodra dit is gedaan.", update, context)
         context.user_data.pop("serie_upgrade_option", None)
         return ConversationHandler.END
@@ -185,6 +208,8 @@ class Serie(Media):
 
         # Finish conversation if chosen
         if update.callback_query.data == "no":
+            log.info(f"new episodes of {title_and_year(chosen_media(context.user_data))}: no", event="series_updates",
+                     choice="no", media=chosen_media(context.user_data))
             await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
             return ConversationHandler.END
 
@@ -229,8 +254,12 @@ class Serie(Media):
         async with aiofiles.open(self.data_json, "w") as f:
             await f.write(json.dumps(data, indent=4))
 
+        log.info(f"new episodes of {title_and_year(chosen_media(context.user_data))}: yes: subscribed",
+                 event="series_updates", choice="yes", outcome="subscribed", media=chosen_media(context.user_data))
+
         title = context.user_data['media_data'].get("title", "")
         await self.function.send_message(f"✅ Je bent nu aangemeld voor nieuwe afleveringen van *{self.function.sanitize_text(title)}*.", update, context)
-        await self.log.logger(f"*ℹ️ User has subscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        await self.telegram.send_admin_message(f"*ℹ️ User has subscribed to the serie {self.function.sanitize_text(title)} - ({serie_id}) ℹ️*\nGebruiker: {context.user_data['gebruiker']}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                                               "series subscribed")
 
         return ConversationHandler.END

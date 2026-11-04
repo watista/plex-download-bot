@@ -161,12 +161,16 @@ Install Syncthing on both hosts and share the bot folder, or at minimum:
 - `bot_state.pkl`
 
 Recommended Syncthing ignore patterns (`.stignore` in the bot folder), so
-logs and the Python virtualenv don't get replicated:
+logs, the Python virtualenv and the state of the admin messages about faults
+don't get replicated. `faults.json` (dev: `faults.dev.json`) holds which
+faults this host already reported to the admin, so each host keeps its own:
 
 ```
 env/
 log/
 *.log
+faults.json
+faults.dev.json
 .git/
 __pycache__/
 ```

@@ -8,6 +8,8 @@ log/*
 *.db
 data.json
 data.dev.json
+faults.json
+faults.dev.json
 stats.json
 stats.dev.json
 test/

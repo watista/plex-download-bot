@@ -24,6 +24,7 @@ from transmission_rpc.error import TransmissionAuthError
 from src.bot import Bot
 from src.log import get_logger, mask, setup_logging
 from src.log.legacy import Log
+from src.telegram_out import TelegramOut
 
 
 # Secrets as they could be in dot-env
@@ -89,6 +90,10 @@ class LogFolder:
         """ The lines of a file in the log folder """
         return [json.loads(line) for line in self.raw(name).splitlines()]
 
+    def lines(self, event: str) -> list[dict]:
+        """ The lines of this kind in the main file of 3 November """
+        return [line for line in self.read(MAIN) if line.get("event") == event]
+
 
 class LogLinesTest(LogFolder, unittest.TestCase):
     """ Logregels through setup_logging and get_logger, read back from a temporary log folder """
@@ -136,6 +141,19 @@ class LogLinesTest(LogFolder, unittest.TestCase):
         self.assertEqual((line["ts"], line["level"], line["msg"], line["logger"]),
                          ("2026-11-03T14:05:12.000+01:00", "INFO", "searched 'dune'", "commands.media"))
         self.assertTrue(line["src"].startswith("tests/test_log.py:"), line["src"])
+
+    def test_media_gives_its_title_year_and_tmdb_id(self):
+        setup_logging("dev", "INFO", str(self.folder), False)
+
+        with self.at("2026-11-03T14:05:12+01:00"):
+            get_logger("src.commands.media").info(
+                "requested Dune (2021)", event="media_request", outcome="download_started",
+                media={"title": "Dune", "year": 2021, "tmdbId": 438631, "tvdbId": 1, "overview": "Paul Atreides"})
+
+        [line] = self.read(MAIN)
+        self.assertEqual(list(line), ["ts", "level", "event", "msg", "outcome", "media_title", "media_year", "tmdb_id",
+                                      "logger", "src"])
+        self.assertEqual((line["media_title"], line["media_year"], line["tmdb_id"]), ("Dune", 2021, 438631))
 
     def test_exc_info_without_an_exception(self):
         setup_logging("dev", "INFO", str(self.folder), False)
@@ -383,16 +401,19 @@ class StartStopTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         bot.log = MagicMock()
         application = MagicMock()
         application.bot.send_message = AsyncMock()
+        bot.telegram = TelegramOut(application.bot, "-1", AsyncMock(return_value=None))
 
-        with self.at("2026-11-03T14:05:12+01:00"), patch.dict(os.environ, {"CHAT_ID_GROUP": "-1"}):
+        with self.at("2026-11-03T14:05:12+01:00"):
             await bot._post_init(application)
             await bot._post_stop(application)
 
         main = self.read(MAIN)
         self.assertEqual([(line["level"], line["event"], line["msg"]) for line in main], [
             ("INFO", "bot_started", "bot started: dev, maintenance mode"),
+            ("INFO", "admin_message_sent", "admin message sent: bot stopped"),
             ("INFO", "bot_stopped", "bot stopped: dev, maintenance mode"),
         ])
+        self.assertEqual(application.bot.send_message.await_args.kwargs["chat_id"], "-1")
 
 
 class OldLogClassTest(LogFolder, unittest.IsolatedAsyncioTestCase):

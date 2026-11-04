@@ -2,7 +2,14 @@
 
 Opgeknipt uit [spec.md](../spec.md) op 2026-11-03. Elke issue is groot genoeg voor één sessie, en na elke issue werkt de bot nog. Issue 01 laat de klasse `Log` tijdelijk bestaan als dunne laag op de nieuwe logging. De volgende issues zetten de aanroepen om, en 15 haalt de laag weg.
 
-Een issue kan beginnen als alles onder "Blocked by" dicht is. "Niet tegelijk met" noemt issues die dezelfde bestanden raken: die draaien beter na elkaar, ook als ze niet op elkaar wachten.
+Een issue kan beginnen als alles onder "Blocked by" dicht is en niemand hem geclaimd heeft. "Niet tegelijk met" noemt issues die dezelfde bestanden raken: die draaien beter na elkaar, ook als ze niet op elkaar wachten.
+
+Een issue heeft drie statussen: `open`, `bezig` en `dicht`. Er kunnen sessies tegelijk lopen, dus claim een issue voordat je eraan begint:
+
+1. Controleer dat de issue `Status: open` heeft en dat er nog geen branch voor bestaat: `git branch -a --list '*logging/NN-*'`. Is een van beide niet zo, dan is hij geclaimd: kies een andere.
+2. Maak de branch `logging/NN-<naam>` aan. Zo ziet ook een sessie in een andere worktree de claim meteen, want branches zijn gedeeld.
+3. Zet in de issue ``Status: bezig (branch `logging/NN-<naam>`, sinds JJJJ-MM-DD)``, en commit alleen die regel meteen als eerste commit op de branch ("Claim issue NN").
+4. Is de issue af, dan wordt het `Status: dicht`. Stop je zonder dat hij af is, zet hem dan terug op `open` en zeg waar het werk staat.
 
 | # | Issue | Blocked by | Niet tegelijk met |
 |---|---|---|---|

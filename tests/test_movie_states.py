@@ -4,8 +4,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from telegram.ext import ConversationHandler
+
 from src.commands.movie import Movie
+from src.log import setup_logging
 from src.states import MOVIE_NOTIFY, MOVIE_OPTION
+from test_log import MAIN, LogFolder
 
 
 # Radarr lookup result for a movie that is not in Radarr yet: no id, never monitored
@@ -34,33 +38,53 @@ IN_RADARR_UNMONITORED = {
     "path": "/media/beide2/movies/KPop Demon Hunters (2025)",
 }
 
+# Radarr lookup result for a movie that is in Radarr with its file
+DOWNLOADED = {
+    "id": 7,
+    "title": "Dune",
+    "year": 2021,
+    "tmdbId": 438631,
+    "status": "released",
+    "monitored": True,
+    "hasFile": True,
+    "movieFileId": 31,
+}
 
-class MovieStateTest(unittest.IsolatedAsyncioTestCase):
-    """ Checks which route media_option takes for a chosen movie """
+
+class MovieTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ A Movie with a fake Radarr, Transmission and Telegram, and its log lines in a temporary folder """
 
     def setUp(self):
+        super().setUp()
+        setup_logging("dev", "INFO", str(self.folder), False)
+        self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
 
         # Logger and functions without Telegram
         self.log = MagicMock()
         self.log.logger = AsyncMock()
         functions = MagicMock()
-        functions.sanitize_text = lambda text: text
+        functions.sanitize_text = lambda text: text.replace("*", "").replace("_", "")
         functions.send_message = AsyncMock()
+        functions.send_image = AsyncMock()
+        self.functions = functions
+        self.telegram = MagicMock()
+        self.telegram.send_admin_message = AsyncMock()
 
         # Movie with a fake Radarr that has room on its disk
-        self.movie = Movie(SimpleNamespace(env="dev"), self.log, functions)
+        self.movie = Movie(SimpleNamespace(env="dev"), self.log, functions, self.telegram)
         self.radarr = MagicMock()
         self.radarr.get_disk_space = AsyncMock(return_value=[{"path": "/media", "freeSpace": 500 * 1024 ** 3}])
         self.radarr.queue_download = AsyncMock(return_value={"id": 1})
         self.radarr.scan_missing_media = AsyncMock()
         self.movie.media_handler = self.radarr
         self.movie.write_to_stats = AsyncMock()
+        self.movie.plex.get_media_url = AsyncMock(return_value=None)
 
         # Transmission is up and has no active torrents
-        transmission = MagicMock()
-        transmission.return_value.get_active_torrents = AsyncMock(return_value=(True, []))
+        self.transmission = MagicMock()
+        self.transmission.return_value.get_active_torrents = AsyncMock(return_value=(True, []))
         for target, value in [
-            ("src.commands.media.TransmissionService", transmission),
+            ("src.commands.media.TransmissionService", self.transmission),
             ("src.commands.media.check_transmission_and_trigger_scans", AsyncMock()),
             ("src.commands.media.asyncio.sleep", AsyncMock()),
         ]:
@@ -68,30 +92,40 @@ class MovieStateTest(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    async def choose(self, lookup: dict, **user_data) -> int:
-        """ Lets the user choose the given lookup result as option 1 """
-
+    def update(self, data: str | None = None, text: str | None = None) -> MagicMock:
+        """ A button press with this callback_data, or a message with this text, of user 1 """
         update = MagicMock()
         update.callback_query.answer = AsyncMock()
-        update.callback_query.data = "0"
+        update.callback_query.edit_message_reply_markup = AsyncMock()
+        update.callback_query.data = data
+        update.message.text = text
         update.effective_user.id = 1
         update.effective_user.first_name = "Test"
+        return update
 
+    def context(self, **user_data) -> MagicMock:
         context = MagicMock()
         context.user_data = {
             "label": "film",
             "media_folder": "/media/movies",
             "option_state": MOVIE_OPTION,
+            "media_type": "movie",
             "gebruiker": "test",
-            "media_object": [dict(lookup)],
             **user_data,
         }
+        return context
 
-        return await self.movie.media_option(update, context)
+    async def choose(self, lookup: dict, **user_data) -> int:
+        """ Lets the user choose the given lookup result as option 1 """
+        return await self.movie.media_option(self.update("0"), self.context(media_object=[dict(lookup)], **user_data))
 
     def admin_messages(self) -> list[str]:
-        """ Messages that went to the Beheerder on Telegram (telegram is the 4th argument, default True) """
-        return [c.args[0] for c in self.log.logger.await_args_list if len(c.args) < 4 or c.args[3]]
+        """ Messages that went to the Beheerder on Telegram """
+        return [c.args[0] for c in self.telegram.send_admin_message.await_args_list]
+
+
+class MovieStateTest(MovieTest):
+    """ Checks which route media_option takes for a chosen movie, and the line media_request it writes """
 
     async def test_new_movie_is_added_to_radarr(self):
         state = await self.choose(NEW_MOVIE)
@@ -99,6 +133,19 @@ class MovieStateTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state, MOVIE_NOTIFY)
         self.radarr.queue_download.assert_awaited_once()
         self.assertEqual(self.radarr.queue_download.await_args.args[0]["tmdbId"], 1001)
+        [line] = self.lines("media_request")
+        self.assertEqual(line["msg"], "chose option 1: New Movie (2025): download started")
+        self.assertEqual((line["level"], line["outcome"], line["option"], line["media_type"]),
+                         ("INFO", "download_started", 1, "movie"))
+        self.assertEqual((line["media_title"], line["media_year"], line["tmdb_id"]), ("New Movie", 2025, 1001))
+
+    async def test_request_goes_to_the_admin_without_its_text_in_the_log(self):
+        await self.choose(NEW_MOVIE)
+
+        [message] = self.admin_messages()
+        self.assertIn("User has requested the film New Movie (2025)", message)
+        self.log.logger.assert_not_awaited()
+        self.assertNotIn("User has requested", self.raw(MAIN))
 
     async def test_unmonitored_movie_in_radarr_is_not_added_again(self):
         state = await self.choose(IN_RADARR_UNMONITORED)
@@ -106,6 +153,8 @@ class MovieStateTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state, MOVIE_NOTIFY)
         self.radarr.queue_download.assert_not_awaited()
         self.assertTrue(any("marked as unmonitored" in msg for msg in self.admin_messages()))
+        [line] = self.lines("media_request")
+        self.assertEqual(line["outcome"], "unmonitored")
 
     async def test_unreleased_unmonitored_movie_in_radarr_is_not_added_again(self):
         state = await self.choose({**IN_RADARR_UNMONITORED, "status": "announced"})
@@ -113,6 +162,51 @@ class MovieStateTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state, MOVIE_NOTIFY)
         self.radarr.queue_download.assert_not_awaited()
         self.assertTrue(any("marked as unmonitored" in msg for msg in self.admin_messages()))
+        [line] = self.lines("media_request")
+        self.assertEqual(line["outcome"], "unmonitored")
+
+    async def test_unreleased_movie_is_added_to_radarr(self):
+        await self.choose({**NEW_MOVIE, "status": "announced"})
+
+        self.radarr.queue_download.assert_awaited_once()
+        [line] = self.lines("media_request")
+        self.assertEqual(line["outcome"], "not_released")
+
+    async def test_downloaded_movie(self):
+        await self.choose(DOWNLOADED)
+
+        [line] = self.lines("media_request")
+        self.assertEqual(line["msg"], "chose option 1: Dune (2021): already downloaded")
+        self.assertEqual(line["outcome"], "already_downloaded")
+        self.assertTrue(any("while it's already downløaded" in msg for msg in self.admin_messages()))
+
+    async def test_user_hears_there_is_no_space_while_transmission_is_down(self):
+        self.transmission.return_value.get_active_torrents = AsyncMock(return_value=(False, []))
+
+        await self.choose(NEW_MOVIE)
+
+        [line] = self.lines("media_request")
+        self.assertEqual(line["outcome"], "no_space")
+
+    async def test_failed_download_is_an_error(self):
+        self.radarr.queue_download = AsyncMock(return_value=None)
+
+        state = await self.choose(NEW_MOVIE)
+
+        self.assertEqual(state, ConversationHandler.END)
+        [line] = self.lines("media_request")
+        self.assertEqual((line["msg"], line["outcome"]), ("chose option 1: New Movie (2025): failed", "failed"))
+
+    async def test_title_in_the_lines_is_the_title_of_radarr(self):
+        # The title is sanitized for the MarkdownV2 of the answers, but not for the log, also not in the next step
+        context = self.context(media_object=[{**NEW_MOVIE, "title": "*batteries not included"}])
+
+        await self.movie.media_option(self.update("0"), context)
+        await self.movie.stay_notified(self.update("film_notify_no"), context)
+
+        self.assertEqual([line["media_title"] for line in self.lines("media_request") + self.lines("notify_choice")],
+                         ["*batteries not included", "*batteries not included"])
+        self.assertEqual(context.user_data["media_data"]["title"], "batteries not included")
 
     async def test_unmonitor_flag_of_an_earlier_big_serie_is_not_used(self):
         # A serie with more than 5 seasons sets set_monitored to False. The persisted user_data kept
@@ -121,6 +215,67 @@ class MovieStateTest(unittest.IsolatedAsyncioTestCase):
 
         self.radarr.queue_download.assert_awaited_once()
         self.assertTrue(self.radarr.queue_download.await_args.args[0]["monitored"])
+
+
+class MovieSearchTest(MovieTest):
+    """ The lines of the steps before and after the choice of a movie """
+
+    async def test_search_term_as_typed_with_the_number_of_results(self):
+        self.radarr.lookup_by_name = AsyncMock(return_value=[NEW_MOVIE, IN_RADARR_UNMONITORED])
+
+        await self.movie.request_media(self.update(text="kpop *demon* hunters"), self.context())
+
+        [line] = self.lines("search_term")
+        self.assertEqual(line["msg"], "searched 'kpop *demon* hunters' for movie: 2 results")
+        self.assertEqual((line["query"], line["media_type"], line["results"]), ("kpop *demon* hunters", "movie", 2))
+        self.assertNotIn("purpose", line)
+
+    async def test_search_term_without_results(self):
+        self.radarr.lookup_by_name = AsyncMock(return_value=[])
+
+        await self.movie.request_media(self.update(text="kpop demon huntres"), self.context())
+
+        [line] = self.lines("search_term")
+        self.assertEqual((line["msg"], line["results"]), ("searched 'kpop demon huntres' for movie: 0 results", 0))
+
+    async def test_search_buttons(self):
+        context = self.context(media_object=[NEW_MOVIE] * 7, requested_media="new movie", options_shown=5)
+
+        await self.movie.media_show_more(self.update("more"), context)
+        await self.movie.request_media_again(self.update("retry"), context)
+        await self.movie.request_media_again(self.update("no"), context)
+
+        self.assertEqual([(line["msg"], line["button"]) for line in self.lines("search_button")], [
+            ("pressed 'show more'", "more"),
+            ("pressed 'try again'", "retry"),
+            ("try again after no results: no", "no"),
+        ])
+
+    async def test_notify_choice(self):
+        context = self.context(media_data=dict(DOWNLOADED))
+
+        await self.movie.stay_notified(self.update("film_notify_no"), context)
+
+        [line] = self.lines("notify_choice")
+        self.assertEqual(line["msg"], "notify when Dune (2021) is online: no")
+        self.assertEqual((line["choice"], line["tmdb_id"]), ("no", 438631))
+
+    async def test_quality_request_with_a_description(self):
+        context = self.context(media_data=dict(DOWNLOADED))
+
+        await self.movie.media_upgrade(self.update("film_upgrade_yes"), context)
+        await self.movie.media_upgrade_info(self.update("other"), context)
+        await self.movie.media_upgrade_info_other(self.update(text="the audio is *Russian*"), context)
+
+        self.assertEqual([(line["msg"], line.get("choice"), line.get("reason"), line.get("text"))
+                          for line in self.lines("quality_request")], [
+            ("something wrong with the download of Dune (2021): yes", "yes", None, None),
+            ("quality request for Dune (2021): other", None, "other", None),
+            ("quality request for Dune (2021): other: 'the audio is *Russian*'", None, "other", "the audio is *Russian*"),
+        ])
+        [message] = self.admin_messages()
+        self.assertIn("User did a quality request for Dune", message)
+        self.assertNotIn("User did a quality request", self.raw(MAIN))
 
 
 if __name__ == "__main__":

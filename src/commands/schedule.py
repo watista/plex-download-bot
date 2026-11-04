@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import html
 import json
 import os
 import re
@@ -18,11 +19,12 @@ from src.services.transmission import check_transmission_and_trigger_scans
 
 class Schedule:
 
-    def __init__(self, args, logger, functions):
+    def __init__(self, args, logger, functions, telegram):
 
         # Set default values
         self.log = logger
         self.function = functions
+        self.telegram = telegram
         self.radarr = Radarr(logger)
         self.sonarr = Sonarr(logger)
         self.plex = Plex(logger)
@@ -60,6 +62,10 @@ class Schedule:
 
         # track whether we need to write JSON back
         changed = False
+
+        # The messages to the Beheerder about the users notified in this run. They go once data.json is
+        # written, so a failure to send one never makes a user get the same Gebruikersbericht again.
+        notified = []
 
         # Iterate through notify_list
         for user_id, media_types in data.get("notify_list", {}).items():
@@ -108,16 +114,17 @@ class Schedule:
                         # Get Plex URL
                         media_plex_url = await self.plex.get_media_url(media_json, media_type)
 
-                        # Sanitize title and set a var
+                        # The title in HTML for the user, and without * and _ for the MarkdownV2 of the Beheerder
+                        html_title = html.escape(media_json['title'])
                         sanitize_title = self.function.sanitize_text(media_json['title'])
 
                         # Send message
-                        if not media_plex_url:
-                            await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, *{sanitize_title}*, staat nu online op Plęx. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
-                        else:
-                            await self.function.send_message(f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{sanitize_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
-                        # Write to log
-                        await self.log.logger(f"*ℹ️ User notified: The {media_type} {sanitize_title} ({media_id}) is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
+                        delivery = await self.telegram.send_user_message(
+                            user_id, "online",
+                            f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{html_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                            media_json)
+                        if delivery.delivered:
+                            notified.append((f"*ℹ️ User notified: The {media_type} {sanitize_title} ({media_id}) is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: online"))
 
                         # If it's a series: initialize recurring tracking
                         if media_type == "serie":
@@ -170,6 +177,7 @@ class Schedule:
 
                 # Notify if we see a new season number in files
                 if max_seen > last_notified:
+                    html_title = html.escape(media_json["title"])
                     sanitize_title = self.function.sanitize_text(media_json["title"])
                     media_plex_url = await self.plex.get_media_url(media_json, "serie")
 
@@ -179,12 +187,12 @@ class Schedule:
                     else:
                         season_text = "seizoen " + " en ".join(str(s) for s in new_seasons)
 
-                    if not media_plex_url:
-                        await self.function.send_message(f"Goed nieuws! 🎉\n\n*{season_text.capitalize()}* van *{sanitize_title}* is nu beschikbaar. Veel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
-                    else:
-                        await self.function.send_message(f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}</b> van <b>{sanitize_title}</b> is nu beschikbaar. Veel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
-
-                    await self.log.logger(f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
+                    delivery = await self.telegram.send_user_message(
+                        user_id, "new_season",
+                        f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}</b> van <b>{html_title}</b> is nu beschikbaar. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                        media_json)
+                    if delivery.delivered:
+                        notified.append((f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_season"))
 
                     state["last_notified_season"] = max_seen
                     changed = True
@@ -227,18 +235,19 @@ class Schedule:
                 if not new_episodes:
                     continue
 
+                html_title = html.escape(media_json["title"])
                 sanitize_title = self.function.sanitize_text(media_json["title"])
                 media_plex_url = await self.plex.get_media_url(media_json, "serie")
 
                 # Generate episode list text
                 eps_text = self.format_episode_list(new_episodes)
 
-                if not media_plex_url:
-                    await self.function.send_message(f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van *{sanitize_title}* zijn nu beschikbaar:\n\n*{eps_text}*\n\nVeel kijkplezier! 😎", user_id, context, None, "MarkdownV2", False)
-                else:
-                    await self.function.send_message(f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van <b>{sanitize_title}</b> zijn nu beschikbaar:\n\n<b>{eps_text}</b>\n\nVeel kijkplezier! 😎\n\n🌐 <a href='{media_plex_url}'>Bekijk {sanitize_title} in de browser</a>", user_id, context, None, "HTML", False)
-
-                await self.log.logger(f"*ℹ️ Notify: New episode(s) for serie {sanitize_title}: {eps_text} ℹ️*\n" f"User ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", False, "info")
+                delivery = await self.telegram.send_user_message(
+                    user_id, "new_episodes",
+                    f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van <b>{html_title}</b> zijn nu beschikbaar:\n\n<b>{html.escape(eps_text)}</b>\n\nVeel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                    media_json)
+                if delivery.delivered:
+                    notified.append((f"*ℹ️ Notify: New episode(s) for serie {sanitize_title}: {eps_text} ℹ️*\n" f"User ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_episodes"))
 
                 # Update last notified
                 state["last"] = new_episodes[-1]
@@ -248,6 +257,17 @@ class Schedule:
         if changed:
             async with aiofiles.open(self.data_json, "w") as file:
                 await file.write(json.dumps(data, indent=4))
+
+        for text, about in notified:
+            await self.telegram.send_admin_message(text, about)
+
+
+    @staticmethod
+    def plex_link(html_title: str, media_plex_url: str | None) -> str:
+        """ The HTML link to the media in Plex for the end of a Gebruikersbericht, empty without a URL """
+        if not media_plex_url:
+            return ""
+        return f"\n\n🌐 <a href=\"{html.escape(media_plex_url)}\">Bekijk {html_title} in de browser</a>"
 
 
     def effective_season_count(self, media_json: dict) -> int:

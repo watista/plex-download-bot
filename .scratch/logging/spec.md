@@ -204,12 +204,12 @@ Bronnen: 04, 06 en 11.
 | `command` | elk command, ook `/stop` | welk command | in maintenance mode: onderhoudsbericht |
 | `menu_choice` | knop in het startmenu of het /help-menu | welke knop | in maintenance mode: onderhoudsbericht |
 | `login` | wachtwoord ingevoerd, of een geblokkeerde Bezoeker probeert het | nooit de tekst | gelukt + accountnaam / fout (poging n van 3) / geblokkeerd / geweigerd (staat al op de blokkadelijst) |
-| `search_term` | titel ingetypt bij film, serie of aanmelden voor een serie | zoekterm letterlijk + waarvoor | aantal resultaten |
+| `search_term` | titel ingetypt bij film, serie of aanmelden voor een serie | zoekterm letterlijk + waarvoor (`media_type`, bij aanmelden ook `purpose: series_updates`) | aantal resultaten; bij aanmelden het aantal series dat je kunt kiezen |
 | `search_button` | "toon meer", "probeer opnieuw", ja/nee bij "nog een keer proberen?" | welke knop | – |
-| `media_request` | optie gekozen | optienummer, titel, jaar, tmdbId | download gestart / al gedownload / nog niet uit / geen downloadmatch / unmonitored (meer dan 5 seizoenen) / geen ruimte / fout |
+| `media_request` | optie gekozen | optienummer, titel, jaar, tmdbId | download gestart / wordt al gedownload / al gedownload / nog niet uit / geen downloadmatch / unmonitored (al in Radarr of Sonarr, of meer dan 5 seizoenen met `seasons`) / geen ruimte / fout (`failed`) |
 | `notify_choice` | ja/nee op "melding als het online staat?" | keuze | – |
 | `quality_request` | ja/nee, reden, omschrijving (film, "overig") of seizoen en aflevering (serie) | reden, tekst letterlijk | – |
-| `series_updates` | aan- of afmelden voor een serie, ook ja/nee na een aanvraag | titel, tmdbId | aangemeld / afgemeld / niets om af te melden / geen resultaten |
+| `series_updates` | aan- of afmelden voor een serie, ook ja/nee na een aanvraag | titel, tmdbId | aangemeld / afgemeld / niets om af te melden. Geen resultaten bij het zoeken staat in `search_term` (`results: 0`). |
 | `general_updates` | aan of uit | aan of uit | gewijzigd / stond al zo |
 | `account_request` | elke stap | alleen de naam letterlijk; bij e-mail, telefoon en "via" alleen "beantwoord" | – |
 | `help_question` | vraag via /help → Anders | tekst letterlijk | – |

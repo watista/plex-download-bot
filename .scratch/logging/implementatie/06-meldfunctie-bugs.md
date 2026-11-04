@@ -1,6 +1,6 @@
 # 06 Meldfunctie: Bugs en de admin-melding
 
-Status: open
+Status: dicht
 Blocked by: 03
 Niet tegelijk met: 08 (`src/faults.py`)
 
