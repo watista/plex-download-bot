@@ -1,6 +1,6 @@
 # 13 Geplande taken
 
-Status: open
+Status: bezig (branch `logging/13-geplande-taken`, sinds 2026-11-04)
 Blocked by: 09, 10
 Niet tegelijk met: –
 
