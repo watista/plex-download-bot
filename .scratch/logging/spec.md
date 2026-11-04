@@ -176,6 +176,7 @@ Bronnen: 12, 13 en 14.
 3. **Een crash van het proces** na de logging-setup: een `sys.excepthook` geeft de exceptie aan `faults.report_crash(exc)` ([hoofdstuk 12](#de-meldfunctie)), die één regel `bot_crashed` schrijft en zo nodig een admin-melding stuurt. Daarna geeft de hook de exceptie door aan de standaard hook, zodat hij ook in het journal blijft.
    - Een `NetworkError` of `TimedOut` van Telegram is een Storing: WARNING, `fault: disruption`, `service: telegram`, met alleen `exc_type` en de tekst.
    - Al het andere is een Bug: ERROR, met de volledige `exc` en een eigen Code.
+   - Net als bij de wrappers houdt een Fault zijn soort, en is ook `RetryAfter` een Storing van Telegram (besloten bij 12).
 
    Een crash vóór de logging-setup (een variabele die ontbreekt in dot-env, een importfout) blijft alleen in het journal: er is dan nog geen logbestand.
 4. **Pollfouten van Telegram**: elke `NetworkError` bij het pollen is een mislukte poging van een Storing van Telegram: WARNING, `fault: disruption`, `service: telegram`, zonder `interaction_id`. Begin en einde krijgen geen eigen regel: het einde staat in het log via de Herstelmelding (`admin_message_sent` met `restored: true`). Een `TimedOut` bij het pollen blijft een DEBUG-regel van PTB. Een Conflict bij de start blijft één WARNING zonder `fault`.
@@ -614,8 +615,8 @@ Bronnen: 14 en 15, met 01, 09 en 12.
    - **Storing**: `await faults.ok(service)` bij elk geslaagd antwoord. Die aanroep zit in de requestregel en in `TelegramRequest`, dus geen dienst roept hem zelf aan. Als er geen Storing openstaat, kost hij bijna niets.
    - **Inrichtingsfout**: `await faults.fixed(service, check, item, msg="Carrie now has a path in Sonarr")`, aangeroepen door de code die de controle doet, als die slaagt. Staat er niets open, of ging er nooit een melding uit, dan ruimt hij alleen de toestand op.
 10. **Crash: `faults.report_crash(exc)`**, aangeroepen door de `sys.excepthook`. Die hook wordt geïnstalleerd zodra de meldfunctie bestaat.
-    - Een `NetworkError` of `TimedOut` van Telegram wordt een Storing. Al het andere wordt een Bug.
-    - Daarna draait dezelfde async `report()` in een nieuwe event loop (`asyncio.run`), met een nieuwe `Bot` en een timeout van 5 seconden. Zo is er één codepad voor beslissen, opmaken en versturen.
+    - Een `NetworkError` of `TimedOut` van Telegram wordt een Storing. Al het andere wordt een Bug, behalve een Fault, die zijn soort houdt (besloten bij 12).
+    - Daarna draait dezelfde async `report()` in een nieuwe event loop (`asyncio.run`), met een nieuwe `Bot` en een timeout van 5 seconden per stap van een request. Zo is er één codepad voor beslissen, opmaken en versturen, ook bij een time-out: dat is een poging van een Storing van Telegram (besloten bij 12).
     - Bij een Storing van Telegram telt `report()` alleen de poging en verstuurt hij niets.
 
 ### Telegram
@@ -651,7 +652,7 @@ Bronnen: 14 en 15, met 01, 09 en 12.
 16. **`InteractionProcessor`** zet per update `interaction_id`, `user_id` en `account` of `tg_name` ([hoofdstuk 2](#2-interacties-en-codes)). Bij de start krijgt hij `account_for(user_id)` mee, die de gebruikerslijst in `data.json` leest.
 17. **`guard(callback)`** komt om elke handler-callback en geeft na een Fout altijd `ConversationHandler.END` terug. Er is één variant voor alles, ook voor losse handlers zoals `/help` en `/log`, want daar negeert PTB de teruggegeven waarde.
 18. **`guard_job(callback)`** zet per run een nieuwe context (`interaction_id` en `job`), stuurt geen Foutmelding, en schrijft in een `finally` de regel `job_finished` met de tellingen uit `tally`.
-19. **`guard_task(coro_fn)`** is voor de heartbeat. Een exceptie is een Bug buiten een Interactie, met een eigen Code. Daarna start de wrapper de heartbeat na 60 seconden opnieuw. Stopt de heartbeat, dan denkt de watcher na een tijd dat de thuisserver uit de lucht is, en start hij de fallback-bot; dan pollen er twee bots. Een Bug die terugkomt, geeft door de afremming hooguit één melding per 24 uur.
+19. **`guard_task(coro_fn)`** is voor de heartbeat. Een exceptie is een Bug buiten een Interactie, met een eigen Code; een Fault houdt zijn soort, zoals bij `guard` (besloten bij 12). Daarna start de wrapper de heartbeat na 60 seconden opnieuw. Stopt de heartbeat, dan denkt de watcher na een tijd dat de thuisserver uit de lucht is, en start hij de fallback-bot; dan pollen er twee bots. Een Bug die terugkomt, geeft door de afremming hooguit één melding per 24 uur.
 20. **`working_on(media)`**, **`tally(name, n=1)`** en **`current_code()`** lezen en schrijven de context van de huidige Interactie.
 
 ### Modules
