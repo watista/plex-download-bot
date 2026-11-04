@@ -126,7 +126,6 @@ class SerieTest(MovieTest):
         with self.assertRaises(KeyError):
             await self.serie.media_option(self.update("0"), self.context(media_object=[without_id]))
 
-
     async def test_no_subscription_after_a_request(self):
         await self.serie.aanmelden(self.update("no"), self.context(media_data=dict(THE_BEAR)))
 

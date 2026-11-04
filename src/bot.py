@@ -545,8 +545,9 @@ class Bot:
         and reacts by starting the fallback bot immediately, instead of
         waiting for the silence threshold.
 
-        Any error is logged and swallowed: a missed goodbye is not a fault
-        condition because the silence-based takeover still covers it.
+        Any exception other than a failed goodbye is a Bug. It is reported
+        and not raised: the rest of the stop still has to happen, and the
+        silence-based takeover still covers a missed goodbye.
         """
         target_host = os.getenv("HEARTBEAT_TARGET_HOST")
         if not target_host:
@@ -557,10 +558,18 @@ class Bot:
             return
 
         try:
-            _reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(target_host, target_port),
-                timeout=3,
-            )
+            await self._goodbye(target_host, target_port)
+        except Exception as error:
+            await self.faults.report(as_fault(error, what="The goodbye to the fallback host failed"),
+                                     continued="went on stopping the bot")
+
+    async def _goodbye(self, host: str, port: int) -> None:
+        """The goodbye: a connection to the watcher that says BYE, with a
+        few seconds at most for each step, as the bot is stopping. Like a
+        heartbeat, it ends a Storing of the fallback host, or is a failed
+        attempt of one."""
+        try:
+            _reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=3)
             writer.write(b"BYE\n")
             try:
                 await asyncio.wait_for(writer.drain(), timeout=2)
@@ -569,11 +578,16 @@ class Bot:
             writer.close()
             try:
                 await asyncio.wait_for(writer.wait_closed(), timeout=2)
-            except (asyncio.TimeoutError, Exception):
+            except Exception:
+                # The watcher already has the goodbye; how it closes does not matter
                 pass
-            log.info(f"goodbye sent to {target_host}:{target_port}")
-        except Exception as e:
-            log.warning(f"failed to send the goodbye to {target_host}:{target_port}: {e}", exc_type=type(e).__name__)
+        except (OSError, asyncio.TimeoutError) as error:
+            fault = Fault.disruption(service="fallback", what="The fallback host is not responding")
+            fault.__cause__ = error
+            await self.faults.report(fault, continued="went on stopping the bot")
+            return
+        log.info(f"goodbye sent to {host}:{port}")
+        await self.faults.ok("fallback")
 
     async def error_handler(self, update: object, context: CallbackContext) -> None:
         """ The safety net behind the wrappers.

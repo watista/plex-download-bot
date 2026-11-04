@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 
-import asyncio
 import base64
 import inspect
 import io
@@ -481,54 +480,6 @@ class StartStopTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             ("INFO", "bot_stopped", "bot stopped: dev, maintenance mode"),
         ])
         self.assertEqual(application.bot.send_message.await_args.kwargs["chat_id"], "-1")
-
-    async def goodbye(self, port: int) -> None:
-        """ The goodbye of the primary bot to the watcher on this port of this host """
-        bot = Bot.__new__(Bot)
-        with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": "127.0.0.1", "HEARTBEAT_TARGET_PORT": str(port)}), \
-                self.at("2026-11-03T14:05:12+01:00"):
-            await bot._send_goodbye_to_fallback()
-
-    async def test_the_goodbye_to_the_fallback_host(self):
-        setup_logging("dev", "INFO", str(self.folder), False)
-
-        # A watcher that reads the goodbye
-        received = asyncio.get_running_loop().create_future()
-
-        async def watcher(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-            received.set_result(await reader.readline())
-            writer.close()
-
-        server = await asyncio.start_server(watcher, "127.0.0.1", 0)
-        self.addAsyncCleanup(server.wait_closed)
-        self.addCleanup(server.close)
-        port = server.sockets[0].getsockname()[1]
-
-        await self.goodbye(port)
-
-        self.assertEqual(await asyncio.wait_for(received, 1), b"BYE\n")
-        [line] = self.read(MAIN)
-        self.assertEqual((line["level"], line["msg"], line["logger"]),
-                         ("INFO", f"goodbye sent to 127.0.0.1:{port}", "bot"))
-        self.assertTrue(line["src"].endswith(" in _send_goodbye_to_fallback"), line["src"])
-        self.assertNotIn("event", line)
-
-    async def test_a_goodbye_that_fails_is_a_warning_and_not_a_fout(self):
-        setup_logging("dev", "INFO", str(self.folder), False)
-
-        # A port that nothing listens on anymore
-        server = await asyncio.start_server(lambda reader, writer: None, "127.0.0.1", 0)
-        port = server.sockets[0].getsockname()[1]
-        server.close()
-        await server.wait_closed()
-
-        await self.goodbye(port)
-
-        [line] = self.read(MAIN)
-        self.assertEqual((line["level"], line["exc_type"]), ("WARNING", "ConnectionRefusedError"))
-        self.assertTrue(line["msg"].startswith(f"failed to send the goodbye to 127.0.0.1:{port}: "), line["msg"])
-        self.assertNotIn("fault", line)
-
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ class MessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
         self.enterContext(patch("src.commands.message.asyncio.sleep", AsyncMock()))
 
-        # Logger and functions without Telegram; user 3 has blocked the bot
+        # Functions without Telegram; user 3 has blocked the bot
         self.functions = MagicMock(send_message=AsyncMock(), format_admin_broadcast_html=lambda text: text)
         self.telegram = MagicMock(send_user_message=AsyncMock(
             side_effect=lambda user_id, kind, text: Delivery("Forbidden: bot was blocked by the user")

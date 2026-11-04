@@ -35,7 +35,7 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         setup_logging("dev", "INFO", str(self.folder), False)
         self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
 
-        # Logger and functions without Telegram
+        # Functions without Telegram
         functions = MagicMock()
         functions.sanitize_text = lambda text: text
         functions.send_message = AsyncMock()

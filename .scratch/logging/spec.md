@@ -345,6 +345,7 @@ Uit de live-logs van oktober (03) en de code. De admin-melding volgt uit de soor
 | Transmission onbereikbaar | `src/services/transmission.py` | Storing |
 | Plex niet te bereiken, of de bibliotheek geeft een fout | `src/services/plex.py:47`, `:94` | Storing |
 | Heartbeat naar de fallback-host mislukt | `src/bot.py` (`_heartbeat_loop`) | Storing |
+| Afscheid (`BYE`) aan de fallback-host bij het stoppen mislukt | `src/bot.py` (`_send_goodbye_to_fallback`) | Storing, net als de heartbeat (besloten bij 15) |
 | Instelling ontbreekt of klopt niet: Plex-URL of -token, `HEARTBEAT_TARGET_PORT`, een mediamap die bij geen schijf hoort, een API-sleutel (401/403) | `src/services/plex.py:32` e.a. | Inrichtingsfout |
 | Opslag vol: geen schijf met 150 GB vrij. Dit staat los van een mislukte diskspace-check, die een Storing is. | `src/commands/media.py:475` | Inrichtingsfout |
 | Media zonder titel bij het maken van een Plex-link | `src/services/plex.py:80` | Inrichtingsfout |

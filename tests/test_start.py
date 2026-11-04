@@ -30,7 +30,7 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         setup_logging("dev", "INFO", str(self.folder), False)
         self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
 
-        # Logger and functions without Telegram
+        # Functions without Telegram
         self.functions = MagicMock(send_message=AsyncMock(), send_gif=AsyncMock())
         self.telegram = MagicMock(send_admin_message=AsyncMock())
         self.maintenance = MagicMock(notice=AsyncMock(return_value=ConversationHandler.END))
@@ -104,7 +104,7 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     async def test_in_maintenance_mode_a_command_for_series_updates_gets_the_maintenance_message(self):
         state = await Maintenance(self.functions).media_maintenance(message("/aanmelden_serie"),
-                                                                              MagicMock(user_data={}))
+                                                                    MagicMock(user_data={}))
 
         self.assertEqual(state, ConversationHandler.END)
         self.functions.send_message.assert_awaited_once()

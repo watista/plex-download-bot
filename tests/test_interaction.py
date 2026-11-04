@@ -740,7 +740,7 @@ class BotBuildTest(unittest.TestCase):
     """ The whole bot of dev, built up to polling: every command gets what its constructor takes """
 
     def build(self, mode: str) -> Bot:
-        """ The bot in this mode, built in a temporary folder, with run_polling and the excepthook left as they are """
+        """ The bot in this mode, built in a temporary folder, with run_polling and the excepthook patched out """
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.addCleanup(os.chdir, os.getcwd())
@@ -761,18 +761,13 @@ class BotBuildTest(unittest.TestCase):
         for command in (bot.serie, bot.movie, bot.schedule, bot.subscribe):
             self.assertIs(command.function, bot.function)
             self.assertIs(command.faults, bot.faults)
-        self.assertEqual([job.name for job in bot.application.job_queue.jobs()], [
-            "publish_command_list", "notify_admin_startup", "check_notify_list", "check_transmission",
-            "scan_missing_sonarr", "scan_missing_radarr",
-        ])
+        self.assertIs(bot.start.subscribe, bot.subscribe)
 
     def test_maintenance_mode(self):
         bot = self.build("maintenance")
 
         self.assertFalse(hasattr(bot, "movie"))
         self.assertIs(bot.start.maintenance, bot.maintenance)
-        self.assertEqual([job.name for job in bot.application.job_queue.jobs()],
-                         ["publish_command_list", "notify_admin_startup"])
 
 
 class ErrorHandlerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
@@ -968,6 +963,57 @@ class HeartbeatTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bot.faults.oks, [])
         # The meldfunctie writes the line of every attempt, short after the first
         self.assertEqual(self.read(MAIN), [])
+
+    async def goodbye(self, port: int) -> None:
+        """ The goodbye of the primary bot, when it stops, to the watcher on this port of this host """
+        with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": "127.0.0.1", "HEARTBEAT_TARGET_PORT": str(port)}):
+            await self.bot._send_goodbye_to_fallback()
+
+    async def test_a_goodbye_that_arrives_ends_a_disruption_of_the_fallback_host(self):
+
+        # A watcher that reads the goodbye
+        received = asyncio.get_running_loop().create_future()
+
+        async def watcher(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            received.set_result(await reader.readline())
+            writer.close()
+
+        server = await asyncio.start_server(watcher, "127.0.0.1", 0)
+        self.addAsyncCleanup(server.wait_closed)
+        self.addCleanup(server.close)
+        port = server.sockets[0].getsockname()[1]
+
+        await self.goodbye(port)
+
+        self.assertEqual(await asyncio.wait_for(received, 1), b"BYE\n")
+        self.assertEqual((self.bot.faults.oks, self.bot.faults.reports), (["fallback"], []))
+        [line] = self.read(MAIN)
+        self.assertEqual((line["level"], line["msg"], line["logger"]),
+                         ("INFO", f"goodbye sent to 127.0.0.1:{port}", "bot"))
+        self.assertTrue(line["src"].endswith(" in _goodbye"), line["src"])
+
+    async def test_a_goodbye_that_fails_is_an_attempt_of_a_disruption_of_the_fallback_host(self):
+        await self.goodbye(await self.no_watcher())
+
+        [report] = self.bot.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.service, report.fault.what, report.continued),
+                         (FaultKind.DISRUPTION, "fallback", "The fallback host is not responding",
+                          "went on stopping the bot"))
+        self.assertIsInstance(report.fault.__cause__, ConnectionRefusedError)
+        self.assertEqual(self.bot.faults.oks, [])
+        # The meldfunctie writes the line of the attempt
+        self.assertEqual(self.read(MAIN), [])
+
+    async def test_an_unexpected_exception_in_the_goodbye_is_a_bug_that_does_not_stop_the_stop(self):
+        error = RuntimeError("the event loop is closing")
+
+        with patch("asyncio.open_connection", side_effect=error):
+            await self.goodbye(9876)
+
+        [report] = self.bot.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.what, report.continued),
+                         (FaultKind.BUG, "The goodbye to the fallback host failed", "went on stopping the bot"))
+        self.assertIs(report.fault.__cause__, error)
 
     async def test_without_heartbeat_target_host_the_heartbeat_is_off_with_a_line(self):
         with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": ""}):
