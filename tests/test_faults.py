@@ -88,6 +88,23 @@ def unexpected(text: str) -> Fault:
         return fault
 
 
+def radarr_not_responding(reason: str = "Unable to communicate with RadarrAPI", http_status: int = 503) -> Fault:
+    """ One failed attempt of a Storing of Radarr, always raised from this one line """
+    try:
+        raise Fault.disruption(service="radarr", what="Radarr is not responding", reason=reason,
+                               http_status=http_status)
+    except Fault as fault:
+        return fault
+
+
+SLOW_HORSES = {"title": "Slow Horses", "year": 2022, "tvdbId": 288673}
+
+
+def no_path() -> Fault:
+    """ The Inrichtingsfout of a series without a path in Sonarr """
+    return Fault.setup(service="sonarr", what="Slow Horses has no path in Sonarr", check="series_path", item=288673)
+
+
 def library_error() -> ZeroDivisionError:
     """ An exception of a library, without a single own frame in its traceback """
     source = "def a():\n    b()\ndef b():\n    c()\ndef c():\n    d()\ndef d():\n    1 / 0\na()\n"
@@ -264,8 +281,8 @@ class AdminMessageHtmlTest(unittest.TestCase):
         self.assertNotIn("user told", html)
 
 
-class ReportTest(LogFolder, unittest.IsolatedAsyncioTestCase):
-    """ report: the line of every Fout and an admin message about a Bug, with a fake verzendfunctie and a fake clock """
+class ReporterCase(LogFolder):
+    """ The meldfunctie with a fake verzendfunctie and a fake clock, on a state file in a temporary folder """
 
     def setUp(self):
         super().setUp()
@@ -290,6 +307,17 @@ class ReportTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         await InteractionProcessor(1, fake_account_for).do_process_update(message_from(user_id, first_name), handle())
         return seen["result"], seen["code"]
 
+    async def in_a_run(self, call, job: str = "check_notify_list") -> tuple[object, str]:
+        """ call() in a run of this job, in a task of its own as PTB runs it: its result and Code """
+        seen = {}
+
+        async def run(context):
+            seen["result"] = await call()
+            seen["code"] = current_code()
+
+        await asyncio.create_task(guard_job(run)(SimpleNamespace(job=SimpleNamespace(name=job))))
+        return seen["result"], seen["code"]
+
     def faults(self) -> list[dict]:
         """ The lines of the Fouten themselves in the main file """
         return [line for line in self.read(MAIN) if "fault" in line and line.get("event") != "admin_message_sent"]
@@ -298,6 +326,10 @@ class ReportTest(LogFolder, unittest.IsolatedAsyncioTestCase):
     def block(text: str) -> list[str]:
         """ The lines of the expandable block of an admin message """
         return re.search(r"<blockquote expandable>(.*)</blockquote>", text, re.DOTALL).group(1).splitlines()
+
+
+class ReportTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
+    """ report: the line of every Fout and an admin message about a Bug, with a fake verzendfunctie and a fake clock """
 
     async def test_the_example_of_the_spec(self):
         reporter = self.reporter()
@@ -498,7 +530,7 @@ class ReportTest(LogFolder, unittest.IsolatedAsyncioTestCase):
                          [("ERROR", "bug", "radarr"), ("WARNING", "disruption", "telegram")])
         self.assertEqual(self.lines("admin_message_sent"), [])
 
-    async def test_a_disruption_and_a_setup_fault_only_get_their_line_for_now(self):
+    async def test_the_lines_of_a_disruption_and_a_setup_fault(self):
         try:
             try:
                 raise TimeoutError("timed out")
@@ -513,17 +545,18 @@ class ReportTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         line_number = inspect.currentframe().f_lineno + 1
         told.append(await reporter.report(setup))
 
-        self.assertEqual(told, [False, False])
-        self.assertEqual(self.send.messages, [])
+        # A Storing after one attempt is no admin message yet, an Inrichtingsfout is one at once
+        self.assertEqual(told, [False, True])
+        self.assertEqual(len(self.send.messages), 1)
         disrupted, wrong = self.faults()
         self.assertEqual((disrupted["level"], disrupted["msg"], disrupted["exc_type"]),
                          ("WARNING", "Radarr is not responding: timed out", "TimeoutError"))
-        self.assertRegex(disrupted["src"], r"^tests/test_faults\.py:\d+ in test_a_disruption_and_a_setup_fault")
+        self.assertRegex(disrupted["src"], r"^tests/test_faults\.py:\d+ in test_the_lines_of_a_disruption_and_a")
         self.assertEqual((wrong["level"], wrong["msg"], wrong["fault"], wrong["service"]),
                          ("ERROR", "Carrie has no path in Sonarr", "setup", "sonarr"))
         # Never raised: the line is of the caller
         self.assertEqual(wrong["src"], f"tests/test_faults.py:{line_number} in "
-                                       f"test_a_disruption_and_a_setup_fault_only_get_their_line_for_now")
+                                       f"test_the_lines_of_a_disruption_and_a_setup_fault")
         for line in disrupted, wrong:
             self.assertNotIn("exc", line)
             self.assertNotIn("interaction_id", line)
@@ -608,6 +641,333 @@ class ReportTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         text = self.send.messages[0].text
         self.assertIn("\nVisitor: Kees\nCaught by error_handler, outside the wrapper\n", text)
         self.assertEqual(self.block(text)[-2:], ["user_id: 323456789", "user told: yes"])
+
+
+class DisruptionTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
+    """ A Storing: an admin message when it persists, Herinneringen, and a Herstelmelding when ok ends it """
+
+    def setUp(self):
+        super().setUp()
+        self.clock = FakeClock("2026-11-03T05:02:00+01:00")
+
+    async def test_a_disruption_persists_after_2_attempts_over_15_minutes(self):
+        reporter = self.reporter()
+        told = []
+
+        # The first failed attempt, in a run of a job, and one 14 minutes later: not yet
+        _, first = await self.in_a_run(lambda: reporter.report(radarr_not_responding()))
+        self.clock.advance(minutes=14)
+        told.append((await self.in_an_update(lambda: reporter.report(radarr_not_responding())))[0])
+        self.assertEqual(self.send.messages, [])
+
+        self.clock.advance(minutes=1)
+        told.append((await self.in_an_update(lambda: reporter.report(radarr_not_responding("Bad Gateway", 502))))[0])
+
+        self.assertEqual(told, [False, True])
+        # No user, job or media: they only were affected. The Code is that of the first failed attempt.
+        [message] = self.send.messages
+        self.assertEqual((message.text, message.silent), ("\n".join([
+            "🌩 <b>Disruption</b> · Radarr is not responding",
+            "Reason: <i>Bad Gateway</i> (HTTP 502)",
+            "Since: 05:02, 3 failed attempts",
+            f"Code: <code>{first}</code> (first failed attempt)",
+        ]), False))
+        [sent] = self.lines("admin_message_sent")
+        self.assertEqual((sent["msg"], sent["fault"], sent["service"]),
+                         ("admin message sent: Disruption · Radarr is not responding", "disruption", "radarr"))
+
+    async def test_a_successful_answer_in_between_starts_over(self):
+        reporter = self.reporter()
+        await reporter.report(radarr_not_responding())
+        self.clock.advance(minutes=8)
+        await reporter.ok("radarr")
+
+        self.clock.advance(minutes=10)
+        self.assertFalse(await reporter.report(radarr_not_responding()))
+        self.assertEqual(self.send.messages, [])
+
+        self.clock.advance(minutes=15)
+        self.assertTrue(await reporter.report(radarr_not_responding()))
+        # Outside an Interaction, like the heartbeat, a Storing has no Code
+        self.assertEqual(self.send.messages[0].text.splitlines()[2:], ["Since: 05:20, 2 failed attempts"])
+
+    async def test_ok_gives_a_silent_herstelmelding_only_after_an_admin_message(self):
+        reporter = self.reporter()
+
+        # Over before it persisted: only its line
+        await reporter.report(radarr_not_responding())
+        self.clock.advance(minutes=5)
+        await reporter.ok("radarr")
+        self.assertEqual(self.send.messages, [])
+
+        # From 05:07, with an admin message at 05:22, till the first successful answer at 06:12
+        _, first = await self.in_a_run(lambda: reporter.report(radarr_not_responding()))
+        for minutes in 15, 18:
+            self.clock.advance(minutes=minutes)
+            await reporter.report(radarr_not_responding())
+        self.clock.advance(minutes=32)
+        _, back = await self.in_an_update(lambda: reporter.ok("radarr"))
+
+        _, restored = self.send.messages
+        self.assertEqual((restored.text, restored.fmt, restored.silent), ("\n".join([
+            "✅ <b>Restored</b> · Radarr is responding again",
+            "Down: 05:07 – 06:12 (1 h 5 min), 3 failed attempts",
+            f"Code: <code>{first}</code> → <code>{back}</code>",
+        ]), "HTML", True))
+        _, sent = self.lines("admin_message_sent")
+        self.assertEqual((sent["msg"], sent["fault"], sent["service"], sent["restored"], sent["interaction_id"]),
+                         ("admin message sent: Restored · Radarr is responding again", "disruption", "radarr", True,
+                          back))
+
+        # It is over: another successful answer gives nothing
+        await reporter.ok("radarr")
+        self.assertEqual(len(self.send.messages), 2)
+
+    async def test_herinneringen_after_1_3_and_7_days(self):
+        self.clock = FakeClock("2026-11-01T17:37:00+01:00")
+        reporter = self.reporter()
+        dns = lambda: reporter.report(radarr_not_responding("ClientConnectorDNSError", http_status=None))
+        await dns()
+        self.clock.advance(minutes=15)
+        await dns()
+
+        # Each wait counts from the previous admin message: an attempt just before it is over gives none, the
+        # first attempt after it a Herinnering
+        for days, repeat in ((1, "2nd alert · next alert 5 Nov"), (3, "3rd alert · next alert 12 Nov"),
+                             (7, "4th alert · next alert 19 Nov"), (7, "5th alert · next alert 26 Nov")):
+            self.clock.advance(days=days, minutes=-1)
+            self.assertTrue(await dns())
+            alerts = len(self.send.messages)
+            self.clock.advance(minutes=1)
+            self.assertTrue(await dns())
+            self.assertEqual(len(self.send.messages), alerts + 1)
+            self.assertIn(f"Repeat: {repeat}", self.send.messages[-1].text.splitlines())
+
+        first, second = self.send.messages[:2]
+        self.assertNotIn("Repeat:", first.text)
+        self.assertEqual((second.text, second.silent), ("\n".join([
+            "🌩 <b>Disruption</b> · Radarr is not responding",
+            "Reason: <i>ClientConnectorDNSError</i>",
+            "Since: 1 Nov 17:37, 4 failed attempts",
+            "Repeat: 2nd alert · next alert 5 Nov",
+        ]), False))
+
+    async def test_every_attempt_gets_a_warning_line_full_at_the_first_and_at_an_admin_message(self):
+        reporter = self.reporter()
+
+        # 05:02, 05:07, 05:17 with the admin message, 05:22 and 05:27
+        for minutes in 0, 5, 10, 5, 5:
+            self.clock.advance(minutes=minutes)
+            await reporter.report(radarr_not_responding())
+
+        lines = self.faults()
+        self.assertEqual([(line["level"], line.get("repeat")) for line in lines],
+                         [("WARNING", None), ("WARNING", 1), ("WARNING", None), ("WARNING", 1), ("WARNING", 2)])
+        self.assertEqual(list(lines[1]), ["ts", "level", "msg", "reason", "http_status", "repeat", "fault",
+                                          "service", "logger", "src"])
+        self.assertEqual({line["msg"] for line in lines}, {"Radarr is not responding: Unable to communicate with "
+                                                           "RadarrAPI"})
+
+    async def test_an_admin_message_that_does_not_arrive_goes_again_at_the_next_attempt(self):
+        self.send = FakeSend(Delivery("Forbidden: bot was kicked from the group chat"))
+        reporter = self.reporter()
+        await reporter.report(radarr_not_responding())
+        self.clock.advance(minutes=15)
+        self.assertFalse(await reporter.report(radarr_not_responding()))
+
+        self.clock.advance(minutes=5)
+        self.assertTrue(await reporter.report(radarr_not_responding()))
+
+        self.assertEqual(len(self.send.messages), 2)
+        self.assertEqual(self.send.messages[1].text.splitlines()[2:], ["Since: 05:02, 3 failed attempts"])
+
+    async def test_an_open_disruption_survives_a_new_reporter_on_the_same_file(self):
+        _, first = await self.in_a_run(lambda: self.reporter().report(radarr_not_responding()))
+        self.clock.advance(minutes=15)
+        await self.reporter().report(radarr_not_responding())
+        self.clock.advance(minutes=30)
+        await self.reporter().ok("radarr")
+
+        alert, restored = self.send.messages
+        self.assertEqual(alert.text.splitlines()[2:], ["Since: 05:02, 2 failed attempts",
+                                                       f"Code: <code>{first}</code> (first failed attempt)"])
+        # The successful answer came outside an Interaction
+        self.assertEqual(restored.text.splitlines()[1:], ["Down: 05:02 – 05:47 (45 min), 2 failed attempts",
+                                                          f"Code: <code>{first}</code> → –"])
+
+    async def test_a_disruption_of_telegram_sends_nothing(self):
+        reporter = self.reporter()
+        telegram = lambda: Fault.disruption(service="telegram", what="Telegram is not responding", reason="Bad Gateway")
+
+        await reporter.report(telegram())
+        self.clock.advance(minutes=15)
+        self.assertFalse(await reporter.report(telegram()))
+        await reporter.ok("telegram")
+
+        self.assertEqual(self.send.messages, [])
+        self.assertEqual([line["level"] for line in self.faults()], ["WARNING", "WARNING"])
+
+    async def test_a_disruption_of_another_service_is_another_disruption(self):
+        reporter = self.reporter()
+        await reporter.report(radarr_not_responding())
+        self.clock.advance(minutes=15)
+
+        sonarr = Fault.disruption(service="sonarr", what="Sonarr is not responding", reason="Bad Gateway")
+        self.assertFalse(await reporter.report(sonarr))
+        self.assertEqual(self.send.messages, [])
+
+
+class SetupFaultTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
+    """ An Inrichtingsfout: an admin message at once, Herinneringen, and a Herstelmelding when fixed sets it right """
+
+    def setUp(self):
+        super().setUp()
+        self.clock = FakeClock("2026-11-01T06:27:00+01:00")
+
+    def fixed(self, reporter: FaultReporter):
+        """ The check for the path of Slow Horses succeeds """
+        return reporter.fixed("sonarr", "series_path", 288673, "Slow Horses now has a path in Sonarr")
+
+    async def test_an_inrichtingsfout_is_reported_at_once(self):
+        reporter = self.reporter()
+
+        async def check():
+            working_on(SLOW_HORSES)
+            return await reporter.report(no_path(), continued="skipped this series")
+
+        told, code = await self.in_a_run(check)
+
+        self.assertTrue(told)
+        # Without own code: the check that found it says what is wrong
+        [message] = self.send.messages
+        self.assertEqual((message.text, message.silent), ("\n".join([
+            "🔧 <b>Setup</b> · Slow Horses has no path in Sonarr",
+            "Job: <code>check_notify_list</code>",
+            "Media: Slow Horses (2022)",
+            "Continued: skipped this series",
+            "<blockquote expandable>tvdb 288673</blockquote>",
+            f"Code: <code>{code}</code>",
+        ]), False))
+        [line] = self.faults()
+        self.assertEqual((line["level"], line["msg"], line["fault"], line["service"], line["interaction_id"]),
+                         ("ERROR", "Slow Horses has no path in Sonarr", "setup", "sonarr", code))
+        [sent] = self.lines("admin_message_sent")
+        self.assertEqual((sent["msg"], sent["fault"], sent["service"]),
+                         ("admin message sent: Setup · Slow Horses has no path in Sonarr", "setup", "sonarr"))
+
+    async def test_fixed_gives_a_silent_herstelmelding(self):
+        reporter = self.reporter()
+        told = []
+        _, first = await self.in_a_run(lambda: reporter.report(no_path()))
+        for hours in 1, 1:
+            self.clock.advance(hours=hours)
+            told.append((await self.in_a_run(lambda: reporter.report(no_path())))[0])
+
+        self.clock.advance(days=2, hours=1, minutes=48)
+        _, then = await self.in_an_update(lambda: self.fixed(reporter))
+
+        self.assertEqual(told, [True, True])
+        _, fixed = self.send.messages
+        self.assertEqual((fixed.text, fixed.silent), ("\n".join([
+            "✅ <b>Fixed</b> · Slow Horses now has a path in Sonarr",
+            "Failing: 1 Nov 06:27 – 3 Nov 10:15 (2 days), 3×",
+            f"Code: <code>{first}</code> → <code>{then}</code>",
+        ]), True))
+        _, sent = self.lines("admin_message_sent")
+        self.assertEqual((sent["msg"], sent["fault"], sent["service"], sent["restored"], sent["interaction_id"]),
+                         ("admin message sent: Fixed · Slow Horses now has a path in Sonarr", "setup", "sonarr", True,
+                          then))
+
+        # Set right: the check succeeding again gives nothing, and failing again is a new Fout
+        await self.fixed(reporter)
+        self.assertEqual(len(self.send.messages), 2)
+        self.clock.advance(days=1)
+        await reporter.report(no_path())
+        self.assertNotIn("Repeat:", self.send.messages[2].text)
+
+    async def test_fixed_without_an_admin_message_only_clears_the_state(self):
+        self.send = FakeSend(Delivery("Forbidden: bot was kicked from the group chat"))
+        reporter = self.reporter()
+        self.assertFalse(await reporter.report(no_path()))
+        self.clock.advance(hours=1)
+        await self.fixed(reporter)
+        self.assertEqual(len(self.send.messages), 1)
+
+        # Wrong again later: a new Fout from then on
+        self.clock.advance(hours=1)
+        self.assertTrue(await reporter.report(no_path()))
+        self.clock.advance(hours=1)
+        await self.fixed(reporter)
+
+        self.assertEqual(len(self.send.messages), 3)
+        self.assertEqual(self.send.messages[2].text.splitlines()[1], "Failing: 08:27 – 09:27 (1 h), 1×")
+
+    async def test_herinneringen_after_1_3_and_7_days(self):
+        reporter = self.reporter()
+        codes = [(await self.in_a_run(lambda: reporter.report(no_path())))[1]]
+
+        # A run every 6 hours: the first run after each wait gives a Herinnering, counted from the previous one
+        for _ in range(72):
+            self.clock.advance(hours=6)
+            codes.append((await self.in_a_run(lambda: reporter.report(no_path())))[1])
+
+        self.assertEqual([[line for line in message.text.splitlines() if line.startswith("Repeat:")]
+                          for message in self.send.messages], [
+            [],
+            ["Repeat: 2nd alert · failing since 1 Nov 06:27 (5×) · next alert 5 Nov"],
+            ["Repeat: 3rd alert · failing since 1 Nov 06:27 (17×) · next alert 12 Nov"],
+            ["Repeat: 4th alert · failing since 1 Nov 06:27 (45×) · next alert 19 Nov"],
+            ["Repeat: 5th alert · failing since 1 Nov 06:27 (73×) · next alert 26 Nov"],
+        ])
+        # The Code is that of the run that it came in
+        self.assertEqual(self.send.messages[1].text.splitlines()[-1], f"Code: <code>{codes[4]}</code>")
+        self.assertEqual(self.send.messages[1].silent, False)
+
+    async def test_two_calls_in_one_run_count_as_one_time(self):
+        reporter = self.reporter()
+
+        async def twice() -> bool:
+            await reporter.report(no_path())
+            return await reporter.report(no_path())
+
+        self.assertTrue((await self.in_a_run(twice))[0])
+        self.clock.advance(days=1)
+        await self.in_a_run(twice)
+
+        self.assertEqual(len(self.send.messages), 2)
+        self.assertIn("Repeat: 2nd alert · failing since 1 Nov 06:27 (2×) · next alert 5 Nov",
+                      self.send.messages[1].text.splitlines())
+        # Each call gets its line
+        self.assertEqual([line.get("repeat") for line in self.faults()], [None, 1, None, 1])
+
+    async def test_an_inrichtingsfout_is_forgotten_after_30_days_without_it(self):
+        reporter = self.reporter()
+        await reporter.report(no_path())
+        self.clock.advance(days=29, hours=23)
+        await reporter.report(no_path())
+        self.assertIn("\nRepeat: 2nd alert · ", self.send.messages[1].text)
+
+        # Coming back after 30 days is a new Fout, with a first admin message
+        self.clock.advance(days=30)
+        await reporter.report(no_path())
+        self.assertNotIn("Repeat:", self.send.messages[2].text)
+
+        # Not coming for 30 days, it is gone silently, without a Herstelmelding
+        self.clock.advance(days=30)
+        await self.fixed(reporter)
+        self.assertEqual(len(self.send.messages), 3)
+
+    async def test_disk_space_is_one_inrichtingsfout_without_an_item(self):
+        reporter = self.reporter()
+        full = lambda: Fault.setup(service="radarr", what="No disk has 150 GB free", check="disk_space")
+        await reporter.report(full())
+        self.clock.advance(hours=1)
+        await reporter.report(full())
+        await reporter.fixed("radarr", "disk_space", None, "A disk has 150 GB free again")
+
+        first, fixed = self.send.messages
+        self.assertEqual(fixed.text.splitlines()[:2], ["✅ <b>Fixed</b> · A disk has 150 GB free again",
+                                                       "Failing: 06:27 – 07:27 (1 h), 2×"])
 
 
 if __name__ == "__main__":
