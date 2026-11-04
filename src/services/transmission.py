@@ -1,110 +1,67 @@
 #!/usr/bin/python3
 
+""" The client of Transmission: every request through the requestregel, in 1 attempt """
+
 import os
-import traceback
-from typing import Any, Tuple
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from transmission_rpc import Client
+from transmission_rpc import Client, Torrent
+from transmission_rpc.error import TransmissionAuthError, TransmissionConnectError, TransmissionTimeoutError
 
-# Used to detect down -> up
-_last_transmission_up: bool | None = None
+from src.faults import Fault
+from src.services.request import Answer, call
+
+if TYPE_CHECKING:
+    from src.faults import FaultReporter
 
 
 class TransmissionService:
+    """ The client of Transmission. A request that fails raises its Fault; faults, the meldfunctie, hears of every
+    successful answer.
+
+    transmission-rpc is synchronous: while a request lasts, the event loop waits.
     """
-    Lightweight wrapper around transmission-rpc that:
-    - treats connection issues as "down" (no exceptions leak by default)
-    """
 
-    def __init__(self, logger):
-        self.log = logger
+    def __init__(self, faults: "FaultReporter"):
+        self.faults = faults
 
-    def _client(self) -> Client:
-        return Client(
-            host=os.getenv("TRANSMISSION_IP"),
-            port=os.getenv("TRANSMISSION_PORT"),
-            username=os.getenv("TRANSMISSION_USER"),
-            password=os.getenv("TRANSMISSION_PWD"),
-        )
+    async def check(self) -> None:
+        """ Asks Transmission for its session, which says it answers and accepts the user and password """
+        await self._request("session check", lambda client: None)
 
-    async def is_available(self) -> bool:
-        try:
-            # Any RPC call is enough to validate connectivity/auth.
-            c = self._client()
-            c.get_session()
-            await self.log.debug_call("transmission", "session check", host=os.getenv("TRANSMISSION_IP"), port=os.getenv("TRANSMISSION_PORT"), response="available")
-            return True
-        except Exception as e:
-            await self.log.debug_call("transmission", "session check", host=os.getenv("TRANSMISSION_IP"), port=os.getenv("TRANSMISSION_PORT"), error=f"{type(e).__name__}: {' '.join(map(str, e.args))}")
-            return False
+    async def get_active_torrents(self) -> list[Torrent]:
+        """ The torrents in Transmission, with their names """
+        return await self._request("torrent list", lambda client: client.get_torrents(arguments=["name"]))
 
-    async def get_active_torrents(self) -> Tuple[bool, list[Any]]:
+    async def _request(self, action: str, ask: Callable[[Client], Any]) -> Any:
+        """ A request with transmission-rpc through the requestregel: what ask gives back, or the Fault.
+
+        The client asks Transmission for its session when it is made. The attempt converts what transmission-rpc
+        raises: not reaching Transmission to what the requestregel calls unreachable, and a user or password it does
+        not accept to its HTTP status. Anything else it raises is a Bug.
         """
-        Returns: (is_up, torrents)
-        torrents will be [] when Transmission is down.
-        """
+        host, port = os.getenv("TRANSMISSION_IP"), os.getenv("TRANSMISSION_PORT")
+
+        async def attempt() -> Answer:
+            try:
+                client = Client(host=host, port=port, username=os.getenv("TRANSMISSION_USER"),
+                                password=os.getenv("TRANSMISSION_PWD"))
+                return Answer(200, ask(client))
+            except TransmissionTimeoutError as error:
+                raise TimeoutError(str(error)) from error
+            except TransmissionConnectError as error:
+                raise ConnectionError(str(error)) from error
+            except TransmissionAuthError as error:
+                status = error.original.status_code if error.original is not None else 401
+                return Answer(status, reason=error.message)
+
         try:
-            c = self._client()
-            torrents = c.get_torrents(arguments=["name"])
-            await self.log.debug_call("transmission", "get_torrents", response=[t.name for t in torrents])
-            return True, torrents
-        except Exception as e:
-            await self.log.logger(
-                f"Transmission is not reachable. Error: {' '.join(map(str, e.args))}",
-                False,
-                "warning",
-                False,
-            )
-            await self.log.logger(
-                f"Transmission connection traceback:\n{traceback.format_exc()}",
-                False,
-                "debug",
-                False,
-            )
-            return False, []
-
-
-async def check_transmission_and_trigger_scans(
-    *,
-    logger,
-    radarr=None,
-    sonarr=None,
-) -> bool:
-    """
-    Checks Transmission health (in-memory previous state only).
-
-    If Transmission recovered (down -> up) and radarr/sonarr are provided,
-    it triggers missing media scans immediately.
-
-    Returns: True if Transmission is currently reachable, else False.
-    """
-    global _last_transmission_up
-
-    svc = TransmissionService(logger)
-    is_up = await svc.is_available()
-
-    prev_up = _last_transmission_up
-    recovered = prev_up is False and is_up
-    _last_transmission_up = is_up
-
-    if recovered:
-        await logger.logger(
-            "Transmission recovered (down -> up). Triggering Arr missing-media scans.",
-            False,
-            "info",
-            False,
-        )
-        try:
-            if sonarr is not None:
-                await sonarr.scan_missing_media()
-            if radarr is not None:
-                await radarr.scan_missing_media()
-        except Exception as e:
-            await logger.logger(
-                f"Failed triggering Arr scans after Transmission recovery. Error: {e}",
-                False,
-                "warning",
-                False,
-            )
-
-    return bool(is_up)
+            # The url without the user and password, which transmission-rpc puts in its own
+            return await call("transmission", action, attempt, self.faults, retries=1, method="POST",
+                              url=f"http://{host}:{port}/transmission/rpc")
+        except Fault:
+            raise
+        except Exception as error:
+            raise Fault.bug(service="transmission",
+                            what=f"Transmission gave an unexpected answer to the {action}") from error

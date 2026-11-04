@@ -515,7 +515,8 @@ class BotJobsTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         bot.faults = FakeFaults()
         bot.publish_command_list = job("publish_command_list")
         bot.notify_admin_startup = job("notify_admin_startup")
-        bot.schedule = SimpleNamespace(check_notify_list=job("check_notify_list"))
+        bot.schedule = SimpleNamespace(check_notify_list=job("check_notify_list"),
+                                       check_transmission=job("check_transmission"))
         bot.sonarr = SimpleNamespace(scan_missing_media=job("sonarr.scan_missing_media"))
         bot.radarr = SimpleNamespace(scan_missing_media=job("radarr.scan_missing_media"))
         bot._register_jobs()
@@ -533,6 +534,7 @@ class BotJobsTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             "publish_command_list": "publish_command_list",
             "notify_admin_startup": "notify_admin_startup",
             "check_notify_list": "check_notify_list",
+            "check_transmission": "check_transmission",
             "scan_missing_sonarr": "sonarr.scan_missing_media",
             "scan_missing_radarr": "radarr.scan_missing_media",
         })
