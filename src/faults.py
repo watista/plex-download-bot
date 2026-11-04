@@ -202,7 +202,7 @@ class FaultReporter:
             if ended is None:
                 return
             self._save()
-        if not ended["alerts"]:
+        if not ended["admin_messages"]:
             # Over before it persisted: it leaves only its lines
             return
 
@@ -227,7 +227,7 @@ class FaultReporter:
             _forget_old_setup_faults(self._setup, now)
             ended = self._setup.pop(key, None)
             self._save()
-        if ended is None or not ended["alerts"]:
+        if ended is None or not ended["admin_messages"]:
             return
 
         code = current_code()
@@ -241,40 +241,35 @@ class FaultReporter:
         async with self._lock:
             _forget_old_setup_faults(self._setup, now)
             before = self._setup.get(key)
-            current = dict(before) if before else {"since": now.isoformat(), "times": 0, "first_code": None,
-                                                   "alerts": 0, "last_alert": None, "repeat": 0, "last_code": None}
+            current = dict(before) if before else {"since": now.isoformat(), "times": 0, "last_code": None,
+                                                   "first_code": None, "admin_messages": 0,
+                                                   "last_admin_message": None, "repeat": 0}
             # It counts per run, not per call: a job may run into the same Fout twice
             if before is None or code is None or code != before["last_code"]:
                 current["times"] += 1
             current["last_code"] = code
             current["last_seen"] = now.isoformat()
-            due = _alert_due(current, now)
+            due = _admin_message_due(current, now)
             current["repeat"] = 0 if due else current["repeat"] + 1
             if due:
-                current["alerts"] += 1
-                current["last_alert"] = now.isoformat()
-                if current["alerts"] == 1:
+                current["admin_messages"] += 1
+                current["last_admin_message"] = now.isoformat()
+                if current["admin_messages"] == 1:
                     # The Code that the Herstelmelding starts from
                     current["first_code"] = code
             self._setup[key] = current
             self._save()
 
         self._write(occurrence, full=due, repeat=None if due else current["repeat"])
-        known = before is not None and before["alerts"] > 0
+        known = before is not None and before["admin_messages"] > 0
         if not due:
             return known
 
-        failing = f"failing since {_moment(datetime.fromisoformat(current['since']), now)} ({current['times']:,}×)"
+        since = _day_and_time(datetime.fromisoformat(current["since"]), now)
+        failing = f"failing since {since} ({current['times']:,}×)"
         text = admin_message_html(fault, occurrence.interaction, occurrence.frames, occurrence.user_told,
                                   occurrence.continued, occurrence.outside_wrapper, _repeat(current, now, failing))
-        if await self._alert(text, fault, code):
-            return True
-
-        # Not arrived: the next time it comes sends it again
-        async with self._lock:
-            if _take_back_alert(self._setup, key, before, now):
-                self._save()
-        return known
+        return await self._send_or_take_back(text, occurrence, self._setup, key, before, now) or known
 
     async def _report_disruption(self, occurrence: _Occurrence) -> bool:
         """ A failed attempt of a Storing: an admin message once the Storing persists, and then a Herinnering at
@@ -284,21 +279,22 @@ class FaultReporter:
         async with self._lock:
             before = self._disruptions.get(fault.service)
             current = dict(before) if before else {"since": now.isoformat(), "first_code": occurrence.code,
-                                                   "attempts": 0, "alerts": 0, "last_alert": None, "repeat": 0}
+                                                   "attempts": 0, "admin_messages": 0,
+                                                   "last_admin_message": None, "repeat": 0}
             current["attempts"] += 1
             current["last_reason"] = _cause(fault)
             since = datetime.fromisoformat(current["since"])
-            due = current["attempts"] >= 2 and now - since >= PERSISTS_AFTER and _alert_due(current, now)
+            due = current["attempts"] >= 2 and now - since >= PERSISTS_AFTER and _admin_message_due(current, now)
             full = before is None or due
             current["repeat"] = 0 if full else current["repeat"] + 1
             if due:
-                current["alerts"] += 1
-                current["last_alert"] = now.isoformat()
+                current["admin_messages"] += 1
+                current["last_admin_message"] = now.isoformat()
             self._disruptions[fault.service] = current
             self._save()
 
         self._write(occurrence, full, repeat=None if full else current["repeat"])
-        known = before is not None and before["alerts"] > 0
+        known = before is not None and before["admin_messages"] > 0
         if not due:
             return known
 
@@ -306,15 +302,22 @@ class FaultReporter:
         first = Interaction(current["first_code"]) if current["first_code"] else None
         text = admin_message_html(fault, first, occurrence.frames, occurrence.user_told, occurrence.continued,
                                   occurrence.outside_wrapper, _repeat(current, now),
-                                  since=f"{_since(since, now)}, {current['attempts']:,} failed attempts")
-        if await self._alert(text, fault, occurrence.code):
-            return True
+                                  since=f"{_time_or_day_and_time(since, now)}, {current['attempts']:,} failed attempts")
+        return await self._send_or_take_back(text, occurrence, self._disruptions, fault.service, before, now) or known
 
-        # Not arrived: the next failed attempt sends it again
+    async def _send_or_take_back(self, text: str, occurrence: _Occurrence, entries: dict, key: str,
+                                 before: dict | None, now: datetime) -> bool:
+        """ Sends the admin message about entries[key] that was decided at now; True when it arrived.
+
+        One that did not arrive is taken back, so the next time the Fout comes sends it again.
+        """
+        fault = occurrence.fault
+        if await self._send_admin_message(text, _about(fault), fault.kind, fault.service, occurrence.code):
+            return True
         async with self._lock:
-            if _take_back_alert(self._disruptions, fault.service, before, now):
+            if _take_back_admin_message(entries, key, before, now):
                 self._save()
-        return known
+        return False
 
     async def _report_bug(self, occurrence: _Occurrence) -> bool:
         """ A Bug: an admin message at most once per 24 hours per signature """
@@ -337,11 +340,13 @@ class FaultReporter:
         if not due:
             return True
 
-        last_alert = f" ({_moment(datetime.fromisoformat(last['last_admin_message']), now)})" if last else ""
-        repeat = f"{times}× since the last alert{last_alert}" if last else None
+        repeat = None
+        if last:
+            previous = _day_and_time(datetime.fromisoformat(last["last_admin_message"]), now)
+            repeat = f"{times}× since the last alert ({previous})"
         text = admin_message_html(fault, occurrence.interaction or Interaction(code), occurrence.frames,
                                   occurrence.user_told, occurrence.continued, occurrence.outside_wrapper, repeat)
-        if await self._alert(text, fault, code):
+        if await self._send_admin_message(text, _about(fault), fault.kind, fault.service, code):
             return True
 
         # The Beheerder does not know yet, so the next time sends the message again. A Bug that came again
@@ -374,11 +379,6 @@ class FaultReporter:
                 repeat=repeat, details=fault.details if full else None, fault=fault.kind, service=fault.service,
                 interaction_id=occurrence.code, exc_type=type(original).__name__ if original is not None else None,
                 exc=exc)
-
-    async def _alert(self, text: str, fault: Fault, code: str | None) -> bool:
-        """ Sends the admin message about a Fout, with sound; True when it arrived """
-        return await self._send_admin_message(text, f"{fault.kind.title()} · {fault.what}", fault.kind,
-                                              fault.service, code)
 
     async def _send_admin_message(self, text: str, about: str, kind: FaultKind, service: str | None,
                                   code: str | None, restored: bool = False) -> bool:
@@ -510,32 +510,30 @@ def _media(fault: Fault, interaction: Interaction | None) -> dict | None:
     return fault.media or (interaction.media if interaction else None)
 
 
-def _moment(moment: datetime, now: datetime) -> str:
-    """ A moment in local time, like 12 Oct 14:02, with the year when it is not this year """
-    local = moment.astimezone()
-    year = f" {local.year}" if local.year != now.astimezone().year else ""
-    return f"{local.day} {MONTHS[local.month - 1]}{year} {local:%H:%M}"
+def _about(fault: Fault) -> str:
+    """ What the line admin_message_sent says an admin message about this Fout was about, like Bug · what """
+    return f"{fault.kind.title()} · {fault.what}"
 
 
-def _alert_due(entry: dict, now: datetime) -> bool:
+def _admin_message_due(entry: dict, now: datetime) -> bool:
     """ Whether a Storing or an Inrichtingsfout is due for an admin message: its first, or a Herinnering after the
     wait since the previous one
     """
-    if not entry["alerts"]:
+    if not entry["admin_messages"]:
         return True
-    return now - datetime.fromisoformat(entry["last_alert"]) >= _wait(entry["alerts"])
+    return now - datetime.fromisoformat(entry["last_admin_message"]) >= _wait(entry["admin_messages"])
 
 
-def _take_back_alert(entries: dict, key: str, before: dict | None, now: datetime) -> bool:
+def _take_back_admin_message(entries: dict, key: str, before: dict | None, now: datetime) -> bool:
     """ Takes back the admin message about entries[key] that was decided at now and did not arrive, so the next
     time sends it again: not when the Fout ended meanwhile, or another admin message was decided since. Gives back
     whether it changed anything.
     """
     current = entries.get(key)
-    if current is None or current["last_alert"] != now.isoformat():
+    if current is None or current["last_admin_message"] != now.isoformat():
         return False
-    entries[key] = {**current, "alerts": before["alerts"] if before else 0,
-                    "last_alert": before["last_alert"] if before else None}
+    entries[key] = {**current, "admin_messages": before["admin_messages"] if before else 0,
+                    "last_admin_message": before["last_admin_message"] if before else None}
     return True
 
 
@@ -546,20 +544,21 @@ def _forget_old_setup_faults(setup: dict, now: datetime) -> None:
             del setup[key]
 
 
-def _wait(alerts: int) -> timedelta:
+def _wait(admin_messages: int) -> timedelta:
     """ The wait for a Herinnering after this many admin messages """
-    return REMINDER_WAITS[min(alerts, len(REMINDER_WAITS)) - 1]
+    return REMINDER_WAITS[min(admin_messages, len(REMINDER_WAITS)) - 1]
 
 
 def _repeat(entry: dict, now: datetime, failing: str = "") -> str | None:
     """ The line Repeat: of the admin message that entry is due for now, None for its first.
 
-    failing goes between the alert and the next one, like "failing since 1 Oct 06:27 (96×)".
+    failing goes between which alert it is and the next one, like "failing since 1 Oct 06:27 (96×)". The message
+    itself says "alert", as the spec writes it.
     """
-    if entry["alerts"] < 2:
+    if entry["admin_messages"] < 2:
         return None
-    return " · ".join(part for part in (f"{_ordinal(entry['alerts'])} alert", failing,
-                                        f"next alert {_day(now + _wait(entry['alerts']), now)}") if part)
+    return " · ".join(part for part in (f"{_ordinal(entry['admin_messages'])} alert", failing,
+                                        f"next alert {_day(now + _wait(entry['admin_messages']), now)}") if part)
 
 
 def _ordinal(n: int) -> str:
@@ -575,11 +574,16 @@ def _day(moment: datetime, now: datetime) -> str:
     return f"{local.day} {MONTHS[local.month - 1]}{year}"
 
 
-def _since(moment: datetime, now: datetime) -> str:
-    """ A moment in local time, only the time when it is today, like 05:02, or else like 1 Nov 17:37 """
+def _day_and_time(moment: datetime, now: datetime) -> str:
+    """ A moment in local time, like 12 Oct 14:02, with the year when it is not this year """
+    return f"{_day(moment, now)} {moment.astimezone():%H:%M}"
+
+
+def _time_or_day_and_time(moment: datetime, now: datetime) -> str:
+    """ A moment in local time: only the time when it is today, like 05:02, or else like 1 Nov 17:37 """
     if moment.astimezone().date() == now.astimezone().date():
         return f"{moment.astimezone():%H:%M}"
-    return _moment(moment, now)
+    return _day_and_time(moment, now)
 
 
 def _exception_text(exception: BaseException) -> str:
@@ -705,7 +709,7 @@ def _period(start: datetime, end: datetime) -> str:
     """ From start to end in local time, like 05:02 – 06:07, with the days when they are not both today, the end """
     if start.astimezone().date() == end.astimezone().date():
         return f"{start.astimezone():%H:%M} – {end.astimezone():%H:%M}"
-    return f"{_moment(start, end)} – {_moment(end, end)}"
+    return f"{_day_and_time(start, end)} – {_day_and_time(end, end)}"
 
 
 def _duration(start: datetime, end: datetime) -> str:
@@ -721,11 +725,11 @@ def _duration(start: datetime, end: datetime) -> str:
 
 
 def _codes(first: str | None, then: str | None) -> list[str]:
-    """ The line Code: of a Herstelmelding, the first Code → the last; none without a Code """
-    if first is None and then is None:
-        return []
-    codes = " → ".join(f"<code>{_escape(code)}</code>" if code else "–" for code in (first, then))
-    return [f"Code: {codes}"]
+    """ The line Code: of a Herstelmelding, the first Code → the last, with only the Codes there are: outside an
+    Interaction there is none. No line without any.
+    """
+    codes = [f"<code>{_escape(code)}</code>" for code in (first, then) if code]
+    return [f"Code: {' → '.join(codes)}"] if codes else []
 
 
 @dataclass(frozen=True)

@@ -791,9 +791,9 @@ class DisruptionTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
         alert, restored = self.send.messages
         self.assertEqual(alert.text.splitlines()[2:], ["Since: 05:02, 2 failed attempts",
                                                        f"Code: <code>{first}</code> (first failed attempt)"])
-        # The successful answer came outside an Interaction
+        # The successful answer came outside an Interaction, so it has no Code
         self.assertEqual(restored.text.splitlines()[1:], ["Down: 05:02 – 05:47 (45 min), 2 failed attempts",
-                                                          f"Code: <code>{first}</code> → –"])
+                                                          f"Code: <code>{first}</code>"])
 
     async def test_a_disruption_of_telegram_sends_nothing(self):
         reporter = self.reporter()
