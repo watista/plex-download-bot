@@ -30,7 +30,7 @@ log = get_logger(__name__)
 
 T = TypeVar("T")
 
-# The verzendfunctie: send(chat_id, text, fmt)
+# The verzendfunctie: send(chat_id, text, fmt, silent=False)
 Send = Callable[..., Awaitable["Delivery"]]
 
 
@@ -269,18 +269,11 @@ def _without_wrapper_frame(error: Exception) -> Exception:
 
 
 def _as_fault(error: Exception) -> "Fault":
-    """ The Fout that an exception is: a Fault as it is, Telegram not responding as a Storing of Telegram, and
-    anything else as a Bug that came from it """
-    from src.faults import Fault
-    from src.telegram_out import telegram_disruption
+    """ The Fout that an exception is, by faults.as_fault: imported when a wrapper runs, as src.faults imports this
+    module """
+    from src.faults import as_fault
 
-    if isinstance(error, Fault):
-        return error
-    fault = telegram_disruption(error)
-    if fault is None:
-        fault = Fault.bug(what="Unexpected exception")
-    fault.__cause__ = error
-    return fault
+    return as_fault(error)
 
 
 async def _report_and_tell(fault: "Fault", update: object, faults: "FaultReporter", send: Send,

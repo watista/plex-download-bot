@@ -701,7 +701,8 @@ class GuardTaskTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(starts, [[], [60], [60, 60]])
         # A Bug outside an Interaction: its Code is one of its own, which the meldfunctie gives it
         self.assertEqual([(report.fault.kind, report.fault.what, report.user_told, report.code)
-                          for report in self.faults.reports], [(FaultKind.BUG, "Unexpected exception", False, None)] * 2)
+                          for report in self.faults.reports],
+                         [(FaultKind.BUG, "Unexpected exception", False, None)] * 2)
         self.assertIs(self.faults.reports[0].fault.__cause__, error)
         # The Fout is that of the heartbeat, not of the wrapper
         self.assertEqual(error.__traceback__.tb_frame.f_code.co_name, "heartbeat")
@@ -795,7 +796,8 @@ class HeartbeatTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     async def test_a_wrong_heartbeat_target_port_is_an_inrichtingsfout(self):
         for port in "98x76", "0", "65536":
-            with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": "fallback.example.com", "HEARTBEAT_TARGET_PORT": port}):
+            settings = {"HEARTBEAT_TARGET_HOST": "fallback.example.com", "HEARTBEAT_TARGET_PORT": port}
+            with patch.dict(os.environ, settings):
                 self.assertIsNone(await self.bot._heartbeat_target())
 
         self.assertEqual([(report.fault.kind, report.fault.service, report.fault.check, report.fault.item,
@@ -812,8 +814,8 @@ class HeartbeatTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.bot.faults.reports, [])
         [fixed] = self.bot.faults.fixes
-        self.assertEqual((fixed.service, fixed.check, fixed.item, fixed.msg),
-                         ("fallback", "setting", "HEARTBEAT_TARGET_PORT", "HEARTBEAT_TARGET_PORT is a port number again"))
+        self.assertEqual((fixed.service, fixed.check, fixed.item, fixed.msg), (
+            "fallback", "setting", "HEARTBEAT_TARGET_PORT", "HEARTBEAT_TARGET_PORT is a port number again"))
 
     async def test_stopping_the_bot_reports_an_exception_that_stopped_the_heartbeat(self):
         bot = self.bot

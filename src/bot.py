@@ -25,7 +25,7 @@ from src.conversation import Conversation, command_or_choice_line
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
 from src.services.arr import media_link
-from src.faults import Fault, FaultReporter, install_excepthook
+from src.faults import Fault, FaultReporter, as_fault, install_excepthook
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, guard, guard_job,
                              guard_task, report_outside_wrapper)
 from src.log import get_logger
@@ -51,7 +51,7 @@ from telegram.ext import (
 log = get_logger(__name__)
 
 # The setting of the port of the watcher on the fallback host, which takes the heartbeats
-PORT_SETTING = "HEARTBEAT_TARGET_PORT"
+HEARTBEAT_PORT_SETTING = "HEARTBEAT_TARGET_PORT"
 
 
 @contextmanager
@@ -133,11 +133,13 @@ class Bot:
         self.telegram = TelegramOut(self.application.bot, admin_chat_id, self.account_for)
 
         # The meldfunctie: the line of every Fout, and an admin message when one is due. Its state is next to data.json.
-        self.faults = FaultReporter(self.telegram.send, admin_chat_id, faults_json, media_link=media_link)
+        # It reports a crash on a new Bot: the Bot of the Application stops with run_polling.
+        self.faults = FaultReporter(self.telegram.send, admin_chat_id, faults_json, media_link=media_link,
+                                    new_send=partial(TelegramOut.on_new_bot, token, admin_chat_id, self.account_for))
         request.faults = polling.faults = self.faults
 
-        # From here on a crash is a Fout too, reported on a new Bot: the Bot of the Application stops with run_polling
-        install_excepthook(self.faults, partial(TelegramOut.on_new_bot, token, admin_chat_id, self.account_for))
+        # From here on a crash is a Fout too
+        install_excepthook(self.faults)
 
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
@@ -417,9 +419,8 @@ class Bot:
             except Exception as error:
                 # guard_task reports a Fout in the heartbeat itself, so this one is in guard_task, like a meldfunctie
                 # that failed. Reported and not raised: the rest of the stop still has to happen.
-                fault = Fault.bug(what="The heartbeat stopped")
-                fault.__cause__ = error
-                await self.faults.report(fault, continued="went on stopping the bot")
+                await self.faults.report(as_fault(error, what="The heartbeat stopped"),
+                                         continued="went on stopping the bot")
             self._heartbeat_task = None
 
         # Fast path first: get the fallback going before we spend time on
@@ -485,18 +486,18 @@ class Bot:
             log.info("heartbeat off: HEARTBEAT_TARGET_HOST is not set")
             return None
 
-        setting = os.getenv(PORT_SETTING, "9876")
+        name = HEARTBEAT_PORT_SETTING
+        setting = os.getenv(name, "9876")
         try:
             port = int(setting)
         except ValueError:
             port = 0
         if not 0 < port < 65536:
-            await self.faults.report(Fault.setup(service="fallback", what=f"{PORT_SETTING} is not a port number",
-                                                 check="setting", item=PORT_SETTING,
-                                                 reason=f"{setting!r} is not a port number"),
-                                     continued="the bot runs without a heartbeat")
+            fault = Fault.setup(service="fallback", what=f"{name} is not a port number", check="setting", item=name,
+                                reason=f"{setting!r} is not a port number")
+            await self.faults.report(fault, continued="the bot runs without a heartbeat")
             return None
-        await self.faults.fixed("fallback", "setting", PORT_SETTING, msg=f"{PORT_SETTING} is a port number again")
+        await self.faults.fixed("fallback", "setting", name, msg=f"{name} is a port number again")
 
         try:
             interval = max(1, int(os.getenv("HEARTBEAT_INTERVAL", "10")))

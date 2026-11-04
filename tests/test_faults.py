@@ -317,10 +317,18 @@ class ReporterCase(LogFolder):
         self.clock = FakeClock("2026-11-03T14:05:12+01:00")
         self.state_file = self.folder / "faults.dev.json"
         self.send = FakeSend()
+        self.new_bot = FakeSend()
+        self.new_bots = 0
+
+    @asynccontextmanager
+    async def new_send(self):
+        """ The verzendfunctie on a new Bot, for a crash """
+        self.new_bots += 1
+        yield self.new_bot
 
     def reporter(self, **kwargs) -> FaultReporter:
         """ A new meldfunctie on the state file of this test """
-        return FaultReporter(self.send, ADMIN_CHAT, self.state_file, now=self.clock, **kwargs)
+        return FaultReporter(self.send, ADMIN_CHAT, self.state_file, now=self.clock, new_send=self.new_send, **kwargs)
 
     async def in_an_update(self, call, user_id: int = 555, first_name: str = "Anna") -> tuple[bool, str]:
         """ call() in an update of this Telegram user, as PTB hands it to the InteractionProcessor: its result and Code """
@@ -544,7 +552,8 @@ class ReportTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
                 return Delivery("Forbidden: bot was kicked from the group chat")
             return DELIVERED
 
-        reporter = FaultReporter(send, ADMIN_CHAT, self.state_file, now=self.clock)
+        self.send = send
+        reporter = self.reporter()
 
         self.assertFalse(await reporter.report(radarr_refused()))
         self.clock.advance(minutes=5)
@@ -1243,20 +1252,9 @@ class CrashTest(ReporterCase, unittest.TestCase):
     Not an asynchronous test: the excepthook runs after the Application closed its event loop, with none running.
     """
 
-    def setUp(self):
-        super().setUp()
-        self.new_bot = FakeSend()
-        self.new_bots = 0
-
-    @asynccontextmanager
-    async def new_send(self):
-        """ The verzendfunctie on a new Bot """
-        self.new_bots += 1
-        yield self.new_bot
-
     def crash(self, error: BaseException) -> None:
         """ A crash of the bot, each in a process of its own: systemd starts the bot again after 10 seconds """
-        self.reporter().report_crash(error, self.new_send)
+        self.reporter().report_crash(error)
 
     def test_a_crash_by_a_bug_alerts_the_beheerder_on_a_new_bot(self):
         self.crash(crashed())
@@ -1310,8 +1308,8 @@ class CrashTest(ReporterCase, unittest.TestCase):
             ("WARNING", "bot_crashed", "disruption", "telegram", "NetworkError", None),
             ("WARNING", "bot_crashed", "disruption", "telegram", "TimedOut", 1),
         ])
-        self.assertEqual(lines[0]["msg"], "Telegram is not responding: httpx.ConnectError: [Errno -3] Temporary failure "
-                                          "in name resolution")
+        self.assertEqual(lines[0]["msg"], "Telegram is not responding: httpx.ConnectError: [Errno -3] Temporary "
+                                          "failure in name resolution")
         # A Storing outside an Interaction has no Code, and only the text of its exception
         for line in lines:
             self.assertFalse({"interaction_id", "exc"} & line.keys())
@@ -1323,7 +1321,7 @@ class CrashTest(ReporterCase, unittest.TestCase):
     def test_the_excepthook_reports_the_crash_and_hands_it_to_the_standard_hook(self):
         standard = MagicMock()
         self.enterContext(patch("sys.excepthook", standard))
-        install_excepthook(self.reporter(), self.new_send)
+        install_excepthook(self.reporter())
         error = crashed()
 
         sys.excepthook(type(error), error, error.__traceback__)
@@ -1337,7 +1335,7 @@ class CrashTest(ReporterCase, unittest.TestCase):
     def test_a_keyboard_interrupt_is_no_crash(self):
         standard = MagicMock()
         self.enterContext(patch("sys.excepthook", standard))
-        install_excepthook(self.reporter(), self.new_send)
+        install_excepthook(self.reporter())
         interrupt = KeyboardInterrupt()
 
         sys.excepthook(KeyboardInterrupt, interrupt, None)
@@ -1350,7 +1348,7 @@ class CrashTest(ReporterCase, unittest.TestCase):
         standard = MagicMock()
         self.enterContext(patch("sys.excepthook", standard))
         self.new_bot = FakeSend(RuntimeError("the new bot broke"))
-        install_excepthook(self.reporter(), self.new_send)
+        install_excepthook(self.reporter())
         error = crashed()
 
         sys.excepthook(type(error), error, error.__traceback__)

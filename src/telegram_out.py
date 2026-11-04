@@ -14,7 +14,8 @@ from telegram import Bot, LinkPreviewOptions
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TelegramError
 from telegram.request import HTTPXRequest, RequestData
 
-from src.faults import Fault, FaultKind, FaultReporter, Send
+from src.faults import Fault, FaultKind, FaultReporter
+from src.interaction import Send
 from src.log import get_logger, mask
 
 
@@ -217,8 +218,8 @@ class TelegramOut:
     @asynccontextmanager
     async def on_new_bot(cls, token: str, admin_chat_id: int | str,
                          account_for: Callable[[int], Awaitable[str | None]]) -> AsyncIterator[Send]:
-        """ The verzendfunctie on a new Bot, for the report of a crash: by then run_polling has shut down the Bot of the
-        Application, and closed its event loop.
+        """ The verzendfunctie on a new Bot, for the report of a crash: by then run_polling has shut down the Bot of
+        the Application, and closed its event loop.
 
         The new Bot waits CRASH_TIMEOUT seconds for Telegram at each step of a request (a free connection, connect,
         write and read), so a crash does not keep the bot from stopping. Telegram not responding in that time is a
