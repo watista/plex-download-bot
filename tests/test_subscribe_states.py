@@ -143,6 +143,21 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         [report] = self.faults.reports
         self.assertEqual((report.fault, report.continued), (not_found, "went on with the TMDB ID instead of the title"))
 
+    async def test_without_sonarr_one_storing_is_enough_for_every_series(self):
+        subscribed = {**SUBSCRIBED, "136315": {"started": True, "last": "S03E10"}}
+        self.data_json.write_text(json.dumps({"notify_list": {"1": {"serie_episode": subscribed}}}))
+        not_responding = Fault.disruption(service="sonarr", what="Sonarr is not responding", http_status=503)
+        self.sonarr.lookup_by_tmdbid = AsyncMock(side_effect=not_responding)
+
+        await self.subscribe.afmelden(*await self.message_and_context())
+
+        self.sonarr.lookup_by_tmdbid.assert_awaited_once()
+        markup = self.subscribe.function.send_message.await_args.args[3]
+        self.assertEqual([[button.text for button in row] for row in markup.inline_keyboard],
+                         [["Serie 1399"], ["Serie 136315"]])
+        [report] = self.faults.reports
+        self.assertEqual(report.fault, not_responding)
+
     async def test_unsubscribing_goes_on_when_sonarr_does_not_respond(self):
         not_responding = Fault.disruption(service="sonarr", what="Sonarr is not responding", http_status=503)
         self.sonarr.lookup_by_tmdbid = AsyncMock(side_effect=not_responding)

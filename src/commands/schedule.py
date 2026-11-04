@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from telegram.ext import CallbackContext
 
-from src.faults import Fault, FaultKind
+from src.faults import Fault, FaultKind, service_name
 from src.services.radarr import Radarr
 from src.services.sonarr import Sonarr
 from src.services.plex import Plex
@@ -316,17 +316,18 @@ class Schedule:
         """ The movie or series in Radarr or Sonarr, and its folder, or None for the folder to skip the item.
 
         A folder that is not there is skipped silently: nothing is downloaded yet. An item that Radarr or Sonarr does
-        not find, or that has no path there, is an Inrichtingsfout: reported, and the item is skipped. A Storing or a
-        Bug falls through and ends the run.
+        not find, or that has no path there, is an Inrichtingsfout of that item: reported, and the item is skipped.
+        Any other Fout falls through and ends the run, also an Inrichtingsfout like a wrong key, which every next item
+        would run into as well.
         """
+        check, name = f"{client.media_type}_path", service_name(client.service)
         try:
             media_json = await client.lookup_by_tmdbid(media_id)
-            check, name = ("series_path", "Sonarr") if client.service == "sonarr" else ("movie_path", "Radarr")
             if not media_json.get("path"):
                 raise Fault.setup(service=client.service, what=f"{media_json.get('title')} has no path in {name}",
                                   check=check, item=media_id, media=media_json)
         except Fault as fault:
-            if fault.kind != FaultKind.SETUP:
+            if fault.kind != FaultKind.SETUP or str(fault.item) != str(media_id):
                 raise
             await self.faults.report(fault, continued="skipped this item")
             return None, None

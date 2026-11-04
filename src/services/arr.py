@@ -23,16 +23,16 @@ TIMEOUT = ClientTimeout(total=30)
 class ArrApiHandler(ABC):
     """ Base class for usage of the Radarr/Sonarr API, every request through the requestregel.
 
-    service is radarr or sonarr, kind how its API calls its media: movie or series. A request that fails raises
+    service is radarr or sonarr, media_type how its API calls its media: movie or series. A request that fails raises
     its Fault; faults, the meldfunctie, hears of every successful answer and every check that passes.
     """
 
-    def __init__(self, faults: "FaultReporter", token: str, base_url: str, service: str, kind: str):
+    def __init__(self, faults: "FaultReporter", token: str, base_url: str, service: str, media_type: str):
         self.faults = faults
         self.token = token
         self.base_url = base_url
         self.service = service
-        self.kind = kind
+        self.media_type = media_type
 
     @abstractmethod
     async def lookup_by_name(self, media_name: str) -> list[dict]:
@@ -84,14 +84,14 @@ class ArrApiHandler(ABC):
         series: when SkyHook is having a bad day, it sometimes answers a tmdb: search with a completely different
         one, and acting on that gives wrong Gebruikersberichten.
         """
-        found = await self.get(f"/{self.kind}/lookup?term=tmdb:{tmdbid}", action=f"{self.kind} lookup")
+        found = await self.get(f"/{self.media_type}/lookup?term=tmdb:{tmdbid}", action=f"{self.media_type} lookup")
         name = service_name(self.service)
         first = (found if isinstance(found, list) else [found])[0] if found else None
         if not first:
             raise Fault.setup(service=self.service, what=f"{name} finds nothing for tmdb {tmdbid}", check="tmdb_lookup",
                               item=tmdbid)
         if first.get("tmdbId") and str(first["tmdbId"]) != str(tmdbid):
-            raise Fault.setup(service=self.service, what=f"{name} finds another {self.kind} for tmdb {tmdbid}",
+            raise Fault.setup(service=self.service, what=f"{name} finds another {self.media_type} for tmdb {tmdbid}",
                               check="tmdb_lookup", item=tmdbid,
                               details={"title": first.get("title"), "tmdbId": first["tmdbId"]})
         await self.faults.fixed(self.service, "tmdb_lookup", tmdbid,
@@ -122,9 +122,10 @@ PAGES = {"radarr": ("RADARR_URL", "movie", ("titleSlug", "tmdbId")),
 def media_link(service: str, media: dict) -> str | None:
     """ The link to a media item in the web interface of Radarr or Sonarr, at the URL of the API without /api/v3.
 
-    None for another service, or an item without the field that names it.
+    None for another service, an item without the field that names it, or one that is not in Radarr or Sonarr: a
+    lookup also finds what is not in its library yet, without an id there.
     """
-    if service not in PAGES:
+    if service not in PAGES or not media.get("id"):
         return None
     setting, page, fields = PAGES[service]
     slug = next((media[field] for field in fields if media.get(field)), None)

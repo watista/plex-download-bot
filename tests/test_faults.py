@@ -20,7 +20,8 @@ from test_log import MAIN, LogFolder
 from test_telegram_out import ADMIN_CHAT
 
 
-DUNE = {"title": "Dune: Part Two", "year": 2024, "tmdbId": 693134}
+# Dune: Part Two as Radarr has it, with its id there
+DUNE = {"id": 412, "title": "Dune: Part Two", "year": 2024, "tmdbId": 693134}
 
 # The user list of data.json: user ID to account name, with anna of the example in the spec
 ACCOUNTS = {123456789: "anna", 555: "anna"}

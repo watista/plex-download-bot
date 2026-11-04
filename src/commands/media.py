@@ -30,8 +30,8 @@ SERVICES = {"film": "radarr", "serie": "sonarr"}
 # The setting with the media folders, per label of the conversation
 FOLDER_SETTINGS = {"film": "MOVIE_FOLDERS", "serie": "SERIE_FOLDERS"}
 
-# The room a disk needs for a new download
-ROOM_NEEDED = 150 * 1024 ** 3
+# The free space in GB a disk needs for a new download
+ROOM_NEEDED_GB = 150
 
 
 def title_and_year(media: dict) -> str:
@@ -260,9 +260,9 @@ class Media(ABC):
         context.user_data['media_data'] = context.user_data["media_object"][option - 1]
 
         # The media item as Radarr or Sonarr names it, for the lines of this and the next steps: the title in
-        # media_data is sanitized for the answers below. titleSlug names it in the link of an admin message.
+        # media_data is sanitized for the answers below. id and titleSlug give the link of an admin message.
         context.user_data['media_item'] = {key: context.user_data['media_data'].get(key)
-                                           for key in ("title", "year", "tmdbId", "titleSlug")}
+                                           for key in ("title", "year", "tmdbId", "id", "titleSlug")}
         chosen = context.user_data['media_item']
 
         # Every Fout from here on is about this media item
@@ -512,7 +512,7 @@ class Media(ABC):
             context.user_data['media_data']['path'] = added["path"]
 
     async def check_disk_space(self, context: CallbackContext) -> str:
-        """ The first media folder with more than 150 GB free on its disk in Radarr or Sonarr.
+        """ The first media folder with more than ROOM_NEEDED_GB free on its disk in Radarr or Sonarr.
 
         Two checks, each an Inrichtingsfout when it fails. A folder on no disk is one of the setting: reported, after
         which the other folders are tried, unless no folder is on a disk. No folder with room is one of the disk space.
@@ -539,14 +539,17 @@ class Media(ABC):
             await self.faults.fixed(service, "setting", setting,
                                     msg=f"Every folder in {setting} is on a disk of {name}")
 
-        room = next((folder for folder, disk in on_disk.items() if free[disk] > ROOM_NEEDED), None)
-        if room is None:
-            raise Fault.setup(service=service, what=f"No disk of {name} has 150 GB free", check="disk_space",
+        with_room = next((folder for folder, disk in on_disk.items() if free[disk] > ROOM_NEEDED_GB * 1024 ** 3),
+                         None)
+        if with_room is None:
+            raise Fault.setup(service=service, what=f"No disk of {name} has {ROOM_NEEDED_GB} GB free",
+                              check="disk_space",
                               details={disk: f"{free[disk] // 1024 ** 3} GB free"
                                        for disk in dict.fromkeys(on_disk.values())},
                               user_text="Er is op dit moment een probleem met de opslag van de Plęx server")
-        await self.faults.fixed(service, "disk_space", None, msg=f"A disk of {name} has 150 GB free again")
-        return room
+        await self.faults.fixed(service, "disk_space", None,
+                                msg=f"A disk of {name} has {ROOM_NEEDED_GB} GB free again")
+        return with_room
 
     async def write_to_stats(self, update: Update, context: CallbackContext) -> None:
         """ Writes stats to the stats.json file """

@@ -39,8 +39,9 @@ class CheckNotifyListTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             (folder / "S01" / f"{title} S01E01.mkv").write_text("")
             self.media[tmdb_id] = {"title": title, "year": 2016, "tmdbId": int(tmdb_id), "path": str(folder),
                                    "statistics": {"seasonCount": 1}, "ended": True}
-        self.schedule.radarr = MagicMock(service="radarr", lookup_by_tmdbid=AsyncMock(side_effect=self.lookup))
-        self.schedule.sonarr = MagicMock(service="sonarr", lookup_by_tmdbid=AsyncMock(side_effect=self.lookup))
+        for name, service, media_type in (("radarr", "radarr", "movie"), ("sonarr", "sonarr", "series")):
+            setattr(self.schedule, name, MagicMock(service=service, media_type=media_type,
+                                                   lookup_by_tmdbid=AsyncMock(side_effect=self.lookup)))
 
         self.data_json = self.folder / "data.dev.json"
         self.data_json.write_text(json.dumps({
@@ -115,6 +116,19 @@ class CheckNotifyListTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             ("sonarr", "series_path", "1399", "Game of Thrones now has a path in Sonarr"),
             ("radarr", "movie_path", "1002", "Arrival now has a path in Radarr"),
         ])
+
+    async def test_a_key_that_radarr_does_not_accept_ends_the_run(self):
+        # An Inrichtingsfout too, but not of one item: every next item would run into it
+        wrong_key = Fault.setup(service="radarr", what="Radarr does not accept RADARR_API", check="setting",
+                                item="RADARR_API", http_status=401)
+        self.media["1001"] = wrong_key
+
+        with self.assertRaises(Fault) as caught:
+            await self.schedule.check_notify_list(None)
+
+        self.assertIs(caught.exception, wrong_key)
+        self.assertEqual(self.faults.reports, [])
+        self.assertEqual(self.notified(), [])
 
     async def test_a_storing_ends_the_run_and_keeps_what_it_did(self):
         not_responding = Fault.disruption(service="radarr", what="Radarr is not responding", http_status=503)

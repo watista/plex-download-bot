@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-""" De requestregel: one request to a service, with its attempts, an http_call per attempt, and the Fault it ends in """
+""" Requestregel: one request to a service, with its attempts, an http_call per attempt, and the Fault it ends in """
 
 import asyncio
 import json
@@ -53,20 +53,37 @@ async def call(service: str, action: str, attempt: Callable[[], Awaitable[Answer
 
     Every attempt gets an http_call on DEBUG with method, url (without the key) and request, which say what was sent.
     """
+
+    def http_call(number: int, started: float, answer: Answer | None = None, error: Exception | None = None) -> None:
+        """ The line of one attempt, on DEBUG: what was sent, and the answer or the exception """
+        duration_ms = round((monotonic() - started) * 1000)
+        if not log.enabled_for(logging.DEBUG):
+            return
+        sent = " ".join(part for part in (method, url) if part)
+        if answer:
+            outcome = f"HTTP {answer.status}"
+        else:
+            outcome = f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
+        log.debug(f"{service} {action}: {sent + ': ' if sent else ''}{outcome} in {duration_ms} ms, "
+                  f"attempt {number} of {retries}",
+                  event="http_call", service=service, method=method, url=url,
+                  http_status=answer.status if answer else None, duration_ms=duration_ms, request=_body(request),
+                  response=_body(answer.body) if answer else None, exc_type=type(error).__name__ if error else None)
+
     for number in range(1, retries + 1):
         started = monotonic()
         try:
             answer = await attempt()
         except UNREACHABLE as error:
-            _http_call(service, action, number, retries, method, url, request, started, error=error)
+            http_call(number, started, error=error)
             if number < retries:
                 await asyncio.sleep(RETRY_WAIT)
                 continue
             raise Fault.disruption(service=service, what=f"{service_name(service)} is not responding") from error
         except Exception as error:
-            _http_call(service, action, number, retries, method, url, request, started, error=error)
+            http_call(number, started, error=error)
             raise
-        _http_call(service, action, number, retries, method, url, request, started, answer=answer)
+        http_call(number, started, answer=answer)
 
         fault = _fault(service, action, answer)
         if fault is None:
@@ -95,24 +112,6 @@ def _fault(service: str, action: str, answer: Answer) -> Fault | None:
         return Fault.bug(service=service, what=f"{name} refused the {action}", reason=reason, http_status=status)
     return Fault.bug(service=service, what=f"{name} gave an unexpected answer to the {action}", reason=reason,
                      http_status=status)
-
-
-def _http_call(service: str, action: str, number: int, retries: int, method: str | None, url: str | None,
-               request: Any, started: float, answer: Answer | None = None, error: Exception | None = None) -> None:
-    """ The line of one attempt, on DEBUG: what was sent, and the answer or the exception """
-    duration_ms = round((monotonic() - started) * 1000)
-    if not log.enabled_for(logging.DEBUG):
-        return
-    sent = " ".join(part for part in (method, url) if part)
-    if answer:
-        outcome = f"HTTP {answer.status}"
-    else:
-        outcome = f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
-    log.debug(f"{service} {action}: {sent + ': ' if sent else ''}{outcome} in {duration_ms} ms, "
-              f"attempt {number} of {retries}",
-              event="http_call", service=service, method=method, url=url,
-              http_status=answer.status if answer else None, duration_ms=duration_ms, request=_body(request),
-              response=_body(answer.body) if answer else None, exc_type=type(error).__name__ if error else None)
 
 
 def _body(value: Any) -> str | None:

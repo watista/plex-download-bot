@@ -21,7 +21,7 @@ from test_log import DEBUG, SECRETS, LogFolder
 ALREADY_ADDED = [{"propertyName": "TmdbId", "errorMessage": "This movie has already been added",
                   "attemptedValue": 803796, "severity": "error", "errorCode": "MovieExistsValidator"}]
 
-GAME_OF_THRONES = {"title": "Game of Thrones", "year": 2011, "tmdbId": 1399, "titleSlug": "game-of-thrones",
+GAME_OF_THRONES = {"id": 7, "title": "Game of Thrones", "year": 2011, "tmdbId": 1399, "titleSlug": "game-of-thrones",
                    "path": "/media/series/Game of Thrones"}
 
 
@@ -178,21 +178,26 @@ class MediaLinkTest(unittest.TestCase):
                                                   "SONARR_URL": "https://sonarr.example.com/api/v3/"}))
 
     def test_radarr_names_a_movie_by_its_tmdbid(self):
-        self.assertEqual(media_link("radarr", {"title": "Dune: Part Two", "tmdbId": 693134}),
+        self.assertEqual(media_link("radarr", {"id": 412, "title": "Dune: Part Two", "tmdbId": 693134}),
                          "https://radarr.example.com/movie/693134")
-        self.assertEqual(media_link("radarr", {"titleSlug": "1314481", "tmdbId": 1314481}),
+        self.assertEqual(media_link("radarr", {"id": 413, "titleSlug": "1314481", "tmdbId": 1314481}),
                          "https://radarr.example.com/movie/1314481")
 
     def test_sonarr_names_a_series_by_its_slug(self):
         self.assertEqual(media_link("sonarr", GAME_OF_THRONES), "https://sonarr.example.com/series/game-of-thrones")
 
     def test_no_link_without_the_slug_or_for_another_service(self):
-        self.assertIsNone(media_link("sonarr", {"title": "Carrie", "tmdbId": 288673}))
-        self.assertIsNone(media_link("plex", {"title": "Dune", "tmdbId": 438631}))
+        self.assertIsNone(media_link("sonarr", {"id": 9, "title": "Carrie", "tmdbId": 288673}))
+        self.assertIsNone(media_link("plex", {"id": 7, "title": "Dune", "tmdbId": 438631}))
+
+    def test_no_link_to_an_item_that_is_not_in_radarr_or_sonarr(self):
+        # A lookup finds movies and series that are not in the library yet: they have no id there
+        self.assertIsNone(media_link("radarr", {"title": "New Movie", "tmdbId": 1001}))
+        self.assertIsNone(media_link("sonarr", {**GAME_OF_THRONES, "id": None}))
 
     def test_a_url_without_the_path_of_the_api(self):
         with patch.dict(os.environ, {"RADARR_URL": "https://radarr.example.com/"}):
-            self.assertEqual(media_link("radarr", {"tmdbId": 1}), "https://radarr.example.com/movie/1")
+            self.assertEqual(media_link("radarr", {"id": 1, "tmdbId": 1}), "https://radarr.example.com/movie/1")
 
 
 if __name__ == "__main__":
