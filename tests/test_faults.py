@@ -300,7 +300,11 @@ class ReporterCase(LogFolder):
             seen["result"] = await call()
             seen["code"] = current_code()
 
-        await asyncio.create_task(guard_job(run)(SimpleNamespace(job=SimpleNamespace(name=job))))
+        # The wrapper hands a Fout in call() to its meldfunctie; raised here, the test shows it
+        wrapper_faults = FakeFaults()
+        await asyncio.create_task(guard_job(run, wrapper_faults)(SimpleNamespace(job=SimpleNamespace(name=job))))
+        if wrapper_faults.reports:
+            raise wrapper_faults.reports[0].fault
         return seen["result"], seen["code"]
 
     def faults(self) -> list[dict]:
