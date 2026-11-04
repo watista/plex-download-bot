@@ -197,9 +197,14 @@ class SendUserMessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.enterContext(self.at("2026-11-03T14:30:00+01:00"))
 
     async def in_a_run(self, telegram: TelegramOut, user_id, kind: str, text: str, media=None) -> Delivery:
-        """ send_user_message in a run of check_notify_list, a job without user fields of its own """
-        sent = guard_job(lambda context: telegram.send_user_message(user_id, kind, text, media), FakeFaults())
-        return await asyncio.create_task(sent(SimpleNamespace(job=SimpleNamespace(name="check_notify_list"))))
+        """ send_user_message in a run of check_notify_list """
+        return await self.as_a_run(lambda context: telegram.send_user_message(user_id, kind, text, media))
+
+    @staticmethod
+    async def as_a_run(callback):
+        """ callback as a run of check_notify_list, a job without user fields of its own """
+        guarded = guard_job(callback, FakeFaults())
+        return await asyncio.create_task(guarded(SimpleNamespace(job=SimpleNamespace(name="check_notify_list"))))
 
     async def test_a_user_message_gets_a_line_with_its_receiver_and_the_media(self):
         bot = FakeBot()
@@ -211,7 +216,7 @@ class SendUserMessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(delivery.delivered)
         [attempt] = bot.attempts
         self.assertEqual((attempt.chat_id, attempt.parse_mode), (555, "HTML"))
-        [line] = self.read(MAIN)
+        [line] = self.lines("user_message")
         self.assertEqual(list(line), ["ts", "level", "user_id", "account", "event", "msg", "kind", "media_title",
                                       "media_year", "tmdb_id", "interaction_id", "job", "logger", "src"])
         self.assertEqual((line["level"], line["user_id"], line["account"]), ("INFO", 555, "anna"))
@@ -225,7 +230,7 @@ class SendUserMessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
                                        "Plex is vanavond even offline")
 
         self.assertFalse(delivery.delivered)
-        [line] = self.read(MAIN)
+        [line] = self.lines("user_message")
         self.assertEqual((line["level"], line["event"], line["kind"]), ("WARNING", "user_message", "broadcast"))
         self.assertEqual((line["user_id"], line["account"]), (555, "anna"))
         self.assertEqual(line["reason"], "Forbidden: bot was blocked by the user")
@@ -236,9 +241,31 @@ class SendUserMessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
     async def test_a_receiver_outside_the_user_list_has_no_account(self):
         await self.in_a_run(TelegramOut(FakeBot(), ADMIN_CHAT, fake_account_for), 777, "message", "Hoi")
 
-        [line] = self.read(MAIN)
+        [line] = self.lines("user_message")
         self.assertEqual(line["user_id"], 777)
         self.assertFalse({"account", "tg_name"} & line.keys())
+
+    async def test_the_run_counts_the_user_messages_sent_and_not_delivered(self):
+        telegram = TelegramOut(FakeBot(None, Forbidden("Forbidden: bot was blocked by the user"), None), ADMIN_CHAT,
+                               fake_account_for)
+
+        async def send_three(context) -> None:
+            for user_id in (555, 666, 777):
+                await telegram.send_user_message(user_id, "online", "Goed nieuws!", self.DUNE)
+
+        await self.as_a_run(send_three)
+
+        [finished] = self.lines("job_finished")
+        self.assertEqual((finished["sent"], finished["not_delivered"]), (2, 1))
+
+    async def test_a_fault_of_telegram_counts_as_neither(self):
+        telegram = TelegramOut(FakeBot(TimedOut()), ADMIN_CHAT, fake_account_for)
+
+        await self.as_a_run(lambda context: telegram.send_user_message(555, "online", "Goed nieuws!", self.DUNE))
+
+        [finished] = self.lines("job_finished")
+        self.assertEqual(finished["outcome"], "stopped")
+        self.assertFalse({"sent", "not_delivered"} & finished.keys())
 
 
 # The token of the bot in the tests of TelegramRequest

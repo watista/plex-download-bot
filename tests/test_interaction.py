@@ -20,9 +20,10 @@ from telegram.ext import Application, BaseHandler, CallbackContext, Conversation
 from telegram.warnings import PTBUserWarning
 
 from src.bot import Bot
+from src.commands.schedule import NOTIFY_COUNTS
 from src.faults import Fault, FaultKind
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, current_code, guard,
-                             guard_job, guard_task, new_code)
+                             guard_job, guard_task, new_code, tally, working_on)
 from src.log import get_logger, setup_logging
 from src.telegram_out import DELIVERED, Delivery
 from test_log import DEBUG, MAIN, LogFolder
@@ -380,10 +381,16 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.application = Application.builder().token("123:ABC").build()
         self.faults = FakeFaults()
 
-    async def run_job(self, callback, name: str) -> None:
-        """ One run of a job, registered the way src/bot.py does it; the scheduler itself does not run """
-        job = self.application.job_queue.run_once(guard_job(callback, self.faults), when=3600, name=name)
-        await job.run(self.application)
+    async def run_job(self, callback, name: str, seconds: float = 0.1, **registered) -> None:
+        """ One run of a job that takes this many seconds, registered the way src/bot.py does it, with the counts and
+        done it registers; the scheduler itself does not run """
+        job = self.application.job_queue.run_once(guard_job(callback, self.faults, **registered), when=3600, name=name)
+        with patch("src.interaction.monotonic", side_effect=[1000.0, 1000.0 + seconds]):
+            await job.run(self.application)
+
+    def own(self) -> list[dict]:
+        """ The lines of the run in the main file without its line job_finished, own and of libraries """
+        return [line for line in self.read(MAIN) if line.get("event") != "job_finished"]
 
     @staticmethod
     async def check(context: CallbackContext) -> None:
@@ -402,7 +409,7 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         await InteractionProcessor(1, fake_account_for).process_update(message_from(123456789, "Wouter"), update())
         await runs[0]
 
-        command, own, library = self.read(MAIN)
+        command, own, library = self.own()
         for line in own, library:
             self.assertRegex(line["interaction_id"], CODE)
             self.assertNotEqual(line["interaction_id"], command["interaction_id"])
@@ -414,7 +421,7 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         await self.run_job(self.check, "scan_missing_sonarr")
         await self.run_job(self.check, "scan_missing_sonarr")
 
-        first, _, second, _ = self.read(MAIN)
+        first, _, second, _ = self.own()
         self.assertNotEqual(first["interaction_id"], second["interaction_id"])
         self.assertEqual(first["job"], second["job"])
 
@@ -426,7 +433,7 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
         await self.run_job(failing, "check_notify_list")
 
-        [own] = self.read(MAIN)
+        [own] = self.own()
         [report] = self.faults.reports
         self.assertEqual((report.fault.what, report.user_told, report.code),
                          ("No media state matched", False, own["interaction_id"]))
@@ -456,10 +463,113 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             warnings.filterwarnings("ignore", message="Tasks created via `Application.create_task`", category=PTBUserWarning)
             await self.run_job(failing, "check_notify_list")
 
-        own, error = self.read(MAIN)
+        # The run still ends with its line, before error_handler gets the exception of the wrapper
+        own, finished, error = self.read(MAIN)
+        self.assertEqual((finished["event"], finished["outcome"]), ("job_finished", "stopped"))
         self.assertEqual(error["exc_type"], "PermissionError")
         self.assertEqual(error["interaction_id"], own["interaction_id"])
         self.assertEqual(error["job"], "check_notify_list")
+
+    async def test_a_run_ends_with_job_finished_with_its_counts(self):
+        async def check_notify_list(context: CallbackContext) -> None:
+            get_logger("src.commands.schedule").info("checked 14 items")
+            tally("items", 14)
+            tally("sent")
+            tally("sent")
+
+        await self.run_job(check_notify_list, "check_notify_list", seconds=4.21, counts=NOTIFY_COUNTS)
+
+        own, finished = self.read(MAIN)
+        self.assertEqual(list(finished), ["ts", "level", "event", "msg", "outcome", "duration_ms", "items", "sent",
+                                          "not_delivered", "skipped", "interaction_id", "job", "logger", "src"])
+        self.assertEqual((finished["level"], finished["event"]), ("INFO", "job_finished"))
+        self.assertEqual(finished["msg"], "check_notify_list finished in 4.2 s: 14 items checked, 2 messages sent")
+        self.assertEqual((finished["outcome"], finished["duration_ms"]), ("ok", 4210))
+        # A count that the run did not keep is 0
+        self.assertEqual([finished[name] for name in ("items", "sent", "not_delivered", "skipped")], [14, 2, 0, 0])
+        self.assertEqual((finished["interaction_id"], finished["job"]), (own["interaction_id"], "check_notify_list"))
+        self.assertEqual(finished["logger"], "interaction")
+
+    async def test_a_run_that_a_fout_stopped_ends_with_job_finished_with_the_counts_until_then(self):
+        async def check_notify_list(context: CallbackContext) -> None:
+            tally("items", 6)
+            tally("sent")
+            raise Fault.disruption(service="radarr", what="Radarr is not responding", http_status=503)
+            tally("items")
+
+        await self.run_job(check_notify_list, "check_notify_list", seconds=1.2, counts=NOTIFY_COUNTS)
+
+        [finished] = self.read(MAIN)
+        self.assertEqual(finished["msg"], "check_notify_list stopped after 1.2 s: 6 items checked, 1 message sent")
+        self.assertEqual((finished["outcome"], finished["duration_ms"]), ("stopped", 1200))
+        self.assertEqual([finished[name] for name in ("items", "sent", "not_delivered", "skipped")], [6, 1, 0, 0])
+        self.assertEqual(len(self.faults.reports), 1)
+
+    async def test_a_count_that_is_kept_but_not_registered_is_still_in_the_line(self):
+        async def run(context: CallbackContext) -> None:
+            tally("not_delivered")
+
+        await self.run_job(run, "check_notify_list")
+
+        [finished] = self.read(MAIN)
+        self.assertEqual((finished["not_delivered"], finished["msg"]), (1, "check_notify_list finished in 0.1 s"))
+
+    async def test_a_run_that_finished_says_what_it_did(self):
+        await self.run_job(self.nothing, "check_transmission", seconds=0.2, done="Transmission reachable")
+        await self.run_job(raising_job(Fault.disruption(service="transmission", what="Transmission is not responding")),
+                           "check_transmission", seconds=0.2, done="Transmission reachable")
+
+        self.assertEqual([line["msg"] for line in self.lines("job_finished")], [
+            "check_transmission finished in 0.2 s: Transmission reachable",
+            "check_transmission stopped after 0.2 s",
+        ])
+
+    async def test_a_run_without_counts_only_says_how_long_it_took(self):
+        await self.run_job(self.nothing, "publish_command_list")
+
+        [finished] = self.read(MAIN)
+        self.assertEqual(finished["msg"], "publish_command_list finished in 0.1 s")
+        self.assertEqual(list(finished), ["ts", "level", "event", "msg", "outcome", "duration_ms", "interaction_id",
+                                          "job", "logger", "src"])
+
+    async def test_one_count_in_the_singular(self):
+        async def check_notify_list(context: CallbackContext) -> None:
+            tally("items")
+
+        await self.run_job(check_notify_list, "check_notify_list", counts=NOTIFY_COUNTS)
+
+        [finished] = self.read(MAIN)
+        self.assertEqual(finished["msg"], "check_notify_list finished in 0.1 s: 1 item checked, 0 messages sent")
+
+    async def test_a_count_in_a_task_of_the_run_counts_for_the_run(self):
+        async def check_notify_list(context: CallbackContext) -> None:
+            tally("items")
+            await asyncio.create_task(self.count_items())
+            # working_on gives the run a new context; the counts stay
+            working_on({"title": "Dune", "year": 2021, "tmdbId": 438631})
+            tally("items")
+
+        await self.run_job(check_notify_list, "check_notify_list", counts=NOTIFY_COUNTS)
+
+        [finished] = self.read(MAIN)
+        self.assertEqual(finished["items"], 3)
+
+    @staticmethod
+    async def count_items() -> None:
+        tally("items")
+
+    @staticmethod
+    async def nothing(context: CallbackContext) -> None:
+        """ A job that does its work without a line of its own """
+
+    async def test_a_count_outside_an_interaction_is_no_fout(self):
+        # Like a Gebruikersbericht outside a run: there is no run to count for
+        tally("sent")
+
+        await self.run_job(self.nothing, "check_notify_list", counts=NOTIFY_COUNTS)
+
+        [finished] = self.read(MAIN)
+        self.assertEqual(finished["sent"], 0)
 
 
 class SchedulerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
@@ -553,6 +663,33 @@ class BotJobsTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("scan_missing_sonarr", ran)
         [report] = bot.faults.reports
         self.assertEqual(str(report.fault.__cause__), "sonarr.scan_missing_media broke")
+
+    async def test_every_run_ends_with_one_job_finished(self):
+        bot = self.bot("normal", failing="sonarr.scan_missing_media")
+
+        with patch("src.interaction.monotonic", side_effect=[0.0, 0.3] * 6):
+            await self.run_jobs(bot)
+
+        # Per run its lines, the last one job_finished, and no other job_finished
+        runs = {}
+        for line in self.read(MAIN):
+            if "interaction_id" in line:
+                runs.setdefault(line["interaction_id"], []).append(line.get("event"))
+        self.assertEqual(len(runs), 6)
+        for events in runs.values():
+            self.assertEqual((events[-1], events.count("job_finished")), ("job_finished", 1))
+
+        finished = {line["job"]: line for line in self.lines("job_finished")}
+        self.assertEqual({job: line["msg"] for job, line in finished.items()}, {
+            "publish_command_list": "publish_command_list finished in 0.3 s",
+            "notify_admin_startup": "notify_admin_startup finished in 0.3 s",
+            "check_notify_list": "check_notify_list finished in 0.3 s: 0 items checked, 0 messages sent",
+            "check_transmission": "check_transmission finished in 0.3 s: Transmission reachable",
+            "scan_missing_sonarr": "scan_missing_sonarr stopped after 0.3 s",
+            "scan_missing_radarr": "scan_missing_radarr finished in 0.3 s: missing search started",
+        })
+        self.assertEqual([finished["check_notify_list"][name] for name in ("items", "sent", "not_delivered", "skipped")],
+                         [0, 0, 0, 0])
 
 
 # A callback as the fake guard of BotHandlersTest gives it back: wrapped, with what it was wrapped with
