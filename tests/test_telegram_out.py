@@ -10,6 +10,7 @@ from src.faults import Fault, FaultKind
 from src.interaction import guard_job
 from src.log import setup_logging
 from src.telegram_out import Delivery, TelegramOut
+from test_interaction import FakeFaults
 from test_log import MAIN, SECRETS, LogFolder
 
 
@@ -193,7 +194,7 @@ class SendUserMessageTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     async def in_a_run(self, telegram: TelegramOut, user_id, kind: str, text: str, media=None) -> Delivery:
         """ send_user_message in a run of check_notify_list, a job without user fields of its own """
-        sent = guard_job(lambda context: telegram.send_user_message(user_id, kind, text, media))
+        sent = guard_job(lambda context: telegram.send_user_message(user_id, kind, text, media), FakeFaults())
         return await asyncio.create_task(sent(SimpleNamespace(job=SimpleNamespace(name="check_notify_list"))))
 
     async def test_a_user_message_gets_a_line_with_its_receiver_and_the_media(self):

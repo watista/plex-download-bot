@@ -9,6 +9,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
 from src.conversation import command_of, command_or_choice_line
+from src.faults import Fault
 from src.log import get_logger
 from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD
 
@@ -257,7 +258,4 @@ class Start:
         elif context.user_data["media_option"] == "afmelden_serie":
             return await self.subscribe.afmelden(update, context)
         else:
-            # Send msg to user + logging
-            await self.function.send_message(f"*😵 Oeps, daar ging iets fout*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
-            await self.log.logger(f"Error happened during request type query data parsing", False, "error", True)
-            return ConversationHandler.END
+            raise Fault.bug(what="Unknown request type", details={"media_option": context.user_data["media_option"]})

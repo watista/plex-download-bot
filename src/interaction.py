@@ -3,24 +3,34 @@
 """ Interactie: one update or one run of a job, with a Code that every line of it carries """
 
 import functools
+import html
 import json
 import secrets
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field, replace
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import aiofiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, User
-from telegram.ext import BaseUpdateProcessor, CallbackContext, JobQueue
+from telegram.error import TelegramError
+from telegram.ext import BaseUpdateProcessor, CallbackContext, ConversationHandler, JobQueue
 
 from src.log import get_logger
+
+if TYPE_CHECKING:
+    # Only for the types: src.faults and src.telegram_out import this module, so the wrappers import them when they run
+    from src.faults import Fault, FaultReporter
+    from src.telegram_out import Delivery
 
 
 log = get_logger(__name__)
 
 T = TypeVar("T")
+
+# The verzendfunctie: send(chat_id, text, fmt)
+Send = Callable[..., Awaitable["Delivery"]]
 
 
 # The characters of a Code: no 0 o 1 l i, which look alike
@@ -175,18 +185,130 @@ class JobQueueOutsideInteractions(JobQueue):
         self.scheduler = SchedulerOutsideInteractions(**self.scheduler_configuration)
 
 
-def guard_job(callback: Callable[[CallbackContext], Awaitable[T]]) -> Callable[[CallbackContext], Awaitable[T]]:
-    """ Runs every run of a job as an Interaction of its own: a new Code and the name of the job, no person.
+def guard(callback: Callable[[Update, CallbackContext], Awaitable[T]], faults: "FaultReporter",
+          send: Send) -> Callable[[Update, CallbackContext], Awaitable[T | int]]:
+    """ Wraps the callback of a handler when it is registered: a Fout in it ends the Gesprek with a Foutmelding.
 
-    Wraps the callback when the job is registered, with its name: run_repeating(guard_job(callback), ..., name=...).
+    Every exception is a Fout: a Fault as it is, Telegram not responding as a Storing of Telegram, and anything else
+    as a Bug. The wrapper reports it to faults, the meldfunctie, and then sends the Foutmelding through send, the
+    verzendfunctie. While Telegram is not responding it does not try. After a Fout it always gives back
+    ConversationHandler.END, also for a stand-alone handler, whose answer PTB ignores.
     """
 
     @functools.wraps(callback)
-    async def guarded(context: CallbackContext) -> T:
+    async def guarded(update: Update, context: CallbackContext) -> T | int:
+        try:
+            return await callback(update, context)
+        except Exception as error:
+            await _report_and_tell(_as_fault(_without_wrapper_frame(error)), update, faults, send)
+            return ConversationHandler.END
+
+    return guarded
+
+
+def guard_job(callback: Callable[[CallbackContext], Awaitable[T]],
+              faults: "FaultReporter") -> Callable[[CallbackContext], Awaitable[T | None]]:
+    """ Runs every run of a job as an Interaction of its own: a new Code and the name of the job, no person.
+
+    Wraps the callback when the job is registered, with its name: run_repeating(guard_job(callback, faults), ...,
+    name=...). A Fout stops the run and goes to faults, the meldfunctie, like in guard. A job tells no one, so there
+    is no Foutmelding.
+    """
+
+    @functools.wraps(callback)
+    async def guarded(context: CallbackContext) -> T | None:
         # Set here, not inherited: a job only gets the context its scheduler runs in, at best none.
         # No reset afterwards: PTB runs every job in a task of its own, so this context ends with the run,
         # and the error_handler that PTB starts from that task after an exception still gets it.
         _current.set(Interaction(new_code(), job=context.job.name))
-        return await callback(context)
+        try:
+            return await callback(context)
+        except Exception as error:
+            await faults.report(_as_fault(_without_wrapper_frame(error)))
+            return None
 
     return guarded
+
+
+async def report_outside_wrapper(update: object, error: Exception, faults: "FaultReporter", send: Send) -> None:
+    """ What error_handler does with an exception that no wrapper caught: a Fout, reported as caught outside the wrapper.
+
+    error_handler cannot end a Gesprek. It only sends a Foutmelding when there is an update with a chat.
+    """
+    await _report_and_tell(_as_fault(error), update, faults, send, outside_wrapper=True)
+
+
+def _without_wrapper_frame(error: Exception) -> Exception:
+    """ The exception, changed in place, without the frame of the wrapper that caught it: the Fout is that of the
+    callback. An exception of the wrapper itself, like a callback that gives back no coroutine, keeps its frame. """
+    traceback = error.__traceback__
+    return error.with_traceback(traceback.tb_next) if traceback and traceback.tb_next else error
+
+
+def _as_fault(error: Exception) -> "Fault":
+    """ The Fout that an exception is: a Fault as it is, Telegram not responding as a Storing of Telegram, and
+    anything else as a Bug that came from it """
+    from src.faults import Fault
+    from src.telegram_out import telegram_disruption
+
+    if isinstance(error, Fault):
+        return error
+    fault = telegram_disruption(error)
+    if fault is None:
+        fault = Fault.bug(what="Unexpected exception")
+    fault.__cause__ = error
+    return fault
+
+
+async def _report_and_tell(fault: "Fault", update: object, faults: "FaultReporter", send: Send,
+                           outside_wrapper: bool = False) -> None:
+    """ Reports the Fout, and then tells the user in a Foutmelding when there is someone to tell.
+
+    First the report, so the Foutmelding never promises an admin message that did not go out. There is no one to tell
+    without a chat, or outside an Interaction (the timeout of a Gesprek), where there is no Code to give. While
+    Telegram is not responding there is no telling at all.
+    """
+    from src.faults import FaultKind
+
+    chat = update.effective_chat if isinstance(update, Update) else None
+    code = current_code()
+    telegram_down = fault.kind == FaultKind.DISRUPTION and fault.service == "telegram"
+    tell = chat is not None and code is not None and not telegram_down
+    known = await faults.report(fault, user_told=tell, outside_wrapper=outside_wrapper)
+    if tell:
+        await _send_error_message(chat.id, _error_message(fault, known, code), faults, send)
+
+
+# The first line of a Foutmelding per kind of Fout (as in the field fault), when the Fault has no user_text
+SENTENCES = {
+    "bug": "Oeps, daar ging iets fout",
+    "disruption": "Een onderdeel van de Plęx server reageert op dit moment niet",
+    "setup": "Er is een probleem met de inrichting van de Plęx server",
+}
+
+
+def _error_message(fault: "Fault", known: bool, code: str) -> str:
+    """ The Foutmelding, in HTML: what went wrong, whether the Beheerder knows, how to go on, and the Code.
+
+    known is what report() gave back: whether an admin message about this Fout went out, now or earlier.
+    """
+    what = html.escape(fault.user_text or SENTENCES[fault.kind], quote=False)
+    then = "De serverbeheerder is hiervan op de hoogte." if known else "Probeer het later nog eens."
+    return f"<b>😵 {what}</b>\n\n{then} Stuur /start om opnieuw te beginnen.\n\nCode: <code>{code}</code>"
+
+
+async def _send_error_message(chat_id: int, text: str, faults: "FaultReporter", send: Send) -> None:
+    """ Sends the Foutmelding. One that does not arrive is only in the log: Telegram not responding as an attempt
+    of a Storing of Telegram, anything else as a WARNING with the reason """
+    from src.faults import Fault
+
+    try:
+        reason = (await send(chat_id, text, "HTML")).reason
+    except Fault as unsent:
+        await faults.report(unsent)
+        return
+    except TelegramError as e:
+        # Telegram did answer, but not with the message
+        reason = e.message
+    if reason is not None:
+        log.warning(f"error message not delivered: {reason}", reason=reason)

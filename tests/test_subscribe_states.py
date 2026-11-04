@@ -13,6 +13,7 @@ from telegram.ext import ConversationHandler
 
 from src.bot import Bot
 from src.commands.subscribe import Subscribe
+from src.faults import Fault, FaultKind
 from src.log import setup_logging
 from src.states import AANMELD_CHOICE, AFMELDEN_OPTIE, REQUEST_SERIE
 from test_log import LogFolder
@@ -173,6 +174,20 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         [line] = self.lines("series_updates")
         self.assertEqual(line["msg"], "subscribed to new episodes of The Bear (2022)")
         self.assertEqual((line["outcome"], line["tmdb_id"]), ("subscribed", 136315))
+
+    async def test_a_serie_without_a_tmdbId_is_a_bug(self):
+        without_id = {"title": "The Bear", "year": 2022, "tvdbId": 1, "path": "/media/series/The Bear"}
+
+        with self.assertRaises(Fault) as caught:
+            await self.press("0", AANMELD_CHOICE, aanmeld_object=[without_id])
+
+        fault = caught.exception
+        self.assertEqual((fault.kind, fault.what, fault.details), (FaultKind.BUG, "The series has no tmdbId",
+                                                                   {"tmdbId": None}))
+        self.assertEqual(fault.media, {"title": "The Bear", "year": 2022, "tvdbId": 1})
+        self.subscribe.function.send_message.assert_not_awaited()
+        self.log.logger.assert_not_awaited()
+        self.assertEqual(self.subscribed(), SUBSCRIBED)
 
 
 if __name__ == "__main__":

@@ -9,10 +9,10 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from src.faults import Fault, FaultKind, FaultReporter, admin_message_html
-from src.interaction import Interaction, InteractionProcessor, current_code, guard_job, working_on
+from src.interaction import Interaction, InteractionProcessor, current_code, guard, guard_job, working_on
 from src.log import PROJECT_DIR, setup_logging
 from src.telegram_out import DELIVERED, Delivery
-from test_interaction import CODE, message_from
+from test_interaction import CODE, FakeFaults, FakeSend, message_from
 from test_log import MAIN, LogFolder
 from test_telegram_out import ADMIN_CHAT
 
@@ -96,21 +96,6 @@ def library_error() -> ZeroDivisionError:
     except ZeroDivisionError as e:
         # Without the frame of this function, which is own code
         return e.with_traceback(e.__traceback__.tb_next)
-
-
-class FakeSend:
-    """ The verzendfunctie: keeps every message, and answers per message with a Delivery or an exception """
-
-    def __init__(self, *answers: Delivery | Exception):
-        self.messages = []
-        self._answers = list(answers)
-
-    async def __call__(self, chat_id, text: str, fmt: str | None, silent: bool = False) -> Delivery:
-        self.messages.append(SimpleNamespace(chat_id=chat_id, text=text, fmt=fmt, silent=silent))
-        answer = self._answers.pop(0) if self._answers else DELIVERED
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
 
 
 class FakeClock:
@@ -586,9 +571,38 @@ class ReportTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         [sent] = self.lines("admin_message_sent")
         self.assertEqual(sent["interaction_id"], line["interaction_id"])
 
+    async def test_a_bug_in_a_handler_gives_one_line_one_admin_message_and_one_error_message_with_one_code(self):
+        reporter = self.reporter()
+        update = message_from(555, "Anna")
+        seen = {}
+
+        # A handler of the bot in which a library raises
+        namespace = {"json": json}
+        source = "\n" * 331 + "async def media_option(update, context):\n    return json.loads('{')\n"
+        exec(compile(source, str(PROJECT_DIR / "src/commands/media.py"), "exec"), namespace)
+
+        async def process():
+            seen["state"] = await guard(namespace["media_option"], reporter, self.send)(update, SimpleNamespace())
+            seen["code"] = current_code()
+
+        await InteractionProcessor(1, fake_account_for).do_process_update(update, process())
+
+        [line] = self.faults()
+        self.assertEqual((line["level"], line["fault"], line["exc_type"], line["interaction_id"]),
+                         ("ERROR", "bug", "JSONDecodeError", seen["code"]))
+        self.assertEqual(line["src"], "src/commands/media.py:333 in media_option")
+        admin, error_message = self.send.messages
+        self.assertEqual((admin.chat_id, error_message.chat_id), (ADMIN_CHAT, 555))
+        for message in admin, error_message:
+            self.assertTrue(message.text.endswith(f"\nCode: <code>{seen['code']}</code>"))
+        # Only the own code of the handler: the wrapper is no part of the Fout
+        self.assertEqual(self.block(admin.text)[0], "<code>src/commands/media.py:333 in media_option</code>")
+        self.assertEqual(self.block(admin.text)[-1], "user told: yes")
+        self.assertIn("\nDe serverbeheerder is hiervan op de hoogte.", error_message.text)
+
     async def test_a_bug_in_a_job(self):
         reporter = self.reporter()
-        run = guard_job(lambda context: reporter.report(no_state_matched(), continued="skipped this movie"))
+        run = guard_job(lambda context: reporter.report(no_state_matched(), continued="skipped this movie"), reporter)
 
         await asyncio.create_task(run(SimpleNamespace(job=SimpleNamespace(name="check_notify_list"))))
 

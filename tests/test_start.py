@@ -11,6 +11,7 @@ from telegram.ext import ConversationHandler
 
 from src.commands.maintenance import Maintenance
 from src.commands.start import Start
+from src.faults import Fault, FaultKind
 from src.log import setup_logging
 from src.states import REQUEST_ACCOUNT, REQUEST_MOVIE, VERIFY, VERIFY_PWD
 from test_conversation import message, press
@@ -186,6 +187,18 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.admin_messages(), ["user blocked"])
         self.assertIn("777", json.loads(self.data_json.read_text())["blocked_users"])
         self.assertNotIn("wrong-", self.raw(MAIN))
+
+    async def test_an_unknown_request_type_is_a_bug(self):
+        context = MagicMock(user_data={"media_option": "film_request", "login_tries": 0})
+
+        with self.assertRaises(Fault) as caught:
+            await self.start().parse_request(message(PASSWORD), context)
+
+        fault = caught.exception
+        self.assertEqual((fault.kind, fault.what, fault.details),
+                         (FaultKind.BUG, "Unknown request type", {"media_option": "film_request"}))
+        self.functions.send_message.assert_not_awaited()
+        self.log.logger.assert_not_awaited()
 
 
 if __name__ == "__main__":

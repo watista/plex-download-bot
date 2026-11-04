@@ -3,7 +3,6 @@
 import asyncio
 import os
 import time
-import traceback
 import warnings
 from contextlib import contextmanager
 from datetime import datetime
@@ -25,15 +24,18 @@ from src.commands.maintenance import Maintenance
 from src.conversation import Conversation, command_or_choice_line
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
-from src.faults import Fault
-from src.interaction import InteractionProcessor, JobQueueOutsideInteractions, account_for, guard_job
+from src.faults import FaultReporter
+from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, guard, guard_job,
+                             report_outside_wrapper)
 from src.log import get_logger
 from src.telegram_out import TelegramOut
 
-from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict, TelegramError
+from itertools import chain
+from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict
 from telegram import Update, BotCommand
 from telegram.warnings import PTBUserWarning
 from telegram.ext import (
+    BaseHandler,
     CommandHandler,
     filters,
     CallbackContext,
@@ -88,11 +90,13 @@ class Bot:
             persistence = PicklePersistence(filepath="/root/scripts/plex-download-bot/bot_state.pkl")
             token = os.getenv('BOT_TOKEN')
             data_json = "data.json"
+            faults_json = "faults.json"
             admin_chat_id = os.getenv('CHAT_ID_GROUP')
         else:
             persistence = PicklePersistence(filepath="bot_state.pkl")
             token = os.getenv('BOT_TOKEN_DEV')
             data_json = "data.dev.json"
+            faults_json = "faults.dev.json"
             admin_chat_id = os.getenv('CHAT_ID_ADMIN')
         self.account_for = partial(account_for, data_json=data_json)
 
@@ -118,6 +122,9 @@ class Bot:
         # The verzendfunctie, on the bot of the Application, for the messages of the bot itself
         self.telegram = TelegramOut(self.application.bot, admin_chat_id, self.account_for)
 
+        # The meldfunctie: the line of every Fout, and an admin message when one is due. Its state is next to data.json.
+        self.faults = FaultReporter(self.telegram.send, admin_chat_id, faults_json)
+
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
         self.help = Help(logger, self.function, self.telegram)
@@ -130,8 +137,8 @@ class Bot:
         # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
         # normal mode; on the standby (maintenance) host they would just fail.
         if self.mode == "normal":
-            self.serie = Serie(args, logger, self.function, self.telegram)
-            self.movie = Movie(args, logger, self.function, self.telegram)
+            self.serie = Serie(args, logger, self.function, self.telegram, self.faults)
+            self.movie = Movie(args, logger, self.function, self.telegram, self.faults)
             self.schedule = Schedule(args, logger, self.function, self.telegram)
             self.subscribe = Subscribe(args, logger, self.function, self.telegram)
             self.sonarr = Sonarr(logger)
@@ -151,21 +158,33 @@ class Bot:
 
     def _register_handlers(self) -> None:
         """Registers the Gesprek of the current mode, the stand-alone handlers,
-        and last the catch-all for the input that none of them takes."""
+        and last the catch-all for the input that none of them takes. Every
+        callback is guarded."""
         if self.mode == "normal":
             self.conversation = self._build_normal_conversation()
         else:
             self.conversation = self._build_maintenance_conversation()
-        self.application.add_handler(self.conversation)
+        self.application.add_handler(self._guarded(self.conversation))
 
         # Stand-alone handlers, also in the middle of a Gesprek
         self.application.add_handler(
-            CommandHandler("help", self.help.help_command))
+            self._guarded(CommandHandler("help", self.help.help_command)))
         self.application.add_handler(
-            CommandHandler("privacy", self.privacy.privacy_command))
+            self._guarded(CommandHandler("privacy", self.privacy.privacy_command)))
 
         # Only one handler per group takes an update, so this one only gets what all handlers above leave
-        self.application.add_handlers(self.conversation.catch_all())
+        self.application.add_handlers([self._guarded(handler) for handler in self.conversation.catch_all()])
+
+    def _guarded(self, handler: BaseHandler) -> BaseHandler:
+        """The handler with its callback wrapped in guard, so a Fout in it
+        ends with a Foutmelding. Of a Gesprek, every handler in it is wrapped:
+        the entry points, the states with the timeout, and the fallbacks."""
+        if isinstance(handler, ConversationHandler):
+            for inner in [*handler.entry_points, *chain.from_iterable(handler.states.values()), *handler.fallbacks]:
+                self._guarded(inner)
+        else:
+            handler.callback = guard(handler.callback, self.faults, self.telegram.send)
+        return handler
 
     def _register_jobs(self) -> None:
         """Registers the jobs, each with its name for the field job and
@@ -173,16 +192,16 @@ class Bot:
         job_queue = self.application.job_queue
 
         # Once at the start
-        job_queue.run_once(guard_job(self.publish_command_list), when=0, name="publish_command_list")
-        job_queue.run_once(guard_job(self.notify_admin_startup), when=0, name="notify_admin_startup")
+        job_queue.run_once(guard_job(self.publish_command_list, self.faults), when=0, name="publish_command_list")
+        job_queue.run_once(guard_job(self.notify_admin_startup, self.faults), when=0, name="notify_admin_startup")
 
         # Recurring jobs need Plex/Sonarr/Radarr/Transmission — only in normal mode
         if self.mode == "normal":
-            job_queue.run_repeating(guard_job(self.schedule.check_notify_list), interval=1800, first=0,
+            job_queue.run_repeating(guard_job(self.schedule.check_notify_list, self.faults), interval=1800, first=0,
                                     name="check_notify_list")
-            job_queue.run_repeating(guard_job(self.sonarr.scan_missing_media), interval=21600, first=0,
+            job_queue.run_repeating(guard_job(self.sonarr.scan_missing_media, self.faults), interval=21600, first=0,
                                     name="scan_missing_sonarr")
-            job_queue.run_repeating(guard_job(self.radarr.scan_missing_media), interval=21600, first=0,
+            job_queue.run_repeating(guard_job(self.radarr.scan_missing_media, self.faults), interval=21600, first=0,
                                     name="scan_missing_radarr")
 
     def _welcome_button_handlers(self) -> list:
@@ -528,17 +547,24 @@ class Bot:
                 False, "warning", False,
             )
 
-    async def error_handler(self, update: Update, context: CallbackContext) -> None:
-        """ Function for unexpted errors """
+    async def error_handler(self, update: object, context: CallbackContext) -> None:
+        """ The safety net behind the wrappers.
+
+        A network error or Conflict of polling comes without an update, a job
+        or a task. Anything else reached error_handler outside the wrappers,
+        like a Fout in a wrapper itself or in writing bot_state.pkl: a Fout,
+        with a Foutmelding when there is a chat.
+        """
 
         # the actual exception object
         err = context.error
 
-        # Until the wrapper of issue 07 handles a Fault, one of Telegram is handled like the exception it came from
-        if isinstance(err, Fault) and isinstance(err.__cause__, TelegramError):
-            err = err.__cause__
+        from_polling = update is None and context.job is None and context.coroutine is None
+        if not (from_polling and isinstance(err, (NetworkError, RetryAfter, Conflict))):
+            await report_outside_wrapper(update, err, self.faults, self.telegram.send)
+            return
 
-        # --- handle specific errors first ---
+        # --- the errors of polling, which become a Storing of Telegram in issue 11 ---
         if isinstance(err, RetryAfter):
             await self.log.logger(f"Rate limited by Telegram. Retry after {err.retry_after} seconds.", False, "warning", False)
             return
@@ -558,11 +584,6 @@ class Bot:
             # from one side keeps the chat from getting two messages per cycle.
             if self.mode == "maintenance":
                 await self._notify_conflict_to_group(context)
-            return
-
-        # --- fallback: log full traceback for unknown errors ---
-        error_message = "".join(traceback.format_exception(None, err, err.__traceback__))
-        await self.log.logger(f"Unexpected error happened with Telegram dispatcher\n{error_message}", False, "error")
 
     async def _notify_conflict_to_group(self, context: CallbackContext) -> None:
         """Send a rate-limited heads-up to the group when both bot instances

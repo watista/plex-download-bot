@@ -11,6 +11,7 @@ from telegram.ext import CallbackContext, ConversationHandler
 
 from src.states import SERIE_OPTION, SERIE_NOTIFY, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, SERIE_UPGRADE_INFO, AANMELDEN_SERIE
 from src.commands.media import Media, chosen_media, title_and_year
+from src.faults import Fault
 from src.services.sonarr import Sonarr
 from src.log import get_logger
 
@@ -21,8 +22,10 @@ log = get_logger(__name__)
 class Serie(Media):
     """ Specific class for serie handling """
 
-    def __init__(self, args, logger, functions, telegram):
-        super().__init__(args, logger, functions, telegram, Sonarr(logger),
+    filter_fields = ("path", "monitored", "status")
+
+    def __init__(self, args, logger, functions, telegram, faults):
+        super().__init__(args, logger, functions, telegram, faults, Sonarr(logger),
                          "serie", os.getenv('SERIE_FOLDERS'), SERIE_OPTION)
 
     async def get_media_states(self) -> dict:
@@ -88,20 +91,13 @@ class Serie(Media):
         }
 
     async def create_download_payload(self, data: dict, folder: str, monitor: bool) -> dict:
-        """ Generates the download payload for Sonarr """
-
-        try:
-            title = data["title"]
-            tvdb_id = data["tvdbId"]
-        except KeyError as e:
-            await self.log.logger(f"Missing required field in serie download payload: {e}", False, "error", True)
-            return None
+        """ Generates the download payload for Sonarr; a missing field falls through to the wrapper as a Bug """
 
         payload = {
-            "title": title,
+            "title": data["title"],
             "qualityProfileId": 7,
             "monitored": monitor,
-            "tvdbId": tvdb_id,
+            "tvdbId": data["tvdbId"],
             "rootFolderPath": folder,
             "addOptions": {
                 "ignoreEpisodesWithFiles": False,
@@ -216,10 +212,8 @@ class Serie(Media):
         # Get tmdbId
         serie_id = str(context.user_data['media_data'].get("tmdbId"))
         if not serie_id or serie_id == "None":
-            await self.function.send_message("Er ging iets fout bij het ophalen van data van de serie. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
-            await self.log.logger(f"Error happened during parsing tmdbId in media.py, see the logs for the media JSON.", False, "error", True)
-            await self.log.logger(f"Media JSON:\n{context.user_data['aanmeld_data']}", False, "error", False)
-            return ConversationHandler.END
+            raise Fault.bug(what="The series has no tmdbId", details={"tmdbId": context.user_data['media_data'].get("tmdbId")},
+                            media=chosen_media(context.user_data))
 
         # Load JSON
         async with aiofiles.open(self.data_json, "r") as f:

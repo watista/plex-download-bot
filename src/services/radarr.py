@@ -33,10 +33,8 @@ class Radarr(ArrApiHandler):
         # Build url_string and make the request
         response = await self.post(f"/movie?", payload)
 
-        # Check if return value is empty
+        # The caller raises a Bug with last_error, which tells the Beheerder (until issue 09, where post raises)
         if response is False:
-            await self.log.logger(f"❌ *Error while queueing movie downløad.* ❌\nReason: {self.last_error}\nCheck the error log for more information.", False, "error")
-            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
             return None
 
         # Return the data
