@@ -24,7 +24,7 @@ from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
-from src.interaction import InteractionProcessor, account_for, guard_job
+from src.interaction import InteractionProcessor, JobQueueOutsideInteractions, account_for, guard_job
 from src.log import get_logger
 
 from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict
@@ -114,11 +114,13 @@ class Bot:
         # bot is alive; post_stop sends a group-chat notice when the fallback
         # bot shuts down (e.g. after the primary comes back).
         # The InteractionProcessor handles the updates one by one, each as an
-        # Interaction with a Code and the person who sent it.
+        # Interaction with a Code and the person who sent it. The job queue
+        # keeps its scheduler outside those Interactions.
         self.application = (
             Application.builder()
             .token(token)
             .concurrent_updates(InteractionProcessor(1, partial(account_for, data_json=data_json)))
+            .job_queue(JobQueueOutsideInteractions())
             .read_timeout(300)
             .persistence(persistence)
             .post_init(self._post_init)

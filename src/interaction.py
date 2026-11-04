@@ -6,13 +6,14 @@ import functools
 import json
 import secrets
 from collections.abc import Awaitable, Callable
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, replace
 from typing import Any, TypeVar
 
 import aiofiles
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, User
-from telegram.ext import BaseUpdateProcessor, CallbackContext
+from telegram.ext import BaseUpdateProcessor, CallbackContext, JobQueue
 
 from src.log import get_logger
 
@@ -127,6 +128,29 @@ class InteractionProcessor(BaseUpdateProcessor):
         """ Nothing to free """
 
 
+class SchedulerOutsideInteractions(AsyncIOScheduler):
+    """ An AsyncIOScheduler that always wakes up outside an Interaction.
+
+    The scheduler runs in the context of whoever woke it last: a job added during an update, like the
+    timeout of a conversation, would otherwise give the lines of the scheduler and every job it starts
+    afterwards the context of that update.
+    """
+
+    def wakeup(self) -> None:
+        # The rest of the context stays as it is; only the Interaction goes
+        context = copy_context()
+        context.run(_current.set, None)
+        context.run(super().wakeup)
+
+
+class JobQueueOutsideInteractions(JobQueue):
+    """ The JobQueue of PTB with a scheduler outside every Interaction: set with ApplicationBuilder.job_queue() """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.scheduler = SchedulerOutsideInteractions(**self.scheduler_configuration)
+
+
 def guard_job(callback: Callable[[CallbackContext], Awaitable[T]]) -> Callable[[CallbackContext], Awaitable[T]]:
     """ Runs every run of a job as an Interaction of its own: a new Code and the name of the job, no person.
 
@@ -135,10 +159,9 @@ def guard_job(callback: Callable[[CallbackContext], Awaitable[T]]) -> Callable[[
 
     @functools.wraps(callback)
     async def guarded(context: CallbackContext) -> T:
-        # A job does not reliably inherit a context: APScheduler starts it in the context of whoever woke the
-        # scheduler last, often an update. No reset afterwards: PTB runs every job in a task of its own, so this
-        # context ends with the run, and the error_handler that PTB starts from that task after an exception
-        # still gets it.
+        # Set here, not inherited: a job only gets the context its scheduler runs in, at best none.
+        # No reset afterwards: PTB runs every job in a task of its own, so this context ends with the run,
+        # and the error_handler that PTB starts from that task after an exception still gets it.
         _current.set(Interaction(new_code(), job=context.job.name))
         return await callback(context)
 

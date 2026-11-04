@@ -15,9 +15,9 @@ from telegram.ext import Application, CallbackContext
 from telegram.warnings import PTBUserWarning
 
 from src.bot import Bot
-from src.interaction import InteractionProcessor, account_for, current_code, guard_job, new_code
+from src.interaction import InteractionProcessor, JobQueueOutsideInteractions, account_for, current_code, guard_job, new_code
 from src.log import get_logger, setup_logging
-from test_log import MAIN, LogFolder
+from test_log import DEBUG, MAIN, LogFolder
 
 
 CODE = r"^[23456789abcdefghjkmnpqrstuvwxyz]{6}$"
@@ -209,6 +209,35 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error["exc_type"], "RuntimeError")
         self.assertEqual(error["interaction_id"], own["interaction_id"])
         self.assertEqual(error["job"], "check_notify_list")
+
+
+class SchedulerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ The scheduler itself runs outside every Interaction, also when an update woke it """
+
+    async def test_a_job_that_an_update_scheduled_does_not_get_the_context_of_that_update(self):
+        setup_logging("dev", "DEBUG", str(self.folder), False)
+        self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
+        application = Application.builder().token("123:ABC").job_queue(JobQueueOutsideInteractions()).build()
+        await application.job_queue.start()
+        self.addAsyncCleanup(application.job_queue.stop)
+        ran = asyncio.Event()
+
+        async def timeout(context: CallbackContext) -> None:
+            get_logger("src.bot").info("conversation timed out")
+            ran.set()
+
+        async def update():
+            # Like every step of a conversation, which schedules its timeout and so wakes the scheduler
+            application.job_queue.run_once(timeout, when=0.1, name="timeout")
+
+        await InteractionProcessor(1, fake_account_for).process_update(message_from(123456789, "Wouter"), update())
+        await asyncio.wait_for(ran.wait(), timeout=5)
+
+        lines = [line for line in self.read(DEBUG) if line["logger"] in ("bot", "apscheduler.executors.default")]
+        self.assertEqual([line["msg"].split(" (")[0] for line in lines],
+                         ['Running job "timeout', "conversation timed out"])
+        for line in lines:
+            self.assertFalse({"user_id", "account", "tg_name", "interaction_id"} & line.keys())
 
 
 class BotJobsTest(LogFolder, unittest.IsolatedAsyncioTestCase):
