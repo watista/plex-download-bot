@@ -281,9 +281,9 @@ class TelegramRequestTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         bot = self.bot(answer(200, SENT), answer(200, []))
 
         await bot.send_message(555, "hunter2")
-        self.assertEqual(self.faults.answered, ["telegram"])
+        self.assertEqual(self.faults.oks, ["telegram"])
         await bot.get_updates()
-        self.assertEqual(self.faults.answered, ["telegram", "telegram"])
+        self.assertEqual(self.faults.oks, ["telegram", "telegram"])
 
     async def test_a_failed_attempt_is_not_counted_here_and_reaches_ptb_as_it_was(self):
         bot = self.bot(answer(502, description="Bad Gateway"), unreachable, answer(400, description="Bad Request: "
@@ -297,7 +297,7 @@ class TelegramRequestTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BadRequest):
             await bot.send_message(1, "hunter2")
 
-        self.assertEqual((self.faults.answered, self.faults.reports), ([], []))
+        self.assertEqual((self.faults.oks, self.faults.reports), ([], []))
 
     async def test_every_request_but_polling_gets_an_http_call_without_the_text_or_the_token(self):
         setup_logging("dev", "DEBUG", str(self.folder), False)

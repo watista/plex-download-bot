@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 import os
-from typing import Union
 from urllib.parse import quote
 from src.services.arr import ArrApiHandler
 
@@ -9,52 +8,18 @@ from src.services.arr import ArrApiHandler
 class Radarr(ArrApiHandler):
     """ Specific class for the Radarr API """
 
-    def __init__(self, logger):
-        super().__init__(logger, os.getenv('RADARR_API'), os.getenv('RADARR_URL'), "movie")
+    def __init__(self, faults):
+        super().__init__(faults, os.getenv('RADARR_API'), os.getenv('RADARR_URL'), "radarr", "movie")
 
-    async def lookup_by_name(self, movie_name: str) -> Union[list[dict], dict]:
-        """ Function that does a movie lookup """
+    async def lookup_by_name(self, movie_name: str) -> list[dict]:
+        """ The movies Radarr finds for a title """
+        return await self.get(f"/movie/lookup?term={quote(movie_name, safe='')}", action="movie search")
 
-        # Build url_string and make the request
-        response = await self.get(f"/movie/lookup?term={quote(movie_name, safe='')}")
+    async def queue_download(self, payload: dict) -> dict:
+        """ Adds a movie to Radarr, which starts its download: gives back the movie as Radarr has it now """
+        return await self.post("/movie", payload, action="movie request")
 
-        # Check if return value is empty
-        if response is False:
-            await self.log.logger(f"❌ *Error while fetching movie list for term {movie_name}.* ❌\nReason: {self.last_error}\nCheck the error log for more information.", False, "error")
-            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
-            return None
-
-        # Return the data
-        return response
-
-    async def queue_download(self, payload: dict) -> Union[list[dict], dict]:
-        """ Function that starts a download """
-
-        # Build url_string and make the request
-        response = await self.post(f"/movie?", payload)
-
-        # The caller raises a Bug with last_error, which tells the Beheerder (until issue 09, where post raises)
-        if response is False:
-            return None
-
-        # Return the data
-        return response
-
-    async def scan_missing_media(self, context=None) -> Union[list[dict], dict]:
-        """ Function that scans for missing monitored movies """
-
-        # Set payload
-        payload = {"name": "missingMoviesSearch",
-                   "filterKey": "monitored", "filterValue": "true"}
-
-        # Build url_string and make the request
-        response = await self.post(f"/command?", payload)
-
-        # Check if return value is empty
-        if response is False:
-            await self.log.logger(f"❌ *Error while scanning for missing movies.* ❌\nReason: {self.last_error}\nCheck the error log for more information.", False, "warning")
-            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
-            return None
-
-        # Return the data
-        return response
+    async def scan_missing_media(self, context=None) -> dict:
+        """ Starts the search for the missing monitored movies """
+        payload = {"name": "missingMoviesSearch", "filterKey": "monitored", "filterValue": "true"}
+        return await self.post("/command", payload, action="search for missing movies")

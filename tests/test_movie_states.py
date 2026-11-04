@@ -9,8 +9,6 @@ from telegram.ext import ConversationHandler
 from src.commands.movie import Movie
 from src.faults import Fault, FaultKind
 from src.log import setup_logging
-from src.services.radarr import Radarr
-from src.services.sonarr import Sonarr
 from src.states import MOVIE_NOTIFY, MOVIE_OPTION
 from test_interaction import FakeFaults
 from test_log import MAIN, LogFolder
@@ -193,21 +191,36 @@ class MovieStateTest(MovieTest):
         [line] = self.lines("media_request")
         self.assertEqual(line["outcome"], "no_space")
 
-    async def test_a_download_that_radarr_does_not_queue_is_a_bug(self):
-        # Until issue 09 Radarr gives back None instead of raising a Fault
-        self.radarr.queue_download = AsyncMock(return_value=None)
-        self.radarr.last_error = "HTTP 400 Bad Request"
+    async def test_a_download_that_radarr_refuses_falls_through_to_the_wrapper(self):
+        refused = Fault.bug(what="Radarr refused the movie request", service="radarr",
+                            reason="This movie has already been added", http_status=400)
+        self.radarr.queue_download = AsyncMock(side_effect=refused)
 
         with self.assertRaises(Fault) as caught:
             await self.choose(NEW_MOVIE)
 
-        fault = caught.exception
-        self.assertEqual((fault.kind, fault.what, fault.service, fault.reason),
-                         (FaultKind.BUG, "Radarr did not queue the download", "radarr", "HTTP 400 Bad Request"))
+        self.assertIs(caught.exception, refused)
         [line] = self.lines("media_request")
         self.assertEqual((line["msg"], line["outcome"]), ("chose option 1: New Movie (2025): failed", "failed"))
-        # The wrapper sends the Foutmelding
+        # The wrapper sends the Foutmelding, and the meldfunctie the one admin message
         self.functions.send_message.assert_not_awaited()
+        self.log.logger.assert_not_awaited()
+        self.assertEqual(self.admin_messages(), [])
+
+    async def test_a_failed_search_for_missing_movies_is_reported_and_the_request_goes_on(self):
+        not_responding = Fault.disruption(service="radarr", what="Radarr is not responding", http_status=503)
+        self.radarr.scan_missing_media = AsyncMock(side_effect=not_responding)
+
+        state = await self.choose(NEW_MOVIE)
+
+        self.assertEqual(state, MOVIE_NOTIFY)
+        [report] = self.faults.reports
+        self.assertEqual((report.fault, report.continued, report.user_told),
+                         (not_responding, "went on without the search for missing media", False))
+        [line] = self.lines("media_request")
+        self.assertEqual(line["outcome"], "download_started")
+        first_answer = self.functions.send_message.await_args_list[0].args[0]
+        self.assertIn("De downløad voor New Movie is nu gestart", first_answer)
 
     async def test_no_matching_state_is_a_bug_with_the_fields_the_states_look_at(self):
         # In Radarr, but without a movieFileId
@@ -251,15 +264,57 @@ class MovieStateTest(MovieTest):
         self.assertIsInstance(report.fault.__cause__, FileNotFoundError)
         self.log.logger.assert_not_awaited()
 
-    async def test_no_room_on_the_disks_does_not_promise_that_the_beheerder_knows(self):
+    async def test_no_disk_with_room_is_an_inrichtingsfout(self):
         self.radarr.get_disk_space = AsyncMock(return_value=[{"path": "/media", "freeSpace": 100 * 1024 ** 3}])
 
-        state = await self.choose(NEW_MOVIE)
+        with self.assertRaises(Fault) as caught:
+            await self.choose(NEW_MOVIE)
 
-        self.assertEqual(state, ConversationHandler.END)
-        [message] = [call.args[0] for call in self.functions.send_message.await_args_list]
-        self.assertIn("probleem met de opslag", message)
-        self.assertNotIn("op de hoogte", message)
+        fault = caught.exception
+        self.assertEqual((fault.kind, fault.service, fault.check, fault.item, fault.what),
+                         (FaultKind.SETUP, "radarr", "disk_space", None, "No disk of Radarr has 150 GB free"))
+        self.assertEqual(fault.details, {"/media": "100 GB free"})
+        self.assertEqual(fault.user_text, "Er is op dit moment een probleem met de opslag van de Plęx server")
+        self.radarr.queue_download.assert_not_awaited()
+        [line] = self.lines("media_request")
+        self.assertEqual(line["outcome"], "failed")
+        # The wrapper tells the user, with the Code
+        self.functions.send_message.assert_not_awaited()
+        self.log.logger.assert_not_awaited()
+
+    async def test_a_disk_with_room_passes_both_checks(self):
+        await self.choose(NEW_MOVIE)
+
+        self.assertEqual([(fix.service, fix.check, fix.item, fix.msg) for fix in self.faults.fixes], [
+            ("radarr", "setting", "MOVIE_FOLDERS", "Every folder in MOVIE_FOLDERS is on a disk of Radarr"),
+            ("radarr", "disk_space", None, "A disk of Radarr has 150 GB free again"),
+        ])
+        self.assertEqual(self.faults.reports, [])
+
+    async def test_a_media_folder_on_no_disk_is_reported_and_the_other_folders_are_tried(self):
+        state = await self.choose(NEW_MOVIE, media_folder="/elsewhere/movies, /media/movies")
+
+        self.assertEqual(state, MOVIE_NOTIFY)
+        self.assertEqual(self.radarr.queue_download.await_args.args[0]["rootFolderPath"], "/media/movies")
+        [report] = self.faults.reports
+        fault = report.fault
+        self.assertEqual((fault.kind, fault.service, fault.check, fault.item, fault.what),
+                         (FaultKind.SETUP, "radarr", "setting", "MOVIE_FOLDERS",
+                          "MOVIE_FOLDERS has a folder on no disk of Radarr"))
+        self.assertEqual(fault.details, {"folders": ["/elsewhere/movies"], "disks": ["/media"]})
+        self.assertEqual(report.continued, "looked for room in the other folders")
+        self.assertNotIn("setting", [fix.check for fix in self.faults.fixes])
+
+    async def test_media_folders_on_no_disk_at_all_are_an_inrichtingsfout_of_the_setting(self):
+        for folders in ("/elsewhere/movies", None):
+            with self.subTest(folders=folders):
+                with self.assertRaises(Fault) as caught:
+                    await self.choose(NEW_MOVIE, media_folder=folders)
+
+                fault = caught.exception
+                self.assertEqual((fault.kind, fault.check, fault.item), (FaultKind.SETUP, "setting", "MOVIE_FOLDERS"))
+                self.radarr.queue_download.assert_not_awaited()
+                self.assertEqual(self.faults.reports, [])
 
     async def test_title_in_the_lines_is_the_title_of_radarr(self):
         # The title is sanitized for the MarkdownV2 of the answers, but not for the log, also not in the next step
@@ -279,21 +334,6 @@ class MovieStateTest(MovieTest):
 
         self.radarr.queue_download.assert_awaited_once()
         self.assertTrue(self.radarr.queue_download.await_args.args[0]["monitored"])
-
-
-class QueueDownloadTest(unittest.IsolatedAsyncioTestCase):
-    """ queue_download of Radarr and Sonarr until issue 09: None when it fails, and the Bug of start_download tells
-    the Beheerder, so the service itself sends nothing """
-
-    async def test_a_failed_queue_download_gives_none_without_an_admin_message(self):
-        for service in (Radarr, Sonarr):
-            with self.subTest(service=service.__name__):
-                logger = MagicMock(logger=AsyncMock())
-                client = service(logger)
-                client.post = AsyncMock(return_value=False)
-
-                self.assertIsNone(await client.queue_download({"tmdbId": 1001}))
-                logger.logger.assert_not_awaited()
 
 
 class MovieSearchTest(MovieTest):

@@ -10,7 +10,7 @@ from telegram.ext import CallbackContext, ConversationHandler
 from src.services.sonarr import Sonarr
 from src.commands.media import results_text, title_and_year
 from src.conversation import ignored_line
-from src.faults import Fault
+from src.faults import Fault, FaultKind
 from src.log import get_logger
 
 from src.states import AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE, step_name
@@ -21,13 +21,14 @@ log = get_logger(__name__)
 
 class Subscribe:
 
-    def __init__(self, args, logger, functions, telegram):
+    def __init__(self, args, logger, functions, telegram, faults):
 
         # Set default values
         self.log = logger
         self.function = functions
         self.telegram = telegram
-        self.sonarr = Sonarr(logger)
+        self.faults = faults
+        self.sonarr = Sonarr(faults)
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
@@ -185,8 +186,9 @@ class Subscribe:
 
         # Build buttons
         buttons = []
+        series = await self.series_in_sonarr(list(serie_episode))
         for serie_id, state in serie_episode.items():
-            media_json = self.first_item(await self.sonarr.lookup_by_tmdbid(serie_id))
+            media_json = series.get(serie_id)
             title = media_json.get("title") if media_json else f"Serie {serie_id}"
 
             # Callback data must be <= 64 bytes => keep it short
@@ -231,7 +233,7 @@ class Subscribe:
             await file.write(json.dumps(data, indent=4))
 
         # show title
-        media_json = self.first_item(await self.sonarr.lookup_by_tmdbid(serie_id))
+        media_json = (await self.series_in_sonarr([serie_id])).get(serie_id)
         title = media_json.get("title") if media_json else f"Serie {serie_id}"
 
         media = media_json or {"tmdbId": int(serie_id)}
@@ -244,9 +246,18 @@ class Subscribe:
         return ConversationHandler.END
 
 
-    def first_item(self, obj) -> dict | None:
-        if not obj:
-            return None
-        if isinstance(obj, list):
-            return obj[0] if obj else None
-        return obj if isinstance(obj, dict) else None
+    async def series_in_sonarr(self, serie_ids: list[str]) -> dict[str, dict]:
+        """ The series in Sonarr per TMDB ID, only for their titles: the user sees the TMDB ID of one that is missing.
+
+        A Fout is reported, and the bot goes on. After a Storing it does not look up the other series: one failed
+        attempt is enough, and each would wait for its own attempts.
+        """
+        series = {}
+        for serie_id in serie_ids:
+            try:
+                series[serie_id] = await self.sonarr.lookup_by_tmdbid(serie_id)
+            except Fault as fault:
+                await self.faults.report(fault, continued="went on with the TMDB ID instead of the title")
+                if fault.kind == FaultKind.DISRUPTION:
+                    break
+        return series

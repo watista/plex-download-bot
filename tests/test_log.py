@@ -501,7 +501,7 @@ class OldLogClassTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
         with self.at("2026-11-03T14:05:12+01:00"), patch.dict(os.environ, {"LOG_MAX_BODY": "20"}):
             line_number = inspect.currentframe().f_lineno + 1
-            await log.debug_call("movie", "GET response", url="https://radarr/api/v3/movie/lookup?term=dune",
+            await log.debug_call("radarr", "GET response", url="https://radarr/api/v3/movie/lookup?term=dune",
                                  status=200, duration=0.3204, response=[{"title": "Dune", "year": 2021}])
 
         self.assertEqual(self.read(MAIN), [])

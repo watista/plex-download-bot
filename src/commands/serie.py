@@ -25,7 +25,7 @@ class Serie(Media):
     filter_fields = ("path", "monitored", "status")
 
     def __init__(self, args, logger, functions, telegram, faults):
-        super().__init__(args, logger, functions, telegram, faults, Sonarr(logger),
+        super().__init__(args, logger, functions, telegram, faults, Sonarr(faults),
                          "serie", os.getenv('SERIE_FOLDERS'), SERIE_OPTION)
 
     async def get_media_states(self) -> dict:
@@ -231,18 +231,19 @@ class Serie(Media):
         entry = serie_episode.setdefault(serie_id, {})
         entry["started"] = False
 
-        # Set to newest episode available
-        try:
-            path = (context.user_data.get("media_data") or {}).get("path")
-            if not path:
-                raise KeyError("path")
-            media_folder = Path(path)
-            latest = max(self.function.episodes_present_in_folder(media_folder), default="S00E00")
-            entry["last"] = latest
-        except (KeyError, TypeError, ValueError) as e:
+        # Set to the newest episode available. A new series has the path from the answer of Sonarr to its request
+        # (start_download), so without one Sonarr does not have it right: the user is subscribed from the start on.
+        media, tmdb_id = chosen_media(context.user_data), context.user_data['media_data']["tmdbId"]
+        path = context.user_data['media_data'].get("path")
+        if path:
+            await self.faults.fixed("sonarr", "series_path", tmdb_id,
+                                    msg=f"{media.get('title')} now has a path in Sonarr")
+            entry["last"] = max(self.function.episodes_present_in_folder(Path(path)), default="S00E00")
+        else:
             entry["last"] = "S00E00"
-            await self.log.logger(f"ℹ️ *No Path is found in JSON for {self.function.sanitize_text(str(e))}.*\nSee logs for more details.", False, "error")
-            await self.log.logger(f"Media JSON:\n{context.user_data.get('media_data')}", False, "error", False)
+            await self.faults.report(Fault.setup(service="sonarr", what=f"{media.get('title')} has no path in Sonarr",
+                                                 check="series_path", item=tmdb_id, media=media),
+                                     continued="subscribed from the first episode on")
 
         # Save JSON
         async with aiofiles.open(self.data_json, "w") as f:

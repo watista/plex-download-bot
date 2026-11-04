@@ -2,15 +2,14 @@
 
 import html
 import json
-import os
 import re
 import time
 import aiofiles
 from pathlib import Path
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from telegram.ext import CallbackContext
-from typing import Any
 
+from src.faults import Fault, FaultKind, service_name
 from src.services.radarr import Radarr
 from src.services.sonarr import Sonarr
 from src.services.plex import Plex
@@ -19,30 +18,25 @@ from src.services.transmission import check_transmission_and_trigger_scans
 
 class Schedule:
 
-    def __init__(self, args, logger, functions, telegram):
+    def __init__(self, args, logger, functions, telegram, faults):
 
         # Set default values
         self.log = logger
         self.function = functions
         self.telegram = telegram
-        self.radarr = Radarr(logger)
-        self.sonarr = Sonarr(logger)
+        self.faults = faults
+        self.radarr = Radarr(faults)
+        self.sonarr = Sonarr(faults)
         self.plex = Plex(logger)
 
         # Set data.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
 
-        # Media ID's without a path in the JSON in a row: {media_id: {"count": int, "alerted": date}}
-        self._missing_path = {}
-
-        # Amount of runs in a row without a path before a Telegram message is sent
-        try:
-            self.failure_threshold = max(1, int(os.getenv("LOOKUP_ALERT_THRESHOLD", "3")))
-        except ValueError:
-            self.failure_threshold = 3
-
     async def check_notify_list(self, context: CallbackContext) -> None:
-        """ Checks if someone needs to be notified from the JSON notify list """
+        """ Checks if someone needs to be notified from the JSON notify list.
+
+        An Inrichtingsfout of one item is reported, and the run skips that item. A Storing or a Bug ends the run.
+        """
 
         # Check Transmission health on every schedule tick.
         # If it just recovered, this will trigger Radarr/Sonarr missing-media scans.
@@ -67,196 +61,192 @@ class Schedule:
         # written, so a failure to send one never makes a user get the same Gebruikersbericht again.
         notified = []
 
-        # Iterate through notify_list
-        for user_id, media_types in data.get("notify_list", {}).items():
+        try:
+            # Iterate through notify_list
+            for user_id, media_types in data.get("notify_list", {}).items():
 
-            # Set usernames
-            user_name_raw = data.get("user_id", {}).get(str(user_id), "Unknown, Unknown")
-            name_parts = [p.strip() for p in user_name_raw.split(",", 1)]
-            gebruiker = name_parts[0]
-            username = name_parts[1]
+                # Set usernames
+                user_name_raw = data.get("user_id", {}).get(str(user_id), "Unknown, Unknown")
+                name_parts = [p.strip() for p in user_name_raw.split(",", 1)]
+                gebruiker = name_parts[0]
+                username = name_parts[1]
 
-            # Ensure keys exist
-            media_types.setdefault("serie", {})
-            media_types.setdefault("film", {})
-            media_types.setdefault("recurring_serie", {})
-            media_types.setdefault("serie_episode", {})
+                # Ensure keys exist
+                media_types.setdefault("serie", {})
+                media_types.setdefault("film", {})
+                media_types.setdefault("recurring_serie", {})
+                media_types.setdefault("serie_episode", {})
 
-            # Itarate through serie and movie options
-            for media_type in ["serie", "film"]:
-                # Iterate through all media ID's
-                for media_id, timestamp in list(media_types[media_type].items()):
+                # Itarate through serie and movie options
+                for media_type in ["serie", "film"]:
+                    # Iterate through all media ID's
+                    for media_id, timestamp in list(media_types[media_type].items()):
 
-                    # Get JSON data for the media ID
-                    media_json = await self.sonarr.lookup_by_tmdbid(media_id) if media_type == "serie" else await self.radarr.lookup_by_tmdbid(media_id)
-
-                    # do the required checks
-                    check, media_folder, media_json = await self.check_requirements(media_json, media_id)
-                    if not check:
-                        continue
-
-                    # Check if all episodes are downloaded
-                    if media_type == "serie":
-                        total_seasons = self.effective_season_count(media_json)
-
-                        # Build required season tags: {"S01", "S02", ...}
-                        required = {f"S{n:02d}" for n in range(1, total_seasons + 1)}
-
-                        # Get amount of seasons
-                        found, count = self.seasons_present_in_folder(media_folder)
-
-                        # If any required season is missing, skip
-                        if found < required:
+                        # The item in Sonarr or Radarr, and its folder once it has one
+                        client = self.sonarr if media_type == "serie" else self.radarr
+                        media_json, media_folder = await self.media_with_folder(client, media_id)
+                        if media_folder is None:
                             continue
 
-                    # Check if media_folder contains any files or subdirectories
-                    if any(media_folder.iterdir()):
-                        # Get Plex URL
-                        media_plex_url = await self.plex.get_media_url(media_json, media_type)
+                        # Check if all episodes are downloaded
+                        if media_type == "serie":
+                            total_seasons = self.effective_season_count(media_json)
 
-                        # The title in HTML for the user, and without * and _ for the MarkdownV2 of the Beheerder
-                        html_title = html.escape(media_json['title'])
-                        sanitize_title = self.function.sanitize_text(media_json['title'])
+                            # Build required season tags: {"S01", "S02", ...}
+                            required = {f"S{n:02d}" for n in range(1, total_seasons + 1)}
 
-                        # Send message
+                            # Get amount of seasons
+                            found, count = self.seasons_present_in_folder(media_folder)
+
+                            # If any required season is missing, skip
+                            if found < required:
+                                continue
+
+                        # Check if media_folder contains any files or subdirectories
+                        if any(media_folder.iterdir()):
+                            # Get Plex URL
+                            media_plex_url = await self.plex.get_media_url(media_json, media_type)
+
+                            # The title in HTML for the user, and without * and _ for the MarkdownV2 of the Beheerder
+                            html_title = html.escape(media_json['title'])
+                            sanitize_title = self.function.sanitize_text(media_json['title'])
+
+                            # Send message
+                            delivery = await self.telegram.send_user_message(
+                                user_id, "online",
+                                f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{html_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                                media_json)
+                            if delivery.delivered:
+                                notified.append((f"*ℹ️ User notified: The {media_type} {sanitize_title} ({media_id}) is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: online"))
+
+                            # If it's a series: initialize recurring tracking
+                            if media_type == "serie":
+                                ended = bool(media_json.get("ended", False))
+
+                                if not ended:
+                                    # Only do this if serie_episode tracking exists; otherwise skip
+                                    if "serie_episode" not in media_types:
+                                        continue
+
+                                    seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
+                                    max_seen = max(seasons_count) if seasons_count else 0
+
+                                    # Initialize serie_episode tracking so we don't spam old episodes.
+                                    latest_ep = self.newest_episode_in_folder(media_folder)
+                                    media_types["serie_episode"].setdefault(str(media_id), {})
+                                    media_types["serie_episode"][str(media_id)]["started"] = True
+                                    media_types["serie_episode"][str(media_id)]["last"] = latest_ep or "S00E00"
+
+                                    # Create/update recurring state for this serie
+                                    media_types["recurring_serie"].setdefault(str(media_id), {})
+                                    media_types["recurring_serie"][str(media_id)]["last_notified_season"] = max_seen
+                                    media_types["recurring_serie"][str(media_id)]["last_seen_season"] = max_seen
+                                else:
+                                    media_types.get("recurring_serie", {}).pop(str(media_id), None)
+                                    media_types.get("serie_episode", {}).pop(str(media_id), None)
+
+                            # Delete the entry and write to data.json
+                            del data["notify_list"][user_id][media_type][media_id]
+                            changed = True
+
+                # Itarate through recurring_serie options
+                for media_id, state in list(media_types.get("recurring_serie", {}).items()):
+
+                    # The series in Sonarr, and its folder once it has one
+                    media_json, media_folder = await self.media_with_folder(self.sonarr, media_id)
+                    if media_folder is None:
+                        continue
+
+                    seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
+                    if not seasons_count:
+                        continue
+
+                    max_seen = max(seasons_count)
+
+                    last_notified = int(state.get("last_notified_season", 0))
+                    last_seen = int(state.get("last_seen_season", 0))
+
+                    # Notify if we see a new season number in files
+                    if max_seen > last_notified:
+                        html_title = html.escape(media_json["title"])
+                        sanitize_title = self.function.sanitize_text(media_json["title"])
+                        media_plex_url = await self.plex.get_media_url(media_json, "serie")
+
+                        new_seasons = sorted(s for s in seasons_count if s > last_notified)
+                        if len(new_seasons) == 1:
+                            season_text = f"seizoen {new_seasons[0]}"
+                        else:
+                            season_text = "seizoen " + " en ".join(str(s) for s in new_seasons)
+
                         delivery = await self.telegram.send_user_message(
-                            user_id, "online",
-                            f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{html_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                            user_id, "new_season",
+                            f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}</b> van <b>{html_title}</b> is nu beschikbaar. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
                             media_json)
                         if delivery.delivered:
-                            notified.append((f"*ℹ️ User notified: The {media_type} {sanitize_title} ({media_id}) is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: online"))
+                            notified.append((f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_season"))
 
-                        # If it's a series: initialize recurring tracking
-                        if media_type == "serie":
-                            ended = bool(media_json.get("ended", False))
-
-                            if not ended:
-                                # Only do this if serie_episode tracking exists; otherwise skip
-                                if "serie_episode" not in media_types:
-                                    continue
-
-                                seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
-                                max_seen = max(seasons_count) if seasons_count else 0
-
-                                # Initialize serie_episode tracking so we don't spam old episodes.
-                                latest_ep = self.newest_episode_in_folder(media_folder)
-                                media_types["serie_episode"].setdefault(str(media_id), {})
-                                media_types["serie_episode"][str(media_id)]["started"] = True
-                                media_types["serie_episode"][str(media_id)]["last"] = latest_ep or "S00E00"
-
-                                # Create/update recurring state for this serie
-                                media_types["recurring_serie"].setdefault(str(media_id), {})
-                                media_types["recurring_serie"][str(media_id)]["last_notified_season"] = max_seen
-                                media_types["recurring_serie"][str(media_id)]["last_seen_season"] = max_seen
-                            else:
-                                media_types.get("recurring_serie", {}).pop(str(media_id), None)
-                                media_types.get("serie_episode", {}).pop(str(media_id), None)
-
-                        # Delete the entry and write to data.json
-                        del data["notify_list"][user_id][media_type][media_id]
+                        state["last_notified_season"] = max_seen
                         changed = True
 
-            # Itarate through recurring_serie options
-            for media_id, state in list(media_types.get("recurring_serie", {}).items()):
+                    # Always update last_seen_season if it increased
+                    if max_seen > last_seen:
+                        state["last_seen_season"] = max_seen
+                        changed = True
 
-                media_json = await self.sonarr.lookup_by_tmdbid(media_id)
+                # Iterate through serie_episode options (new episode notifications)
+                for media_id, state in list(media_types.get("serie_episode", {}).items()):
 
-                # do the required checks
-                check, media_folder, media_json = await self.check_requirements(media_json, media_id)
-                if not check:
-                    continue
+                    # The series in Sonarr, and its folder once it has one
+                    media_json, media_folder = await self.media_with_folder(self.sonarr, media_id)
+                    if media_folder is None:
+                        continue
 
-                seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
-                if not seasons_count:
-                    continue
+                    # Only start notifying after started=True
+                    if not bool((state or {}).get("started", False)):
+                        continue
 
-                max_seen = max(seasons_count)
+                    episodes_found = self.function.episodes_present_in_folder(media_folder)
+                    if not episodes_found:
+                        continue
 
-                last_notified = int(state.get("last_notified_season", 0))
-                last_seen = int(state.get("last_seen_season", 0))
+                    # Get highest option
+                    newest_found = max(episodes_found)
 
-                # Notify if we see a new season number in files
-                if max_seen > last_notified:
+                    # Get last notified from json
+                    last_notified = (state or {}).get("last", "S00E00").upper()
+
+                    # Only notify when newer episodes exist
+                    if newest_found <= last_notified:
+                        continue
+
+                    # Gather all new episodes since last (and sort them)
+                    new_episodes = sorted(ep for ep in episodes_found if ep > last_notified)
+                    if not new_episodes:
+                        continue
+
                     html_title = html.escape(media_json["title"])
                     sanitize_title = self.function.sanitize_text(media_json["title"])
                     media_plex_url = await self.plex.get_media_url(media_json, "serie")
 
-                    new_seasons = sorted(s for s in seasons_count if s > last_notified)
-                    if len(new_seasons) == 1:
-                        season_text = f"seizoen {new_seasons[0]}"
-                    else:
-                        season_text = "seizoen " + " en ".join(str(s) for s in new_seasons)
+                    # Generate episode list text
+                    eps_text = self.format_episode_list(new_episodes)
 
                     delivery = await self.telegram.send_user_message(
-                        user_id, "new_season",
-                        f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}</b> van <b>{html_title}</b> is nu beschikbaar. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                        user_id, "new_episodes",
+                        f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van <b>{html_title}</b> zijn nu beschikbaar:\n\n<b>{html.escape(eps_text)}</b>\n\nVeel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
                         media_json)
                     if delivery.delivered:
-                        notified.append((f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_season"))
+                        notified.append((f"*ℹ️ Notify: New episode(s) for serie {sanitize_title}: {eps_text} ℹ️*\n" f"User ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_episodes"))
 
-                    state["last_notified_season"] = max_seen
+                    # Update last notified
+                    state["last"] = new_episodes[-1]
                     changed = True
-
-                # Always update last_seen_season if it increased
-                if max_seen > last_seen:
-                    state["last_seen_season"] = max_seen
-                    changed = True
-
-            # Iterate through serie_episode options (new episode notifications)
-            for media_id, state in list(media_types.get("serie_episode", {}).items()):
-
-                media_json = await self.sonarr.lookup_by_tmdbid(media_id)
-
-                # do the required checks
-                check, media_folder, media_json = await self.check_requirements(media_json, media_id)
-                if not check:
-                    continue
-
-                # Only start notifying after started=True
-                if not bool((state or {}).get("started", False)):
-                    continue
-
-                episodes_found = self.function.episodes_present_in_folder(media_folder)
-                if not episodes_found:
-                    continue
-
-                # Get highest option
-                newest_found = max(episodes_found)
-
-                # Get last notified from json
-                last_notified = (state or {}).get("last", "S00E00").upper()
-
-                # Only notify when newer episodes exist
-                if newest_found <= last_notified:
-                    continue
-
-                # Gather all new episodes since last (and sort them)
-                new_episodes = sorted(ep for ep in episodes_found if ep > last_notified)
-                if not new_episodes:
-                    continue
-
-                html_title = html.escape(media_json["title"])
-                sanitize_title = self.function.sanitize_text(media_json["title"])
-                media_plex_url = await self.plex.get_media_url(media_json, "serie")
-
-                # Generate episode list text
-                eps_text = self.format_episode_list(new_episodes)
-
-                delivery = await self.telegram.send_user_message(
-                    user_id, "new_episodes",
-                    f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van <b>{html_title}</b> zijn nu beschikbaar:\n\n<b>{html.escape(eps_text)}</b>\n\nVeel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
-                    media_json)
-                if delivery.delivered:
-                    notified.append((f"*ℹ️ Notify: New episode(s) for serie {sanitize_title}: {eps_text} ℹ️*\n" f"User ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_episodes"))
-
-                # Update last notified
-                state["last"] = new_episodes[-1]
-                changed = True
-
-        # Write back once per run
-        if changed:
-            async with aiofiles.open(self.data_json, "w") as file:
-                await file.write(json.dumps(data, indent=4))
+        finally:
+            # Write back once per run, also after a Fout that ended it: who got a Gebruikersbericht in this run must
+            # not get it again in the next
+            if changed:
+                async with aiofiles.open(self.data_json, "w") as file:
+                    await file.write(json.dumps(data, indent=4))
 
         for text, about in notified:
             await self.telegram.send_admin_message(text, about)
@@ -322,58 +312,30 @@ class Schedule:
         return max(episodes)
 
 
-    async def check_requirements(self, media_json: Any, media_id: str | int) -> tuple[bool, Path | None, dict | None]:
+    async def media_with_folder(self, client: Radarr | Sonarr, media_id: str) -> tuple[dict | None, Path | None]:
+        """ The movie or series in Radarr or Sonarr, and its folder, or None for the folder to skip the item.
+
+        A folder that is not there is skipped silently: nothing is downloaded yet. An item that Radarr or Sonarr does
+        not find, or that has no path there, is an Inrichtingsfout of that item: reported, and the item is skipped.
+        Any other Fout falls through and ends the run, also an Inrichtingsfout like a wrong key, which every next item
+        would run into as well.
         """
-        Returns True of False if requirements are met.
-        """
+        check, name = f"{client.media_type}_path", service_name(client.service)
+        try:
+            media_json = await client.lookup_by_tmdbid(media_id)
+            if not media_json.get("path"):
+                raise Fault.setup(service=client.service, what=f"{media_json.get('title')} has no path in {name}",
+                                  check=check, item=media_id, media=media_json)
+        except Fault as fault:
+            if fault.kind != FaultKind.SETUP or str(fault.item) != str(media_id):
+                raise
+            await self.faults.report(fault, continued="skipped this item")
+            return None, None
+        await self.faults.fixed(client.service, check, media_id,
+                                msg=f"{media_json.get('title')} now has a path in {name}")
 
-        # Check if data is present
-        if not media_json:
-            return False, False, False
-
-        # Check if media_data is a list or dict
-        if isinstance(media_json, list):
-            media_json = media_json[0]
-
-        # Check if path exists in the JSON
-        media_folder = media_json.get("path")
-        if not media_folder:
-            await self.log_missing_path(media_id, media_json)
-            return False, False, False
-
-        # A JSON with a path ends the failure streak for this ID
-        self._missing_path.pop(str(media_id), None)
-
-        # Check if media_folder exists
-        media_folder = Path(media_folder)
-        if not media_folder.is_dir():
-            return False, False, False
-
-        return True, media_folder, media_json
-
-
-    async def log_missing_path(self, media_id: str | int, media_json: dict) -> None:
-        """ Counts runs without a path in a row, only sends a Telegram message from the threshold on """
-
-        # Count how many times in a row this ID came back without a path
-        state = self._missing_path.setdefault(str(media_id), {"count": 0, "alerted": None})
-        state["count"] += 1
-        count = state["count"]
-
-        # Always write the details to the log file
-        await self.log.logger(f"Path not in the JSON for media with ID {media_id}. Failure {count} in a row, alerting from {self.failure_threshold}. JSON: {self.log.truncate(media_json)}", False, "warning", False)
-
-        # Below the threshold it is almost always a temporary Sonarr/Radarr hiccup, stay silent
-        if count < self.failure_threshold:
-            return
-
-        # Past the threshold, send at most one Telegram message a day per ID
-        today = date.today()
-        if state["alerted"] == today:
-            return
-        state["alerted"] = today
-
-        await self.log.logger(f"❌ *No path present in JSON for media with ID {media_id}.*\n{count} runs in a row came back without a path.\nCheck the error log for more information. This message is sent once a day. ❌", False, "error")
+        media_folder = Path(media_json["path"])
+        return media_json, media_folder if media_folder.is_dir() else None
 
 
     def format_episode_list(self, episodes) -> str:

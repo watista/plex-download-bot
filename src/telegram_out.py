@@ -3,6 +3,7 @@
 """ Verzendfunctie: the one way the bot itself sends a message to Telegram """
 
 import html
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -127,6 +128,8 @@ def _http_call(endpoint: str, method: str, url: str, started: float, status: int
                error: Exception | None = None) -> None:
     """ The line of one request to Telegram, on DEBUG: the status, or the exception it ended in """
     duration_ms = round((monotonic() - started) * 1000)
+    if not log.enabled_for(logging.DEBUG):
+        return
     url = WITH_TOKEN.sub(r"\1***", url)
     if error is None:
         outcome = f"HTTP {status}"

@@ -16,6 +16,7 @@ from src.commands.subscribe import Subscribe
 from src.faults import Fault, FaultKind
 from src.log import setup_logging
 from src.states import AANMELD_CHOICE, AFMELDEN_OPTIE, REQUEST_SERIE
+from test_interaction import FakeFaults
 from test_log import LogFolder
 
 
@@ -49,11 +50,12 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.addCleanup(tmp.cleanup)
         self.data_json = Path(tmp.name) / "data.dev.json"
         self.data_json.write_text(json.dumps({"notify_list": {"1": {"serie_episode": dict(SUBSCRIBED)}}}))
-        self.subscribe = Subscribe(SimpleNamespace(env="dev"), self.log, functions, self.telegram)
+        self.faults = FakeFaults()
+        self.subscribe = Subscribe(SimpleNamespace(env="dev"), self.log, functions, self.telegram, self.faults)
         self.subscribe.data_json = str(self.data_json)
         self.sonarr = MagicMock()
         self.sonarr.lookup_by_tmdbid = AsyncMock(
-            return_value=[{"title": "Game of Thrones", "year": 2011, "tmdbId": 1399}])
+            return_value={"title": "Game of Thrones", "year": 2011, "tmdbId": 1399})
         self.subscribe.sonarr = self.sonarr
         patcher = patch("src.commands.subscribe.asyncio.sleep", AsyncMock())
         patcher.start()
@@ -126,6 +128,48 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         [message] = [c.args[0] for c in self.telegram.send_admin_message.await_args_list]
         self.assertIn("User has ubsubscribed to the serie Game of Thrones", message)
         self.log.logger.assert_not_awaited()
+
+    async def test_a_series_that_sonarr_does_not_find_is_shown_by_its_tmdb_id(self):
+        not_found = Fault.setup(service="sonarr", what="Sonarr finds nothing for tmdb 1399", check="tmdb_lookup",
+                                item="1399")
+        self.sonarr.lookup_by_tmdbid = AsyncMock(side_effect=not_found)
+        update, context = await self.message_and_context()
+
+        state = await self.subscribe.afmelden(update, context)
+
+        self.assertEqual(state, AFMELDEN_OPTIE)
+        markup = self.subscribe.function.send_message.await_args.args[3]
+        self.assertEqual([[button.text for button in row] for row in markup.inline_keyboard], [["Serie 1399"]])
+        [report] = self.faults.reports
+        self.assertEqual((report.fault, report.continued), (not_found, "went on with the TMDB ID instead of the title"))
+
+    async def test_without_sonarr_one_storing_is_enough_for_every_series(self):
+        subscribed = {**SUBSCRIBED, "136315": {"started": True, "last": "S03E10"}}
+        self.data_json.write_text(json.dumps({"notify_list": {"1": {"serie_episode": subscribed}}}))
+        not_responding = Fault.disruption(service="sonarr", what="Sonarr is not responding", http_status=503)
+        self.sonarr.lookup_by_tmdbid = AsyncMock(side_effect=not_responding)
+
+        await self.subscribe.afmelden(*await self.message_and_context())
+
+        self.sonarr.lookup_by_tmdbid.assert_awaited_once()
+        markup = self.subscribe.function.send_message.await_args.args[3]
+        self.assertEqual([[button.text for button in row] for row in markup.inline_keyboard],
+                         [["Serie 1399"], ["Serie 136315"]])
+        [report] = self.faults.reports
+        self.assertEqual(report.fault, not_responding)
+
+    async def test_unsubscribing_goes_on_when_sonarr_does_not_respond(self):
+        not_responding = Fault.disruption(service="sonarr", what="Sonarr is not responding", http_status=503)
+        self.sonarr.lookup_by_tmdbid = AsyncMock(side_effect=not_responding)
+
+        state = await self.press("1399", AFMELDEN_OPTIE)
+
+        self.assertEqual(state, ConversationHandler.END)
+        self.assertEqual(self.subscribed(), {})
+        [line] = self.lines("series_updates")
+        self.assertEqual((line["msg"], line["tmdb_id"]), ("unsubscribed from new episodes of tmdb 1399", 1399))
+        [report] = self.faults.reports
+        self.assertEqual(report.fault, not_responding)
 
     async def test_nothing_to_unsubscribe_from(self):
         self.data_json.write_text(json.dumps({"notify_list": {}}))

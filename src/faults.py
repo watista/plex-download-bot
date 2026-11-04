@@ -143,15 +143,18 @@ class FaultReporter:
 
     send is the verzendfunctie, admin_chat_id the chat of the Beheerder, and now the clock. The state lives in
     state_file (faults.json, on dev faults.dev.json), so it survives a restart. It is updated under one lock,
-    because jobs and updates run interleaved on the same event loop.
+    because jobs and updates run interleaved on the same event loop. media_link(service, media) gives the link to a
+    media item in its service, for the title on the line Media:, or None.
     """
 
     def __init__(self, send: Callable[..., Awaitable["Delivery"]], admin_chat_id: int | str,
-                 state_file: str | os.PathLike, now: Callable[[], datetime] = local_now):
+                 state_file: str | os.PathLike, now: Callable[[], datetime] = local_now,
+                 media_link: Callable[[str, dict], str | None] | None = None):
         self._send = send
         self._admin_chat_id = admin_chat_id
         self._state_file = Path(state_file)
         self._now = now
+        self._media_link = media_link
         self._lock = asyncio.Lock()
         self._state = self._load()
 
@@ -206,7 +209,7 @@ class FaultReporter:
 
         code = current_code()
         text = restored_html(service, since, now, ended["attempts"], ended["first_code"], code)
-        await self._send_admin_message(text, f"Restored · {_service_name(service)} is responding again",
+        await self._send_admin_message(text, f"Restored · {service_name(service)} is responding again",
                                        FaultKind.DISRUPTION, service, code, restored=True)
 
     async def _telegram_restored(self, ended: dict, since: datetime, now: datetime) -> None:
@@ -296,7 +299,8 @@ class FaultReporter:
         since = _day_and_time(datetime.fromisoformat(current["since"]), now)
         failing = f"failing since {since} ({current['times']:,}×)"
         text = admin_message_html(fault, occurrence.interaction, occurrence.frames, occurrence.user_told,
-                                  occurrence.continued, occurrence.outside_wrapper, _repeat(current, now, failing))
+                                  occurrence.continued, occurrence.outside_wrapper, _repeat(current, now, failing),
+                                  link=self._link(occurrence))
         return await self._send_or_take_back(text, occurrence, self._setup, key, before, now) or known
 
     async def _report_disruption(self, occurrence: _Occurrence) -> bool:
@@ -393,7 +397,8 @@ class FaultReporter:
             previous = _day_and_time(datetime.fromisoformat(alerted), now)
             repeat = f"{times}× since the last alert ({previous})"
         text = admin_message_html(fault, occurrence.interaction or Interaction(code), occurrence.frames,
-                                  occurrence.user_told, occurrence.continued, occurrence.outside_wrapper, repeat)
+                                  occurrence.user_told, occurrence.continued, occurrence.outside_wrapper, repeat,
+                                  link=self._link(occurrence))
         if await self._send_admin_message(text, _about(fault), fault.kind, fault.service, code, signature):
             return True
 
@@ -408,6 +413,13 @@ class FaultReporter:
                     self._bugs[signature] = {**last, "repeat": times + current["repeat"]}
                 self._save()
         return False
+
+    def _link(self, occurrence: _Occurrence) -> str | None:
+        """ The link to the media item of a Fout in the service of the Fout, None without one """
+        media = _media(occurrence.fault, occurrence.interaction)
+        if not media or not occurrence.fault.service or self._media_link is None:
+            return None
+        return self._media_link(occurrence.fault.service, media)
 
     def _write(self, occurrence: _Occurrence, full: bool, repeat: int | None = None) -> None:
         """ The line of a Fout: full, or short with repeat, without the traceback and the decision fields.
@@ -707,7 +719,7 @@ TRUNCATED = "… truncated, see log"
 
 def admin_message_html(fault: Fault, interaction: Interaction | None, frames: list[str], user_told: bool,
                        continued: str | None = None, outside_wrapper: bool = False, repeat: str | None = None,
-                       since: str | None = None) -> str:
+                       since: str | None = None, link: str | None = None) -> str:
     """ The admin message about a Fout, in HTML.
 
     interaction is the Interaction the Fout happened in, None outside one: its Code, who, and the media item it was
@@ -715,8 +727,8 @@ def admin_message_html(fault: Fault, interaction: Interaction | None, frames: li
     it leaves out who and the media, and its Code is that of the first failed attempt. frames are the own frames,
     the innermost first, which only a Bug shows. user told is only there with a person: a job never tells anyone.
     continued says how the code went on after reporting the Fout, outside_wrapper that error_handler caught it,
-    repeat is the text of the line Repeat: of a message that is a repetition, and since that of the line Since: of
-    a Storing.
+    repeat is the text of the line Repeat: of a message that is a repetition, since that of the line Since: of
+    a Storing, and link the link of the title on the line Media:, to the item in Sonarr or Radarr.
     """
     disruption = fault.kind == FaultKind.DISRUPTION
     person = None if disruption else interaction
@@ -726,9 +738,9 @@ def admin_message_html(fault: Fault, interaction: Interaction | None, frames: li
     lines = [f"{HEADS[fault.kind]} · {_escape(fault.what)}"]
     if fault.reason:
         status = f" (HTTP {fault.http_status})" if fault.http_status else ""
-        lines.append(f"Reason: <i>{_escape(_cut(fault.reason))}</i>{status}")
+        lines.append(f"Reason: <i>{_escape(cut_reason(fault.reason))}</i>{status}")
     if (original := _original_exception(fault)) is not None:
-        text = f": {_escape(_cut(str(original)))}" if str(original) else ""
+        text = f": {_escape(cut_reason(str(original)))}" if str(original) else ""
         lines.append(f"Exception: <code>{type(original).__name__}</code>{text}")
     if since:
         lines.append(f"Since: {_escape(since)}")
@@ -738,7 +750,9 @@ def admin_message_html(fault: Fault, interaction: Interaction | None, frames: li
         lines.append(f"Visitor: {_escape(person.tg_name)}")
     elif person and person.job:
         lines.append(f"Job: <code>{_escape(person.job)}</code>")
-    if media:
+    if media and link:
+        lines.append(f'Media: <a href="{html.escape(link)}">{_escape(_title(media))}</a>')
+    elif media:
         lines.append(f"Media: {_escape(_title(media))}")
     if outside_wrapper:
         lines.append("Caught by error_handler, outside the wrapper")
@@ -786,7 +800,7 @@ def restored_html(service: str, since: datetime, now: datetime, attempts: int, f
         if len(not_sent) > MAX_NOT_SENT:
             listed.append(f"+{len(not_sent) - MAX_NOT_SENT:,} more")
     return "\n".join([
-        f"✅ <b>Restored</b> · {_escape(_service_name(service))} is responding again",
+        f"✅ <b>Restored</b> · {_escape(service_name(service))} is responding again",
         f"Down: {_period(since, now)} ({_duration(since, now)}), {attempts:,} failed "
         f"{'attempt' if attempts == 1 else 'attempts'}",
         *listed,
@@ -798,7 +812,7 @@ def _not_sent_line(entry: dict) -> str:
     """ A Fout on the list Not sent meanwhile, like Bug · Radarr · k7p2qx, with only the service and the Code it has """
     parts = [_escape(str(entry["fault"]).title())]
     if entry["service"]:
-        parts.append(_escape(_service_name(entry["service"])))
+        parts.append(_escape(service_name(entry["service"])))
     if entry["code"]:
         parts.append(f"<code>{_escape(entry['code'])}</code>")
     return " · ".join(parts)
@@ -821,7 +835,7 @@ def _setup_key(service: str, check: str, item: int | str | None) -> str:
     return " ".join(str(part) for part in (service, check, item) if part is not None)
 
 
-def _service_name(service: str) -> str:
+def service_name(service: str) -> str:
     """ The name of a service for a person, like Radarr """
     return SERVICE_NAMES.get(service, service)
 
@@ -904,7 +918,7 @@ def _escape(text: str) -> str:
     return html.escape(text, quote=False)
 
 
-def _cut(text: str) -> str:
+def cut_reason(text: str) -> str:
     """ The text cut at MAX_REASON characters """
     return text if len(text) <= MAX_REASON else f"{text[:MAX_REASON - 1]}…"
 
