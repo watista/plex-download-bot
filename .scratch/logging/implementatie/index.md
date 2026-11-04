@@ -27,4 +27,5 @@ Afspraken voor elke issue:
 - De spec is de bron. Een issue noemt de onderdelen die hij uitvoert, en herhaalt ze alleen kort.
 - Tests met `unittest`, zonder nieuwe dependency: `python -m unittest discover -s tests`.
 - Elke issue op een eigen branch. Niet pushen of mergen zonder het te vragen.
+- Is een issue af, dan zet de laatste commit op zijn branch `Status: dicht` in de issue. Een issue die daarop wacht, kan dan beginnen vanaf die branch, ook als die nog niet in `main` zit.
 - Wijkt de code af van wat de spec of een issue zegt, of blijkt een besluit niet te werken: niet zelf beslissen, maar het voorleggen.

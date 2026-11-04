@@ -1,6 +1,6 @@
 # 01 Logregels in JSONL-dagbestanden
 
-Status: open
+Status: dicht
 Blocked by: –
 Niet tegelijk met: –
 
