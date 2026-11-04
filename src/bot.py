@@ -18,7 +18,7 @@ from src.commands.start import Start
 from src.commands.serie import Serie
 from src.commands.movie import Movie
 from src.commands.account import Account
-from src.commands.schedule import Schedule
+from src.commands.schedule import NOTIFY_COUNTS, Schedule
 from src.commands.message import Message
 from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
@@ -212,7 +212,9 @@ class Bot:
 
     def _register_jobs(self) -> None:
         """Registers the jobs, each with its name for the field job and
-        guarded so every run is an Interaction of its own."""
+        guarded so every run is an Interaction of its own, which ends with
+        the line job_finished: with the counts of the job, or with what a run
+        that finished did."""
         job_queue = self.application.job_queue
 
         # Once at the start
@@ -221,14 +223,15 @@ class Bot:
 
         # Recurring jobs need Plex/Sonarr/Radarr/Transmission — only in normal mode
         if self.mode == "normal":
-            job_queue.run_repeating(guard_job(self.schedule.check_notify_list, self.faults), interval=1800, first=0,
-                                    name="check_notify_list")
-            job_queue.run_repeating(guard_job(self.schedule.check_transmission, self.faults), interval=1800, first=0,
-                                    name="check_transmission")
-            job_queue.run_repeating(guard_job(self.sonarr.scan_missing_media, self.faults), interval=21600, first=0,
-                                    name="scan_missing_sonarr")
-            job_queue.run_repeating(guard_job(self.radarr.scan_missing_media, self.faults), interval=21600, first=0,
-                                    name="scan_missing_radarr")
+            job_queue.run_repeating(guard_job(self.schedule.check_notify_list, self.faults, counts=NOTIFY_COUNTS),
+                                    interval=1800, first=0, name="check_notify_list")
+            job_queue.run_repeating(guard_job(self.schedule.check_transmission, self.faults,
+                                              done="Transmission reachable"),
+                                    interval=1800, first=0, name="check_transmission")
+            job_queue.run_repeating(guard_job(self.sonarr.scan_missing_media, self.faults, done="missing search started"),
+                                    interval=21600, first=0, name="scan_missing_sonarr")
+            job_queue.run_repeating(guard_job(self.radarr.scan_missing_media, self.faults, done="missing search started"),
+                                    interval=21600, first=0, name="scan_missing_radarr")
 
     def _welcome_button_handlers(self) -> list:
         """CallbackQueryHandlers for the buttons on the /start welcome message.
