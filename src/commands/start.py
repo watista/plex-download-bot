@@ -26,10 +26,9 @@ MAX_LOGIN_TRIES = 3
 
 class Start:
 
-    def __init__(self, args, logger, functions, maintenance=None, telegram=None):
+    def __init__(self, args, functions, maintenance=None, telegram=None):
 
         # Set default values
-        self.log = logger
         self.function = functions
         self.mode = getattr(args, "mode", "normal")
         self.maintenance = maintenance

@@ -21,11 +21,9 @@ class AccountTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
         self.enterContext(patch("src.commands.account.asyncio.sleep", AsyncMock()))
 
-        self.log = MagicMock()
-        self.log.logger = AsyncMock()
         functions = MagicMock(send_message=AsyncMock(), sanitize_text=lambda text: text.replace("*", ""))
         self.telegram = MagicMock(send_admin_message=AsyncMock())
-        self.account = Account(self.log, functions, self.telegram)
+        self.account = Account(functions, self.telegram)
 
     async def test_only_the_name_of_an_account_request_gets_into_the_log(self):
         context = MagicMock(user_data={})
@@ -54,7 +52,6 @@ class AccountTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(about, "account request")
         for answer in ("Piet Puk", "piet@example.com", "0612345678", "via Klaas"):
             self.assertIn(answer, text)
-        self.log.logger.assert_not_awaited()
 
 
 if __name__ == "__main__":

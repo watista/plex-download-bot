@@ -17,11 +17,10 @@ log = get_logger(__name__)
 
 class Message:
 
-    def __init__(self, args, logger, functions, telegram):
+    def __init__(self, args, functions, telegram):
 
         # Set default values
         self.args = args
-        self.log = logger
         self.function = functions
         self.telegram = telegram
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"

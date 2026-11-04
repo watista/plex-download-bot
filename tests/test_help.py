@@ -23,11 +23,9 @@ class HelpTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.enterContext(patch("src.commands.help.asyncio.sleep", AsyncMock()))
         self.enterContext(patch("src.commands.privacy.asyncio.sleep", AsyncMock()))
 
-        self.log = MagicMock()
-        self.log.logger = AsyncMock()
         self.functions = MagicMock(send_message=AsyncMock())
         self.telegram = MagicMock(send_admin_message=AsyncMock())
-        self.help = Help(self.log, self.functions, self.telegram)
+        self.help = Help(self.functions, self.telegram)
 
     async def test_help_and_its_button_in_the_start_menu(self):
         self.assertEqual(await self.help.help_command(message("/help"), MagicMock()), HELP_CHOICE)
@@ -59,7 +57,6 @@ class HelpTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             "help: how to use this bot", "help: frequently asked questions", "help: new account", "help: quality",
             "help: other",
         ])
-        self.log.logger.assert_not_awaited()
 
     async def test_a_question_is_logged_as_it_was_typed(self):
         state = await self.help.other_reply(message("Kan *Dune* in 4K?\nGroet, Piet"), MagicMock())
@@ -72,14 +69,12 @@ class HelpTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         [(text, about)] = [call.args for call in self.telegram.send_admin_message.await_args_list]
         self.assertEqual(about, "question via /help")
         self.assertIn("Kan *Dune* in 4K?", text)
-        self.log.logger.assert_not_awaited()
 
     async def test_privacy(self):
-        await Privacy(self.log, self.functions).privacy_command(message("/privacy"), MagicMock())
+        await Privacy(self.functions).privacy_command(message("/privacy"), MagicMock())
 
         [line] = self.read(MAIN)
         self.assertEqual((line["event"], line["msg"]), ("command", "command /privacy"))
-        self.log.logger.assert_not_awaited()
 
 
 if __name__ == "__main__":

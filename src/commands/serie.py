@@ -24,8 +24,8 @@ class Serie(Media):
 
     filter_fields = ("path", "monitored", "status")
 
-    def __init__(self, args, logger, functions, telegram, faults):
-        super().__init__(args, logger, functions, telegram, faults, Sonarr(faults),
+    def __init__(self, args, functions, telegram, faults):
+        super().__init__(args, functions, telegram, faults, Sonarr(faults),
                          "serie", os.getenv('SERIE_FOLDERS'), SERIE_OPTION)
 
     async def get_media_states(self) -> dict:

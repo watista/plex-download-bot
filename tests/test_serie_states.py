@@ -34,7 +34,7 @@ class SerieTest(MovieTest):
 
     def setUp(self):
         super().setUp()
-        self.serie = Serie(SimpleNamespace(env="dev"), self.log, self.functions, self.telegram, self.faults)
+        self.serie = Serie(SimpleNamespace(env="dev"), self.functions, self.telegram, self.faults)
         self.serie.media_handler = self.radarr
         self.serie.write_to_stats = AsyncMock()
 
@@ -104,7 +104,6 @@ class SerieTest(MovieTest):
                          {"136315": {"started": False, "last": "S00E00"}})
         [line] = self.lines("series_updates")
         self.assertEqual(line["outcome"], "subscribed")
-        self.log.logger.assert_not_awaited()
         self.assertEqual(self.faults.fixes, [])
 
     async def test_subscribing_to_a_serie_without_a_tmdbId_is_a_bug(self):
@@ -119,7 +118,6 @@ class SerieTest(MovieTest):
                                                                    {"tmdbId": None}))
         self.assertEqual(fault.media["title"], "The Bear")
         self.functions.send_message.assert_not_awaited()
-        self.log.logger.assert_not_awaited()
         self.assertEqual(json.loads(self.data_json.read_text()), {"notify_list": {}})
 
     async def test_a_serie_without_a_tvdbId_falls_through_to_the_wrapper(self):
@@ -127,8 +125,6 @@ class SerieTest(MovieTest):
 
         with self.assertRaises(KeyError):
             await self.serie.media_option(self.update("0"), self.context(media_object=[without_id]))
-
-        self.log.logger.assert_not_awaited()
 
     async def test_no_subscription_after_a_request(self):
         await self.serie.aanmelden(self.update("no"), self.context(media_data=dict(THE_BEAR)))

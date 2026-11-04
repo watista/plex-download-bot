@@ -51,10 +51,9 @@ class ItemCheck:
 
 class Schedule:
 
-    def __init__(self, args, logger, functions, telegram, faults):
+    def __init__(self, args, functions, telegram, faults):
 
         # Set default values
-        self.log = logger
         self.function = functions
         self.telegram = telegram
         self.faults = faults

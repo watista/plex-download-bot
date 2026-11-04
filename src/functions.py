@@ -7,12 +7,8 @@ from pathlib import Path
 from telegram.error import RetryAfter
 
 class Functions:
-
-    def __init__(self, logger):
-
-        # Set default values
-        self.log = logger
-
+    """ Helpers of the commands, like the answers of the bot in a Gesprek. The text of an answer never gets into a
+    log line, as it can hold what someone typed. """
 
     # Send standard text message
     async def send_message(self, text: str, update, context, reply_markup=None, parse_mode='MarkdownV2', regular=True) -> None:
@@ -60,9 +56,6 @@ class Functions:
                         disable_web_page_preview=True
                     )
 
-        # Debug log
-        await self.log.logger(text, False, "debug", False)
-
 
     # Send message with GIF
     async def send_gif(self, caption: str, animation, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
@@ -84,9 +77,6 @@ class Functions:
                 reply_markup=reply_markup
             )
 
-        # Debug log
-        await self.log.logger(caption, False, "debug", False)
-
 
     # Send message with image
     async def send_image(self, caption: str, photo, update, context, reply_markup=None, parse_mode='MarkdownV2') -> None:
@@ -107,9 +97,6 @@ class Functions:
                 parse_mode=parse_mode,
                 reply_markup=reply_markup
             )
-
-        # Debug log
-        await self.log.logger(caption, False, "debug", False)
 
 
     # Escape reserverd characters for Markdown V2

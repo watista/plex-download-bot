@@ -71,11 +71,10 @@ def without_per_message_warning():
 
 class Bot:
 
-    def __init__(self, args, logger):
+    def __init__(self, args):
 
         # Set classes
         self.args = args
-        self.log = logger
         self.mode = getattr(args, "mode", "normal")
         # Cooldown bookkeeping for the "two pollers detected" group-chat notice.
         # Stored as a monotonic timestamp; 0.0 means "never notified yet".
@@ -143,13 +142,13 @@ class Bot:
         # From here on a crash is a Fout too
         install_excepthook(self.faults)
 
-        self.function = Functions(logger)
-        self.privacy = Privacy(logger, self.function)
-        self.help = Help(logger, self.function, self.telegram)
-        self.maintenance = Maintenance(logger, self.function)
-        self.start = Start(args, logger, self.function, self.maintenance, self.telegram)
-        self.account = Account(logger, self.function, self.telegram)
-        self.message = Message(args, logger, self.function, self.telegram)
+        self.function = Functions()
+        self.privacy = Privacy(self.function)
+        self.help = Help(self.function, self.telegram)
+        self.maintenance = Maintenance(self.function)
+        self.start = Start(args, self.function, self.maintenance, self.telegram)
+        self.account = Account(self.function, self.telegram)
+        self.message = Message(args, self.function, self.telegram)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
         # /log reads the day files of this host, and says which host that is
@@ -159,10 +158,10 @@ class Bot:
         # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
         # normal mode; on the standby (maintenance) host they would just fail.
         if self.mode == "normal":
-            self.serie = Serie(args, logger, self.function, self.telegram, self.faults)
-            self.movie = Movie(args, logger, self.function, self.telegram, self.faults)
-            self.schedule = Schedule(args, logger, self.function, self.telegram, self.faults)
-            self.subscribe = Subscribe(args, logger, self.function, self.telegram, self.faults)
+            self.serie = Serie(args, self.function, self.telegram, self.faults)
+            self.movie = Movie(args, self.function, self.telegram, self.faults)
+            self.schedule = Schedule(args, self.function, self.telegram, self.faults)
+            self.subscribe = Subscribe(args, self.function, self.telegram, self.faults)
             self.sonarr = Sonarr(self.faults)
             self.radarr = Radarr(self.faults)
             self.start.subscribe = self.subscribe
@@ -546,8 +545,9 @@ class Bot:
         and reacts by starting the fallback bot immediately, instead of
         waiting for the silence threshold.
 
-        Any error is logged and swallowed: a missed goodbye is not a fault
-        condition because the silence-based takeover still covers it.
+        Any exception other than a failed goodbye is a Bug. It is reported
+        and not raised: the rest of the stop still has to happen, and the
+        silence-based takeover still covers a missed goodbye.
         """
         target_host = os.getenv("HEARTBEAT_TARGET_HOST")
         if not target_host:
@@ -558,10 +558,18 @@ class Bot:
             return
 
         try:
-            _reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(target_host, target_port),
-                timeout=3,
-            )
+            await self._goodbye(target_host, target_port)
+        except Exception as error:
+            await self.faults.report(as_fault(error, what="The goodbye to the fallback host failed"),
+                                     continued="went on stopping the bot")
+
+    async def _goodbye(self, host: str, port: int) -> None:
+        """The goodbye: a connection to the watcher that says BYE, with a
+        few seconds at most for each step, as the bot is stopping. Like a
+        heartbeat, it ends a Storing of the fallback host, or is a failed
+        attempt of one."""
+        try:
+            _reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=3)
             writer.write(b"BYE\n")
             try:
                 await asyncio.wait_for(writer.drain(), timeout=2)
@@ -570,17 +578,16 @@ class Bot:
             writer.close()
             try:
                 await asyncio.wait_for(writer.wait_closed(), timeout=2)
-            except (asyncio.TimeoutError, Exception):
+            except Exception:
+                # The watcher already has the goodbye; how it closes does not matter
                 pass
-            await self.log.logger(
-                f"Goodbye signal sent to {target_host}:{target_port}.",
-                False, "info", False,
-            )
-        except Exception as e:
-            await self.log.logger(
-                f"Failed to send goodbye to {target_host}:{target_port}: {e}",
-                False, "warning", False,
-            )
+        except (OSError, asyncio.TimeoutError) as error:
+            fault = Fault.disruption(service="fallback", what="The fallback host is not responding")
+            fault.__cause__ = error
+            await self.faults.report(fault, continued="went on stopping the bot")
+            return
+        log.info(f"goodbye sent to {host}:{port}")
+        await self.faults.ok("fallback")
 
     async def error_handler(self, update: object, context: CallbackContext) -> None:
         """ The safety net behind the wrappers.

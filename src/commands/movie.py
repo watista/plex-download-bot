@@ -20,8 +20,8 @@ class Movie(Media):
 
     filter_fields = ("id", "movieFileId", "monitored", "status")
 
-    def __init__(self, args, logger, functions, telegram, faults):
-        super().__init__(args, logger, functions, telegram, faults, Radarr(faults),
+    def __init__(self, args, functions, telegram, faults):
+        super().__init__(args, functions, telegram, faults, Radarr(faults),
                          "film", os.getenv('MOVIE_FOLDERS'), MOVIE_OPTION)
 
     async def get_media_states(self) -> dict:

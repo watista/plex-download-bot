@@ -64,9 +64,7 @@ class MovieTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         setup_logging("dev", "INFO", str(self.folder), False)
         self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
 
-        # Logger and functions without Telegram
-        self.log = MagicMock()
-        self.log.logger = AsyncMock()
+        # Functions without Telegram
         functions = MagicMock()
         functions.sanitize_text = lambda text: text.replace("*", "").replace("_", "")
         functions.send_message = AsyncMock()
@@ -77,7 +75,7 @@ class MovieTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.faults = FakeFaults()
 
         # Movie with a fake Radarr that has room on its disk
-        self.movie = Movie(SimpleNamespace(env="dev"), self.log, functions, self.telegram, self.faults)
+        self.movie = Movie(SimpleNamespace(env="dev"), functions, self.telegram, self.faults)
         self.radarr = MagicMock()
         self.radarr.get_disk_space = AsyncMock(return_value=[{"path": "/media", "freeSpace": 500 * 1024 ** 3}])
         self.radarr.queue_download = AsyncMock(return_value={"id": 1})
@@ -149,7 +147,6 @@ class MovieStateTest(MovieTest):
 
         [message] = self.admin_messages()
         self.assertIn("User has requested the film New Movie (2025)", message)
-        self.log.logger.assert_not_awaited()
         self.assertNotIn("User has requested", self.raw(MAIN))
 
     async def test_unmonitored_movie_in_radarr_is_not_added_again(self):
@@ -237,7 +234,6 @@ class MovieStateTest(MovieTest):
         self.assertEqual((line["msg"], line["outcome"]), ("chose option 1: New Movie (2025): failed", "failed"))
         # The wrapper sends the Foutmelding, and the meldfunctie the one admin message
         self.functions.send_message.assert_not_awaited()
-        self.log.logger.assert_not_awaited()
         self.assertEqual(self.admin_messages(), [])
 
     async def test_a_failed_search_for_missing_movies_is_reported_and_the_request_goes_on(self):
@@ -269,7 +265,6 @@ class MovieStateTest(MovieTest):
         [line] = self.lines("media_request")
         self.assertEqual((line["msg"], line["outcome"]), ("chose option 1: Dune: Part Two (2024): failed", "failed"))
         self.functions.send_message.assert_not_awaited()
-        self.log.logger.assert_not_awaited()
         self.assertEqual(self.admin_messages(), [])
 
     async def test_a_movie_without_a_tmdbId_falls_through_to_the_wrapper(self):
@@ -281,7 +276,6 @@ class MovieStateTest(MovieTest):
         [line] = self.lines("media_request")
         self.assertEqual(line["outcome"], "failed")
         self.functions.send_message.assert_not_awaited()
-        self.log.logger.assert_not_awaited()
 
     async def test_stats_that_cannot_be_written_are_reported_and_the_request_goes_on(self):
         del self.movie.write_to_stats
@@ -295,7 +289,6 @@ class MovieStateTest(MovieTest):
                          (FaultKind.BUG, "Could not write the request to stats.json",
                           "went on without counting the request", False))
         self.assertIsInstance(report.fault.__cause__, FileNotFoundError)
-        self.log.logger.assert_not_awaited()
 
     async def test_no_disk_with_room_is_an_inrichtingsfout(self):
         self.radarr.get_disk_space = AsyncMock(return_value=[{"path": "/media", "freeSpace": 100 * 1024 ** 3}])
@@ -313,7 +306,6 @@ class MovieStateTest(MovieTest):
         self.assertEqual(line["outcome"], "failed")
         # The wrapper tells the user, with the Code
         self.functions.send_message.assert_not_awaited()
-        self.log.logger.assert_not_awaited()
 
     async def test_a_disk_with_room_passes_both_checks(self):
         await self.choose(NEW_MOVIE)
