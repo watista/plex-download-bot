@@ -39,7 +39,7 @@ Het command `/log` voor de Beheerder, met een eigen loglezer. Het werkt vanaf 02
 
 ## Besluiten bij de uitvoering
 
-Genomen op 2026-11-04, waar de issue en de spec niets zeggen. De eerste twee veranderen een interface uit de spec, en zijn voorgelegd.
+Genomen op 2026-11-04, waar de issue en de spec niets zeggen. De eerste twee veranderen een interface uit de spec. Ze zijn na de review voorgelegd en besloten op 2026-11-04, en bijgewerkt in de spec ([11. `/log`](../spec.md#lezen), punt 12, [Telegram](../spec.md#telegram), punt 11, en de rijen "Loglezer" en "Verzendfunctie" in [Modules](../spec.md#modules)).
 
 - **`search` kreeg `after`**: `search(folder, env, query, before=None, after=None)` in `src/log/search.py`. "Later ➡️" heeft de regels ná een positie nodig, en een knop draagt maar één positie, dus met alleen `before` kan het niet. Ook `after` leest achterwaarts, en stopt bij die positie. `folder` en `env` gaan mee, want de lezer heeft geen toestand op moduleniveau. Komt "Later" bij de nieuwste regels uit, dan toont hij de nieuwste pagina, net als `/log` zelf.
 - **De verzendfunctie stuurt ook de pagina's van `/log`.** `send` kreeg `markup` (de knoppen) en `edit` (het bericht dat een pagina vervangt). Zo gaat een pagina die Telegram weigert, opnieuw als platte tekst met de regel ⚠️ en een Bug-regel, zonder een kopie van die code in `/log`. `send` kapt nu af op 4096 tekens zoals Telegram ze telt, in UTF-16, zonder een emoji te halveren.
