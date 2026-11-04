@@ -200,6 +200,8 @@ class Bot:
         if self.mode == "normal":
             job_queue.run_repeating(guard_job(self.schedule.check_notify_list, self.faults), interval=1800, first=0,
                                     name="check_notify_list")
+            job_queue.run_repeating(guard_job(self.schedule.check_transmission, self.faults), interval=1800, first=0,
+                                    name="check_transmission")
             job_queue.run_repeating(guard_job(self.sonarr.scan_missing_media, self.faults), interval=21600, first=0,
                                     name="scan_missing_sonarr")
             job_queue.run_repeating(guard_job(self.radarr.scan_missing_media, self.faults), interval=21600, first=0,

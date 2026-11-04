@@ -10,10 +10,14 @@ from datetime import datetime, timezone
 from telegram.ext import CallbackContext
 
 from src.faults import Fault, FaultKind, service_name
+from src.log import get_logger
 from src.services.radarr import Radarr
 from src.services.sonarr import Sonarr
 from src.services.plex import Plex
-from src.services.transmission import check_transmission_and_trigger_scans
+from src.services.transmission import TransmissionService
+
+
+log = get_logger(__name__)
 
 
 class Schedule:
@@ -27,28 +31,42 @@ class Schedule:
         self.faults = faults
         self.radarr = Radarr(faults)
         self.sonarr = Sonarr(faults)
-        self.plex = Plex(logger)
+        self.plex = Plex(faults)
+        self.transmission = TransmissionService(faults)
+
+        # Whether Transmission answered at the previous run of check_transmission: None before the first run after
+        # a start, when the bot does not know
+        self._last_transmission_up: bool | None = None
 
         # Set data.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
+
+    async def check_transmission(self, context: CallbackContext) -> None:
+        """ Checks that Transmission answers. A Fault ends the run, and goes to the wrapper of the job.
+
+        When Transmission answers while it did not at the previous run, Sonarr and Radarr start the searches for their
+        missing media: what they found meanwhile could not go to Transmission. After a start the bot does not know
+        whether Transmission answered before, so the first run starts nothing.
+        """
+        try:
+            await self.transmission.check()
+        except Fault:
+            self._last_transmission_up = False
+            raise
+
+        back = self._last_transmission_up is False
+        self._last_transmission_up = True
+        if back:
+            log.info("Transmission is back: starting the missing searches in Sonarr and Radarr",
+                     event="transmission_back")
+            await self.sonarr.scan_missing_media()
+            await self.radarr.scan_missing_media()
 
     async def check_notify_list(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list.
 
         An Inrichtingsfout of one item is reported, and the run skips that item. A Storing or a Bug ends the run.
         """
-
-        # Check Transmission health on every schedule tick.
-        # If it just recovered, this will trigger Radarr/Sonarr missing-media scans.
-        try:
-            await check_transmission_and_trigger_scans(
-                logger=self.log,
-                radarr=self.radarr,
-                sonarr=self.sonarr,
-            )
-        except Exception:
-            # Never fail the schedule job because of Transmission.
-            pass
 
         # Load JSON file
         async with aiofiles.open(self.data_json, "r") as file:
@@ -105,7 +123,7 @@ class Schedule:
                         # Check if media_folder contains any files or subdirectories
                         if any(media_folder.iterdir()):
                             # Get Plex URL
-                            media_plex_url = await self.plex.get_media_url(media_json, media_type)
+                            media_plex_url = await self.plex.link(media_json, media_type)
 
                             # The title in HTML for the user, and without * and _ for the MarkdownV2 of the Beheerder
                             html_title = html.escape(media_json['title'])
@@ -170,7 +188,7 @@ class Schedule:
                     if max_seen > last_notified:
                         html_title = html.escape(media_json["title"])
                         sanitize_title = self.function.sanitize_text(media_json["title"])
-                        media_plex_url = await self.plex.get_media_url(media_json, "serie")
+                        media_plex_url = await self.plex.link(media_json, "serie")
 
                         new_seasons = sorted(s for s in seasons_count if s > last_notified)
                         if len(new_seasons) == 1:
@@ -226,7 +244,7 @@ class Schedule:
 
                     html_title = html.escape(media_json["title"])
                     sanitize_title = self.function.sanitize_text(media_json["title"])
-                    media_plex_url = await self.plex.get_media_url(media_json, "serie")
+                    media_plex_url = await self.plex.link(media_json, "serie")
 
                     # Generate episode list text
                     eps_text = self.format_episode_list(new_episodes)
