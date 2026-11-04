@@ -25,8 +25,10 @@ log = get_logger(__name__)
 # The seconds between two attempts, after a Storing
 RETRY_WAIT = 3
 
-# The setting with the key of a service, which a 401 or 403 says is wrong
-KEYS = {"radarr": "RADARR_API", "sonarr": "SONARR_API"}
+# The setting with the key of a service, which a 401 or 403 says is wrong. Transmission takes a user and a password,
+# and does not say which of the two it refuses.
+KEYS = {"radarr": "RADARR_API", "sonarr": "SONARR_API", "plex": "PLEX_API",
+        "transmission": "TRANSMISSION_USER and TRANSMISSION_PWD"}
 
 # What an attempt raises when the service cannot be reached: a Storing. A client converts the exceptions of its
 # library to one of these.

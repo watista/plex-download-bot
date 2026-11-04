@@ -12,7 +12,7 @@ from telegram.ext import CallbackContext, ConversationHandler
 
 from src.states import REQUEST_AGAIN, REQUEST_MOVIE, REQUEST_SERIE, AANMELDEN_SERIE
 from src.services.plex import Plex
-from src.services.transmission import TransmissionService, check_transmission_and_trigger_scans
+from src.services.transmission import TransmissionService
 from src.commands.start import Start
 from src.faults import Fault, service_name
 from src.interaction import working_on
@@ -78,7 +78,7 @@ class Media(ABC):
         self.label = label
         self.media_folder = media_folder
         self.option_state = option_state
-        self.plex = Plex(self.log)
+        self.plex = Plex(self.faults)
         self.start = Start(self.args, self.log, self.function)
 
         # Set data.json/stats.json file based on live/dev arg
@@ -271,9 +271,14 @@ class Media(ABC):
         # Only the size check below may unmonitor this download, user_data is persisted between requests
         context.user_data.pop("set_monitored", None)
 
-        # Check Transmission and fetch active torrents
-        transmission = TransmissionService(self.log)
-        transmission_up, active_torrents = await transmission.get_active_torrents()
+        # The torrents in Transmission. Without them the request goes on: the download goes to Radarr or Sonarr, and
+        # the user hears there is no room to start it yet.
+        try:
+            active_torrents = await TransmissionService(self.faults).get_active_torrents()
+            transmission_up = True
+        except Fault as fault:
+            await self.faults.report(fault, continued="went on without the torrents in Transmission")
+            active_torrents, transmission_up = [], False
 
         # Get the media states
         states = await self.get_media_states()
@@ -355,7 +360,7 @@ class Media(ABC):
                 if state == "already_downloaded":
 
                     # Get the Plęx url of the media
-                    media_plex_url = await self.plex.get_media_url(context.user_data['media_data'], context.user_data['label'])
+                    media_plex_url = await self.plex.link(context.user_data['media_data'], context.user_data['label'])
                     if not media_plex_url:
                         await self.function.send_message(f"Zo te zien is {context.user_data['media_data']['title']} al gedownløad.", update, context)
                     else:
@@ -400,17 +405,6 @@ class Media(ABC):
 
                 # Write to stats file
                 await self.write_to_stats(update, context)
-
-                # Check if Transmission recovered and kick missing-media scans if so.
-                try:
-                    await check_transmission_and_trigger_scans(
-                        logger=self.log,
-                        radarr=self.media_handler if context.user_data.get("label") == "film" else None,
-                        sonarr=self.media_handler if context.user_data.get("label") == "serie" else None,
-                    )
-                except Exception:
-                    # Never fail the user flow because of a health check.
-                    pass
 
                 # Return the next specific state
                 return details["next_state"]

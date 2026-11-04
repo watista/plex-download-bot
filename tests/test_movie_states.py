@@ -1,14 +1,17 @@
 #!/usr/bin/python3
 
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import requests
 from telegram.ext import ConversationHandler
 
 from src.commands.movie import Movie
 from src.faults import Fault, FaultKind
 from src.log import setup_logging
+from src.services.plex import Plex
 from src.states import MOVIE_NOTIFY, MOVIE_OPTION
 from test_interaction import FakeFaults
 from test_log import MAIN, LogFolder
@@ -81,14 +84,13 @@ class MovieTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.radarr.scan_missing_media = AsyncMock()
         self.movie.media_handler = self.radarr
         self.movie.write_to_stats = AsyncMock()
-        self.movie.plex.get_media_url = AsyncMock(return_value=None)
+        self.movie.plex.link = AsyncMock(return_value=None)
 
         # Transmission is up and has no active torrents
         self.transmission = MagicMock()
-        self.transmission.return_value.get_active_torrents = AsyncMock(return_value=(True, []))
+        self.transmission.return_value.get_active_torrents = AsyncMock(return_value=[])
         for target, value in [
             ("src.commands.media.TransmissionService", self.transmission),
-            ("src.commands.media.check_transmission_and_trigger_scans", AsyncMock()),
             ("src.commands.media.asyncio.sleep", AsyncMock()),
         ]:
             patcher = patch(target, value)
@@ -183,13 +185,44 @@ class MovieStateTest(MovieTest):
         self.assertEqual(line["outcome"], "already_downloaded")
         self.assertTrue(any("while it's already downløaded" in msg for msg in self.admin_messages()))
 
+    async def test_downloaded_movie_with_its_link_in_plex(self):
+        self.movie.plex.link = AsyncMock(return_value="https://app.plex.tv/desktop/#!/server/id/details?key=7")
+
+        await self.choose(DOWNLOADED)
+
+        self.movie.plex.link.assert_awaited_once_with(DOWNLOADED, "film")
+        answer = self.functions.send_message.await_args_list[0].args[0]
+        self.assertIn("<a href='https://app.plex.tv/desktop/#!/server/id/details?key=7'>Bekijk Dune in de browser</a>",
+                      answer)
+
+    async def test_downloaded_movie_whose_plex_link_fails_gets_the_answer_without_it(self):
+        self.enterContext(patch.dict(os.environ, {"PLEX_URL": "http://plex.example.com:32400"}))
+        refused = requests.exceptions.ConnectionError("Connection refused")
+        self.enterContext(patch("src.services.plex.PlexServer", side_effect=refused))
+        self.movie.plex = Plex(self.faults)
+
+        await self.choose(DOWNLOADED)
+
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.service, report.continued, report.user_told),
+                         (FaultKind.DISRUPTION, "plex", "sent the answer without a Plex link", False))
+        answer = self.functions.send_message.await_args_list[0].args[0]
+        self.assertEqual(answer, "Zo te zien is Dune al gedownløad.")
+
     async def test_user_hears_there_is_no_space_while_transmission_is_down(self):
-        self.transmission.return_value.get_active_torrents = AsyncMock(return_value=(False, []))
+        not_responding = Fault.disruption(service="transmission", what="Transmission is not responding")
+        self.transmission.return_value.get_active_torrents = AsyncMock(side_effect=not_responding)
 
-        await self.choose(NEW_MOVIE)
+        state = await self.choose(NEW_MOVIE)
 
+        # The request goes on, and the download is in Radarr for when Transmission is back
+        self.assertEqual(state, MOVIE_NOTIFY)
+        self.radarr.queue_download.assert_awaited_once()
         [line] = self.lines("media_request")
         self.assertEqual(line["outcome"], "no_space")
+        [report] = self.faults.reports
+        self.assertEqual((report.fault, report.continued, report.user_told),
+                         (not_responding, "went on without the torrents in Transmission", False))
 
     async def test_a_download_that_radarr_refuses_falls_through_to_the_wrapper(self):
         refused = Fault.bug(what="Radarr refused the movie request", service="radarr",
