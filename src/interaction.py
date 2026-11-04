@@ -10,6 +10,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field, replace
+from time import monotonic
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import aiofiles
@@ -46,8 +47,8 @@ RESTART_AFTER = 60
 class Interaction:
     """ The context of an Interaction.
 
-    Its Code, the person of an update or the name of a job, and the media item it is working on (working_on),
-    which only the meldfunctie reads.
+    Its Code, the person of an update or the name of a job, the media item it is working on (working_on), which only
+    the meldfunctie reads, and the counts of a run (tally), which only guard_job reads.
     """
     code: str
     user_id: int | None = None
@@ -55,6 +56,8 @@ class Interaction:
     tg_name: str | None = None
     job: str | None = None
     media: dict | None = field(default=None, compare=False)
+    # Changed in place, so working_on keeps them, and a task that the run started counts for the run
+    counts: dict[str, int] = field(default_factory=dict, compare=False)
 
 
 # The Interaction that the current code runs in, None outside one (start, polling, the heartbeat)
@@ -87,15 +90,33 @@ def working_on(media: dict | None) -> None:
         _current.set(replace(interaction, media=media))
 
 
+def tally(name: str, n: int = 1) -> None:
+    """ Counts n for name in the current Interaction, for the line job_finished at the end of a run.
+
+    Outside an Interaction there is nothing to count for. In an update the count goes nowhere: only a run ends with a
+    line.
+    """
+    interaction = _current.get()
+    if interaction is not None:
+        interaction.counts[name] = interaction.counts.get(name, 0) + n
+
+
 async def account_for(user_id: int, data_json: str) -> str | None:
     """ The account name of a user ID in the user list of data.json, None for a Bezoeker.
 
-    The user list holds "account name, Telegram name" per user ID. A blocked user ID is a Bezoeker,
-    also when it is still in the user list. data.json is read on every call, so a Bezoeker who just
-    logged in is a Gebruiker from the next update on.
+    data.json is read on every call, so a Bezoeker who just logged in is a Gebruiker from the next update on.
     """
     async with aiofiles.open(data_json, "r") as file:
         data = json.loads(await file.read())
+    return account_in(data, user_id)
+
+
+def account_in(data: dict, user_id: int | str) -> str | None:
+    """ The account name of a user ID in the user list of data, the contents of data.json; None for a Bezoeker.
+
+    The user list holds "account name, Telegram name" per user ID. A blocked user ID is a Bezoeker,
+    also when it is still in the user list.
+    """
     if str(user_id) in data.get("blocked_users", {}):
         return None
     entry = data.get("user_id", {}).get(str(user_id))
@@ -210,13 +231,19 @@ def guard(callback: Callable[[Update, CallbackContext], Awaitable[T]], faults: "
     return guarded
 
 
-def guard_job(callback: Callable[[CallbackContext], Awaitable[T]],
-              faults: "FaultReporter") -> Callable[[CallbackContext], Awaitable[T | None]]:
+def guard_job(callback: Callable[[CallbackContext], Awaitable[T]], faults: "FaultReporter",
+              counts: dict[str, str | None] | None = None,
+              done: str | None = None) -> Callable[[CallbackContext], Awaitable[T | None]]:
     """ Runs every run of a job as an Interaction of its own: a new Code and the name of the job, no person.
 
     Wraps the callback when the job is registered, with its name: run_repeating(guard_job(callback, faults), ...,
     name=...). A Fout stops the run and goes to faults, the meldfunctie, like in guard. A job tells no one, so there
     is no Foutmelding.
+
+    Every run ends with the line job_finished, also a run that a Fout stopped: whether it finished, how long it took,
+    and what it counted with tally until then. counts names the counts of the job, each with how msg says it, like
+    {"items": "{n} item{s} checked"}, or None to keep it to its field; a count the run did not keep is 0. done is
+    what msg says after a run that finished, like "Transmission reachable".
     """
 
     @functools.wraps(callback)
@@ -224,14 +251,35 @@ def guard_job(callback: Callable[[CallbackContext], Awaitable[T]],
         # Set here, not inherited: a job only gets the context its scheduler runs in, at best none.
         # No reset afterwards: PTB runs every job in a task of its own, so this context ends with the run,
         # and the error_handler that PTB starts from that task after an exception still gets it.
-        _current.set(Interaction(new_code(), job=context.job.name))
+        run = Interaction(new_code(), job=context.job.name)
+        _current.set(run)
+        started = monotonic()
+        finished = False
         try:
-            return await callback(context)
+            result = await callback(context)
+            finished = True
+            return result
         except Exception as error:
             await faults.report(_as_fault(_without_wrapper_frame(error)))
             return None
+        finally:
+            _job_finished(run, monotonic() - started, finished, counts or {}, done)
 
     return guarded
+
+
+def _job_finished(run: Interaction, seconds: float, finished: bool, counts: dict[str, str | None],
+                  done: str | None) -> None:
+    """ The last line of a run, like "check_notify_list finished in 4.2 s: 14 items checked, 2 messages sent" """
+    duration_ms = round(seconds * 1000)
+    values = {name: run.counts.get(name, 0) for name in counts} | run.counts
+    summary = [phrase.format(n=values[name], s="" if values[name] == 1 else "s")
+               for name, phrase in counts.items() if phrase is not None]
+    if finished and done:
+        summary.append(done)
+    took = f"finished in {duration_ms / 1000:.1f} s" if finished else f"stopped after {duration_ms / 1000:.1f} s"
+    log.info(f"{run.job} {took}" + (f": {', '.join(summary)}" if summary else ""), event="job_finished",
+             outcome="ok" if finished else "stopped", duration_ms=duration_ms, **values)
 
 
 async def guard_task(coro_fn: Callable[[], Awaitable[None]], faults: "FaultReporter",

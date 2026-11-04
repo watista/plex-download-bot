@@ -15,7 +15,7 @@ from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, Tele
 from telegram.request import HTTPXRequest, RequestData
 
 from src.faults import Fault, FaultKind, FaultReporter
-from src.interaction import Send
+from src.interaction import Send, tally
 from src.log import get_logger, mask
 
 
@@ -200,7 +200,8 @@ class TelegramOut:
         kind is online, new_season, new_episodes, message or broadcast, and media the item it is about. The
         line has the user_id and account of the receiver, also in a run of a job, but not the text: that of
         a message or broadcast is in the line admin_command of the Beheerder already. A message that does not
-        arrive is a WARNING with the reason. A Fault of Telegram falls through.
+        arrive is a WARNING with the reason. Both count for a run, as sent or not_delivered. A Fault of Telegram
+        falls through, and counts as neither.
         """
         user_id = int(user_id)
         account = await self._account_for(user_id)
@@ -209,9 +210,11 @@ class TelegramOut:
         if delivery.delivered:
             log.info(f"sent user message {kind}{about}", user_id=user_id, account=account, event="user_message",
                      kind=kind, media=media)
+            tally("sent")
         else:
             log.warning(f"user message {kind}{about} not delivered: {delivery.reason}", user_id=user_id,
                         account=account, event="user_message", kind=kind, reason=delivery.reason, media=media)
+            tally("not_delivered")
         return delivery
 
     @classmethod

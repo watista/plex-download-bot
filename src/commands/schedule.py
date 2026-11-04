@@ -5,11 +5,16 @@ import json
 import re
 import time
 import aiofiles
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timezone
 from telegram.ext import CallbackContext
 
+from src.commands.media import title_and_year
 from src.faults import Fault, FaultKind, service_name
+from src.interaction import account_in, tally, working_on
 from src.log import get_logger
 from src.services.radarr import Radarr
 from src.services.sonarr import Sonarr
@@ -18,6 +23,30 @@ from src.services.transmission import TransmissionService
 
 
 log = get_logger(__name__)
+
+# The counts of a run of check_notify_list for guard_job, each with how its line job_finished says it: items checked
+# and Gebruikersberichten delivered (counted by send_user_message), and only as fields the Gebruikersberichten that
+# did not arrive (counted by send_user_message too) and the items skipped by an Inrichtingsfout
+NOTIFY_COUNTS = {
+    "items": "{n} item{s} checked",
+    "sent": "{n} message{s} sent",
+    "not_delivered": None,
+    "skipped": None,
+}
+
+
+@dataclass
+class ItemCheck:
+    """ What check_notify_list found for one item of the notify list, for its line notify_check.
+
+    media is the movie or series in Radarr or Sonarr, or only its tmdbId when the run skipped the item before Radarr
+    or Sonarr gave it. folder is its folder, None when there is none to look in. outcome is what the check came to:
+    no_data, no_folder, seasons_missing (with the seasons missing), empty_folder, nothing_new or sent.
+    """
+    media: dict
+    folder: Path | None
+    outcome: str | None = None
+    missing: list[str] | None = None
 
 
 class Schedule:
@@ -65,7 +94,8 @@ class Schedule:
     async def check_notify_list(self, context: CallbackContext) -> None:
         """ Checks if someone needs to be notified from the JSON notify list.
 
-        An Inrichtingsfout of one item is reported, and the run skips that item. A Storing or a Bug ends the run.
+        Every item checked counts for the run, and gets a line notify_check with its outcome. An Inrichtingsfout of one
+        item is reported, and the run skips that item. A Storing or a Bug ends the run.
         """
 
         # Load JSON file
@@ -89,6 +119,9 @@ class Schedule:
                 gebruiker = name_parts[0]
                 username = name_parts[1]
 
+                # Who gets the Gebruikersberichten, for the lines notify_check
+                receiver = {"user_id": int(user_id), "account": account_in(data, user_id)}
+
                 # Ensure keys exist
                 media_types.setdefault("serie", {})
                 media_types.setdefault("film", {})
@@ -97,31 +130,35 @@ class Schedule:
 
                 # Itarate through serie and movie options
                 for media_type in ["serie", "film"]:
+                    client = self.sonarr if media_type == "serie" else self.radarr
+
                     # Iterate through all media ID's
                     for media_id, timestamp in list(media_types[media_type].items()):
+                        async with self.checking("online", receiver, client, media_id) as check:
+                            if check.folder is None:
+                                continue
+                            media_json, media_folder = check.media, check.folder
 
-                        # The item in Sonarr or Radarr, and its folder once it has one
-                        client = self.sonarr if media_type == "serie" else self.radarr
-                        media_json, media_folder = await self.media_with_folder(client, media_id)
-                        if media_folder is None:
-                            continue
+                            # Check if all episodes are downloaded
+                            if media_type == "serie":
+                                total_seasons = self.effective_season_count(media_json)
 
-                        # Check if all episodes are downloaded
-                        if media_type == "serie":
-                            total_seasons = self.effective_season_count(media_json)
+                                # Build required season tags: {"S01", "S02", ...}
+                                required = {f"S{n:02d}" for n in range(1, total_seasons + 1)}
 
-                            # Build required season tags: {"S01", "S02", ...}
-                            required = {f"S{n:02d}" for n in range(1, total_seasons + 1)}
+                                # Get amount of seasons
+                                found, count = self.seasons_present_in_folder(media_folder)
 
-                            # Get amount of seasons
-                            found, count = self.seasons_present_in_folder(media_folder)
+                                # If any required season is missing, skip
+                                if found < required:
+                                    check.outcome, check.missing = "seasons_missing", sorted(required - found)
+                                    continue
 
-                            # If any required season is missing, skip
-                            if found < required:
+                            # Skip a media_folder without any files or subdirectories
+                            if not any(media_folder.iterdir()):
+                                check.outcome = "empty_folder"
                                 continue
 
-                        # Check if media_folder contains any files or subdirectories
-                        if any(media_folder.iterdir()):
                             # Get Plex URL
                             media_plex_url = await self.plex.link(media_json, media_type)
 
@@ -134,6 +171,7 @@ class Schedule:
                                 user_id, "online",
                                 f"Goed nieuws! 🎉\n\nDe {media_type} die je hebt aangevraagd, <b>{html_title}</b>, staat nu online op Plęx. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
                                 media_json)
+                            check.outcome = "sent"
                             if delivery.delivered:
                                 notified.append((f"*ℹ️ User notified: The {media_type} {sanitize_title} ({media_id}) is online ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: online"))
 
@@ -169,96 +207,103 @@ class Schedule:
 
                 # Itarate through recurring_serie options
                 for media_id, state in list(media_types.get("recurring_serie", {}).items()):
+                    async with self.checking("new_season", receiver, self.sonarr, media_id) as check:
+                        if check.folder is None:
+                            continue
+                        media_json, media_folder = check.media, check.folder
 
-                    # The series in Sonarr, and its folder once it has one
-                    media_json, media_folder = await self.media_with_folder(self.sonarr, media_id)
-                    if media_folder is None:
-                        continue
+                        seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
+                        if not seasons_count:
+                            check.outcome = "empty_folder"
+                            continue
 
-                    seasons_name, seasons_count = self.seasons_present_in_folder(media_folder)
-                    if not seasons_count:
-                        continue
+                        max_seen = max(seasons_count)
 
-                    max_seen = max(seasons_count)
+                        last_notified = int(state.get("last_notified_season", 0))
+                        last_seen = int(state.get("last_seen_season", 0))
 
-                    last_notified = int(state.get("last_notified_season", 0))
-                    last_seen = int(state.get("last_seen_season", 0))
+                        # Notify if we see a new season number in files
+                        check.outcome = "nothing_new"
+                        if max_seen > last_notified:
+                            html_title = html.escape(media_json["title"])
+                            sanitize_title = self.function.sanitize_text(media_json["title"])
+                            media_plex_url = await self.plex.link(media_json, "serie")
 
-                    # Notify if we see a new season number in files
-                    if max_seen > last_notified:
+                            new_seasons = sorted(s for s in seasons_count if s > last_notified)
+                            if len(new_seasons) == 1:
+                                season_text = f"seizoen {new_seasons[0]}"
+                            else:
+                                season_text = "seizoen " + " en ".join(str(s) for s in new_seasons)
+
+                            delivery = await self.telegram.send_user_message(
+                                user_id, "new_season",
+                                f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}</b> van <b>{html_title}</b> is nu beschikbaar. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                                media_json)
+                            check.outcome = "sent"
+                            if delivery.delivered:
+                                notified.append((f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_season"))
+
+                            state["last_notified_season"] = max_seen
+                            changed = True
+
+                        # Always update last_seen_season if it increased
+                        if max_seen > last_seen:
+                            state["last_seen_season"] = max_seen
+                            changed = True
+
+                # Iterate through serie_episode options (new episode notifications)
+                for media_id, state in list(media_types.get("serie_episode", {}).items()):
+                    async with self.checking("new_episodes", receiver, self.sonarr, media_id) as check:
+                        if check.folder is None:
+                            continue
+                        media_json, media_folder = check.media, check.folder
+
+                        # Only start notifying after started=True: until then the series is not online, and there
+                        # is nothing new to tell
+                        if not bool((state or {}).get("started", False)):
+                            check.outcome = "nothing_new"
+                            continue
+
+                        episodes_found = self.function.episodes_present_in_folder(media_folder)
+                        if not episodes_found:
+                            check.outcome = "empty_folder"
+                            continue
+
+                        # Get highest option
+                        newest_found = max(episodes_found)
+
+                        # Get last notified from json
+                        last_notified = (state or {}).get("last", "S00E00").upper()
+
+                        # Only notify when newer episodes exist
+                        if newest_found <= last_notified:
+                            check.outcome = "nothing_new"
+                            continue
+
+                        # Gather all new episodes since last (and sort them)
+                        new_episodes = sorted(ep for ep in episodes_found if ep > last_notified)
+                        if not new_episodes:
+                            check.outcome = "nothing_new"
+                            continue
+
                         html_title = html.escape(media_json["title"])
                         sanitize_title = self.function.sanitize_text(media_json["title"])
                         media_plex_url = await self.plex.link(media_json, "serie")
 
-                        new_seasons = sorted(s for s in seasons_count if s > last_notified)
-                        if len(new_seasons) == 1:
-                            season_text = f"seizoen {new_seasons[0]}"
-                        else:
-                            season_text = "seizoen " + " en ".join(str(s) for s in new_seasons)
+                        # Generate episode list text
+                        eps_text = self.format_episode_list(new_episodes)
 
                         delivery = await self.telegram.send_user_message(
-                            user_id, "new_season",
-                            f"Goed nieuws! 🎉\n\n<b>{season_text.capitalize()}</b> van <b>{html_title}</b> is nu beschikbaar. Veel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
+                            user_id, "new_episodes",
+                            f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van <b>{html_title}</b> zijn nu beschikbaar:\n\n<b>{html.escape(eps_text)}</b>\n\nVeel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
                             media_json)
+                        check.outcome = "sent"
                         if delivery.delivered:
-                            notified.append((f"*ℹ️ Notify: New season(s) for serie {sanitize_title}: {season_text} ℹ️*\nUser ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_season"))
+                            notified.append((f"*ℹ️ Notify: New episode(s) for serie {sanitize_title}: {eps_text} ℹ️*\n" f"User ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_episodes"))
 
-                        state["last_notified_season"] = max_seen
+                        # Update last notified
+                        state["last"] = new_episodes[-1]
                         changed = True
-
-                    # Always update last_seen_season if it increased
-                    if max_seen > last_seen:
-                        state["last_seen_season"] = max_seen
-                        changed = True
-
-                # Iterate through serie_episode options (new episode notifications)
-                for media_id, state in list(media_types.get("serie_episode", {}).items()):
-
-                    # The series in Sonarr, and its folder once it has one
-                    media_json, media_folder = await self.media_with_folder(self.sonarr, media_id)
-                    if media_folder is None:
-                        continue
-
-                    # Only start notifying after started=True
-                    if not bool((state or {}).get("started", False)):
-                        continue
-
-                    episodes_found = self.function.episodes_present_in_folder(media_folder)
-                    if not episodes_found:
-                        continue
-
-                    # Get highest option
-                    newest_found = max(episodes_found)
-
-                    # Get last notified from json
-                    last_notified = (state or {}).get("last", "S00E00").upper()
-
-                    # Only notify when newer episodes exist
-                    if newest_found <= last_notified:
-                        continue
-
-                    # Gather all new episodes since last (and sort them)
-                    new_episodes = sorted(ep for ep in episodes_found if ep > last_notified)
-                    if not new_episodes:
-                        continue
-
-                    html_title = html.escape(media_json["title"])
-                    sanitize_title = self.function.sanitize_text(media_json["title"])
-                    media_plex_url = await self.plex.link(media_json, "serie")
-
-                    # Generate episode list text
-                    eps_text = self.format_episode_list(new_episodes)
-
-                    delivery = await self.telegram.send_user_message(
-                        user_id, "new_episodes",
-                        f"Goed nieuws! 🎉\n\nNieuwe aflevering(en) van <b>{html_title}</b> zijn nu beschikbaar:\n\n<b>{html.escape(eps_text)}</b>\n\nVeel kijkplezier! 😎{self.plex_link(html_title, media_plex_url)}",
-                        media_json)
-                    if delivery.delivered:
-                        notified.append((f"*ℹ️ Notify: New episode(s) for serie {sanitize_title}: {eps_text} ℹ️*\n" f"User ID: {user_id}\nGebuiker: {gebruiker}\nUsername: {username}", "user notified: new_episodes"))
-
-                    # Update last notified
-                    state["last"] = new_episodes[-1]
-                    changed = True
         finally:
             # Write back once per run, also after a Fout that ended it: who got a Gebruikersbericht in this run must
             # not get it again in the next
@@ -330,30 +375,60 @@ class Schedule:
         return max(episodes)
 
 
-    async def media_with_folder(self, client: Radarr | Sonarr, media_id: str) -> tuple[dict | None, Path | None]:
-        """ The movie or series in Radarr or Sonarr, and its folder, or None for the folder to skip the item.
+    @asynccontextmanager
+    async def checking(self, kind: str, receiver: dict, client: Radarr | Sonarr,
+                       media_id: str) -> AsyncIterator[ItemCheck]:
+        """ Checks one item of the notify list, for a Gebruikersbericht of this kind to the receiver (its user_id and
+        account): async with self.checking(...) as check.
 
-        A folder that is not there is skipped silently: nothing is downloaded yet. An item that Radarr or Sonarr does
-        not find, or that has no path there, is an Inrichtingsfout of that item: reported, and the item is skipped.
-        Any other Fout falls through and ends the run, also an Inrichtingsfout like a wrong key, which every next item
-        would run into as well.
+        First the movie or series and its folder (start_check). Without a folder the item has its outcome then, and
+        the body skips it: if check.folder is None: continue. Otherwise the body sets the outcome.
+
+        After the body the item counts as checked, and gets its line notify_check on DEBUG. The receiver is on that
+        line as keywords, not in the context: a Fout during the item has no user fields, and stays out of
+        /log <person>. A Fout that ends the run ends it without that line.
         """
-        check, name = f"{client.media_type}_path", service_name(client.service)
+        check = await self.start_check(client, media_id)
+        yield check
+
+        tally("items")
+        outcome = check.outcome.replace("_", " ") + (f" {', '.join(check.missing)}" if check.missing else "")
+        log.debug(f"checked {title_and_year(check.media)} for {receiver['account'] or receiver['user_id']} ({kind}): "
+                  f"{outcome}", event="notify_check", kind=kind, outcome=check.outcome, missing=check.missing,
+                  media=check.media, **receiver)
+        # Done with it: a Fout after it is not about it
+        working_on(None)
+
+    async def start_check(self, client: Radarr | Sonarr, media_id: str) -> ItemCheck:
+        """ The start of the check of an item: the movie or series in Radarr or Sonarr, and its folder.
+
+        The Interaction is working on the item from the moment Radarr or Sonarr gives it. A folder that is not there
+        gives the outcome no_folder: nothing is downloaded yet. An item that Radarr or Sonarr does not find, or that
+        has no path there, is an Inrichtingsfout of that item: reported, and the item is skipped with the outcome
+        no_data. Any other Fout falls through and ends the run, also an Inrichtingsfout like a wrong key, which every
+        next item would run into as well.
+        """
+        path_check, name = f"{client.media_type}_path", service_name(client.service)
         try:
             media_json = await client.lookup_by_tmdbid(media_id)
+            working_on(media_json)
             if not media_json.get("path"):
                 raise Fault.setup(service=client.service, what=f"{media_json.get('title')} has no path in {name}",
-                                  check=check, item=media_id, media=media_json)
+                                  check=path_check, item=media_id, media=media_json)
         except Fault as fault:
             if fault.kind != FaultKind.SETUP or str(fault.item) != str(media_id):
                 raise
             await self.faults.report(fault, continued="skipped this item")
-            return None, None
-        await self.faults.fixed(client.service, check, media_id,
+            tally("skipped")
+            tmdb_id = int(media_id) if str(media_id).isdigit() else media_id
+            return ItemCheck(fault.media or {"tmdbId": tmdb_id}, None, "no_data")
+        await self.faults.fixed(client.service, path_check, media_id,
                                 msg=f"{media_json.get('title')} now has a path in {name}")
 
         media_folder = Path(media_json["path"])
-        return media_json, media_folder if media_folder.is_dir() else None
+        if not media_folder.is_dir():
+            return ItemCheck(media_json, None, "no_folder")
+        return ItemCheck(media_json, media_folder)
 
 
     def format_episode_list(self, episodes) -> str:
