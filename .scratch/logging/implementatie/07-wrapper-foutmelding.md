@@ -1,6 +1,6 @@
 # 07 Wrapper, Foutmelding en error_handler
 
-Status: open
+Status: bezig (branch `logging/07-wrapper-foutmelding`, sinds 2026-11-04)
 Blocked by: 06
 Niet tegelijk met: 04, 05, 09, 14 (handlers en `src/bot.py`)
 
