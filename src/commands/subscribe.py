@@ -8,7 +8,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
 from src.services.sonarr import Sonarr
-from src.commands.schedule import Schedule
 
 from src.states import AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE
 
@@ -21,7 +20,6 @@ class Subscribe:
         self.log = logger
         self.function = functions
         self.sonarr = Sonarr(logger)
-        self.schedule = Schedule(args, logger, self.function)
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"

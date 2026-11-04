@@ -138,30 +138,41 @@ class MaskSecrets(logging.Filter):
         return masked
 
 
+def _media_fields(media: dict) -> dict:
+    """ The fields that identify a media item of Radarr or Sonarr: title, year and tmdbId, never the tvdbId """
+    return {"media_title": media.get("title"), "media_year": media.get("year"), "tmdb_id": media.get("tmdbId")}
+
+
 class BotLogger:
-    """ Logger of a module of the bot, with the fields of a line as keywords """
+    """ Logger of a module of the bot, with the fields of a line as keywords.
+
+    media=, a media item of Radarr or Sonarr, gives media_title, media_year and tmdb_id at once.
+    """
 
     def __init__(self, logger: logging.Logger):
         self._logger = logger
 
-    def debug(self, msg: str, *, exc_info=None, stacklevel: int = 1, **fields) -> None:
-        self._log(logging.DEBUG, msg, exc_info, stacklevel, fields)
+    def debug(self, msg: str, *, exc_info=None, stacklevel: int = 1, media: dict | None = None, **fields) -> None:
+        self._log(logging.DEBUG, msg, exc_info, stacklevel, media, fields)
 
-    def info(self, msg: str, *, exc_info=None, stacklevel: int = 1, **fields) -> None:
-        self._log(logging.INFO, msg, exc_info, stacklevel, fields)
+    def info(self, msg: str, *, exc_info=None, stacklevel: int = 1, media: dict | None = None, **fields) -> None:
+        self._log(logging.INFO, msg, exc_info, stacklevel, media, fields)
 
-    def warning(self, msg: str, *, exc_info=None, stacklevel: int = 1, **fields) -> None:
-        self._log(logging.WARNING, msg, exc_info, stacklevel, fields)
+    def warning(self, msg: str, *, exc_info=None, stacklevel: int = 1, media: dict | None = None, **fields) -> None:
+        self._log(logging.WARNING, msg, exc_info, stacklevel, media, fields)
 
-    def error(self, msg: str, *, exc_info=None, stacklevel: int = 1, **fields) -> None:
-        self._log(logging.ERROR, msg, exc_info, stacklevel, fields)
+    def error(self, msg: str, *, exc_info=None, stacklevel: int = 1, media: dict | None = None, **fields) -> None:
+        self._log(logging.ERROR, msg, exc_info, stacklevel, media, fields)
 
-    def log(self, level: int, msg: str, *, exc_info=None, stacklevel: int = 1, **fields) -> None:
-        self._log(level, msg, exc_info, stacklevel, fields)
+    def log(self, level: int, msg: str, *, exc_info=None, stacklevel: int = 1, media: dict | None = None,
+            **fields) -> None:
+        self._log(level, msg, exc_info, stacklevel, media, fields)
 
-    def _log(self, level: int, msg: str, exc_info, stacklevel: int, fields: dict) -> None:
+    def _log(self, level: int, msg: str, exc_info, stacklevel: int, media: dict | None, fields: dict) -> None:
         if not self._logger.isEnabledFor(level):
             return
+        if media is not None:
+            fields = {**fields, **_media_fields(media)}
         # The two frames of this class are not the caller
         self._logger.log(level, msg, exc_info=exc_info, stacklevel=stacklevel + 2, extra={"fields": fields})
 

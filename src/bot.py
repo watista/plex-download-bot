@@ -24,10 +24,12 @@ from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
+from src.faults import Fault
 from src.interaction import InteractionProcessor, JobQueueOutsideInteractions, account_for, guard_job
 from src.log import get_logger
+from src.telegram_out import TelegramOut
 
-from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict
+from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict, TelegramError
 from telegram import Update, BotCommand
 from telegram.warnings import PTBUserWarning
 from telegram.ext import (
@@ -79,35 +81,19 @@ class Bot:
         # PRIMARY_NAME / FALLBACK_NAME in dot-env to your own hostnames.
         self.primary_name: str = os.getenv("PRIMARY_NAME", "primary")
         self.fallback_name: str = os.getenv("FALLBACK_NAME", "fallback")
-        self.function = Functions(logger)
-        self.privacy = Privacy(logger, self.function)
-        self.help = Help(logger, self.function)
-        self.maintenance = Maintenance(logger, self.function)
-        self.start = Start(args, logger, self.function, self.maintenance)
-        self.account = Account(logger, self.function)
-        self.message = Message(args, logger, self.function)
-        self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
-        # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
-        # normal mode; on the standby (maintenance) host they would just fail.
-        if self.mode == "normal":
-            self.serie = Serie(args, logger, self.function)
-            self.movie = Movie(args, logger, self.function)
-            self.schedule = Schedule(args, logger, self.function)
-            self.subscribe = Subscribe(args, logger, self.function)
-            self.sonarr = Sonarr(logger)
-            self.radarr = Radarr(logger)
-            self.start.subscribe = self.subscribe
-
-        # Set vars based on live/dev
+        # Set vars based on live/dev. Admin messages go to the group live, and to the Beheerder in dev.
         if args.env == "live":
             persistence = PicklePersistence(filepath="/root/scripts/plex-download-bot/bot_state.pkl")
             token = os.getenv('BOT_TOKEN')
             data_json = "data.json"
+            admin_chat_id = os.getenv('CHAT_ID_GROUP')
         else:
             persistence = PicklePersistence(filepath="bot_state.pkl")
             token = os.getenv('BOT_TOKEN_DEV')
             data_json = "data.dev.json"
+            admin_chat_id = os.getenv('CHAT_ID_ADMIN')
+        accounts = partial(account_for, data_json=data_json)
 
         # Create the Application using the new async API. post_init starts
         # the outbound heartbeat pusher so the fallback's watcher can see this
@@ -119,7 +105,7 @@ class Bot:
         self.application = (
             Application.builder()
             .token(token)
-            .concurrent_updates(InteractionProcessor(1, partial(account_for, data_json=data_json)))
+            .concurrent_updates(InteractionProcessor(1, accounts))
             .job_queue(JobQueueOutsideInteractions())
             .read_timeout(300)
             .persistence(persistence)
@@ -127,6 +113,29 @@ class Bot:
             .post_stop(self._post_stop)
             .build()
         )
+
+        # The verzendfunctie, on the bot of the Application, for the messages of the bot itself
+        self.telegram = TelegramOut(self.application.bot, admin_chat_id, accounts)
+
+        self.function = Functions(logger)
+        self.privacy = Privacy(logger, self.function)
+        self.help = Help(logger, self.function)
+        self.maintenance = Maintenance(logger, self.function)
+        self.start = Start(args, logger, self.function, self.maintenance)
+        self.account = Account(logger, self.function)
+        self.message = Message(args, logger, self.function, self.telegram)
+        self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
+
+        # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
+        # normal mode; on the standby (maintenance) host they would just fail.
+        if self.mode == "normal":
+            self.serie = Serie(args, logger, self.function)
+            self.movie = Movie(args, logger, self.function)
+            self.schedule = Schedule(args, logger, self.function, self.telegram)
+            self.subscribe = Subscribe(args, logger, self.function)
+            self.sonarr = Sonarr(logger)
+            self.radarr = Radarr(logger)
+            self.start.subscribe = self.subscribe
 
         # Register the appropriate conversation handler for the current mode
         if self.mode == "normal":
@@ -326,16 +335,7 @@ class Bot:
         await self.application.bot.set_my_commands(command_list)
 
     async def notify_admin_startup(self, context: CallbackContext) -> None:
-        """Notify group chat(s) that the bot started."""
-        raw_group_id = os.getenv("CHAT_ID_GROUP")
-        if not raw_group_id:
-            return
-        try:
-            group_id = int(raw_group_id)
-        except ValueError:
-            await self.log.logger(f"Invalid CHAT_ID_GROUP value: {raw_group_id}", False, "warning", False)
-            return
-
+        """Tell the Beheerder that the bot started."""
         started_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
         env_label = "live" if self.args.env == "live" else "dev"
         if self.mode == "maintenance":
@@ -344,9 +344,9 @@ class Bot:
             msg = f"✅ Bot gestart ({env_label}) om {started_at}."
 
         try:
-            await self.function.send_message(msg, group_id, context, None, "MarkdownV2", False)
+            await self.telegram.send_admin_message(msg, "bot started")
         except Exception as e:
-            await self.log.logger(f"Failed to notify group startup to {group_id}: {e}", False, "warning", False)
+            log.warning(f"failed to tell the admin that the bot started: {e}", exc_type=type(e).__name__)
 
     async def _post_init(self, application: Application) -> None:
         """PTB hook that runs after init but before polling begins.
@@ -395,34 +395,12 @@ class Bot:
                 f"{self.primary_name} is weer online en heeft het overgenomen."
             )
 
-        await self._send_group_message(application, msg)
-        log.info(f"bot stopped: {self.args.env}, {self.mode} mode", event="bot_stopped")
-
-    async def _send_group_message(self, application: Application, msg: str) -> None:
-        """Send a one-off MarkdownV2 message to CHAT_ID_GROUP; swallow errors.
-
-        Used by the shutdown hook; safe to call from contexts where a failure
-        must not propagate (e.g. PTB's post_stop, which would otherwise be
-        able to delay or break systemd's shutdown sequence).
-        """
-        raw_group_id = os.getenv("CHAT_ID_GROUP")
-        if not raw_group_id:
-            return
+        # A failure must not propagate: it could delay or break the shutdown sequence of systemd
         try:
-            group_id = int(raw_group_id)
-        except ValueError:
-            await self.log.logger(f"Invalid CHAT_ID_GROUP value: {raw_group_id}", False, "warning", False)
-            return
-
-        try:
-            await application.bot.send_message(
-                chat_id=group_id,
-                text=self.log.escape_markdown(msg),
-                parse_mode="MarkdownV2",
-                disable_web_page_preview=True,
-            )
+            await self.telegram.send_admin_message(msg, "bot stopped")
         except Exception as e:
-            await self.log.logger(f"Failed to send shutdown notice to {group_id}: {e}", False, "warning", False)
+            log.warning(f"failed to tell the admin that the bot stopped: {e}", exc_type=type(e).__name__)
+        log.info(f"bot stopped: {self.args.env}, {self.mode} mode", event="bot_stopped")
 
     async def _heartbeat_loop(self) -> None:
         """Push a TCP heartbeat to the fallback host every HEARTBEAT_INTERVAL
@@ -551,6 +529,10 @@ class Bot:
         # the actual exception object
         err = context.error
 
+        # Until the wrapper of issue 07 handles a Fault, one of Telegram is handled like the exception it came from
+        if isinstance(err, Fault) and isinstance(err.__cause__, TelegramError):
+            err = err.__cause__
+
         # --- handle specific errors first ---
         if isinstance(err, RetryAfter):
             await self.log.logger(f"Rate limited by Telegram. Retry after {err.retry_after} seconds.", False, "warning", False)
@@ -585,15 +567,6 @@ class Bot:
             return
         self._conflict_notified_at = now
 
-        raw_group_id = os.getenv("CHAT_ID_GROUP")
-        if not raw_group_id:
-            return
-        try:
-            group_id = int(raw_group_id)
-        except ValueError:
-            await self.log.logger(f"Invalid CHAT_ID_GROUP value: {raw_group_id}", False, "warning", False)
-            return
-
         detected_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
         env_label = "live" if self.args.env == "live" else "dev"
         msg = (
@@ -604,9 +577,9 @@ class Bot:
         )
 
         try:
-            await self.function.send_message(msg, group_id, context, None, "MarkdownV2", False)
+            await self.telegram.send_admin_message(msg, "two bots polling at once")
         except Exception as e:
-            await self.log.logger(f"Failed to send Conflict notice to group {group_id}: {e}", False, "warning", False)
+            log.warning(f"failed to tell the admin about the Conflict: {e}", exc_type=type(e).__name__)
 
     async def stop(self, update: Update, context: CallbackContext) -> None:
         """ Cancel command """
