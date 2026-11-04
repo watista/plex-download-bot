@@ -1,6 +1,6 @@
 # 12 Crash en heartbeat
 
-Status: open
+Status: bezig (branch `logging/12-crash-heartbeat`, sinds 2026-11-04)
 Blocked by: 11
 Niet tegelijk met: –
 
