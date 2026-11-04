@@ -313,6 +313,7 @@ class LogLinesTest(LogFolder, unittest.TestCase):
         for name in ("start", "help", "message", "account", "movie", "serie", "subscribe", "maintenance"):
             setattr(bot, name, MagicMock())
         bot.allowed_users = [1]
+        bot.account_for = AsyncMock()
 
         with self.at("2026-11-03T14:05:12+01:00"), warnings.catch_warnings():
             warnings.simplefilter("always")

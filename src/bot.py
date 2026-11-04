@@ -22,6 +22,7 @@ from src.commands.schedule import Schedule
 from src.commands.message import Message
 from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
+from src.conversation import Conversation, command_or_choice_line
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
 from src.faults import Fault
@@ -93,7 +94,7 @@ class Bot:
             token = os.getenv('BOT_TOKEN_DEV')
             data_json = "data.dev.json"
             admin_chat_id = os.getenv('CHAT_ID_ADMIN')
-        accounts = partial(account_for, data_json=data_json)
+        self.account_for = partial(account_for, data_json=data_json)
 
         # Create the Application using the new async API. post_init starts
         # the outbound heartbeat pusher so the fallback's watcher can see this
@@ -105,7 +106,7 @@ class Bot:
         self.application = (
             Application.builder()
             .token(token)
-            .concurrent_updates(InteractionProcessor(1, accounts))
+            .concurrent_updates(InteractionProcessor(1, self.account_for))
             .job_queue(JobQueueOutsideInteractions())
             .read_timeout(300)
             .persistence(persistence)
@@ -115,14 +116,14 @@ class Bot:
         )
 
         # The verzendfunctie, on the bot of the Application, for the messages of the bot itself
-        self.telegram = TelegramOut(self.application.bot, admin_chat_id, accounts)
+        self.telegram = TelegramOut(self.application.bot, admin_chat_id, self.account_for)
 
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
-        self.help = Help(logger, self.function)
+        self.help = Help(logger, self.function, self.telegram)
         self.maintenance = Maintenance(logger, self.function)
-        self.start = Start(args, logger, self.function, self.maintenance)
-        self.account = Account(logger, self.function)
+        self.start = Start(args, logger, self.function, self.maintenance, self.telegram)
+        self.account = Account(logger, self.function, self.telegram)
         self.message = Message(args, logger, self.function, self.telegram)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
@@ -137,17 +138,7 @@ class Bot:
             self.radarr = Radarr(logger)
             self.start.subscribe = self.subscribe
 
-        # Register the appropriate conversation handler for the current mode
-        if self.mode == "normal":
-            self.application.add_handler(self._build_normal_conversation())
-        else:
-            self.application.add_handler(self._build_maintenance_conversation())
-
-        # Add stand-alone handlers
-        self.application.add_handler(
-            CommandHandler("help", self.help.help_command))
-        self.application.add_handler(
-            CommandHandler("privacy", self.privacy.privacy_command))
+        self._register_handlers()
 
         # Add error handler
         self.application.add_error_handler(self.error_handler)
@@ -157,6 +148,24 @@ class Bot:
         # Start the bot
         self.application.run_polling(
             allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
+
+    def _register_handlers(self) -> None:
+        """Registers the Gesprek of the current mode, the stand-alone handlers,
+        and last the catch-all for the input that none of them takes."""
+        if self.mode == "normal":
+            self.conversation = self._build_normal_conversation()
+        else:
+            self.conversation = self._build_maintenance_conversation()
+        self.application.add_handler(self.conversation)
+
+        # Stand-alone handlers, also in the middle of a Gesprek
+        self.application.add_handler(
+            CommandHandler("help", self.help.help_command))
+        self.application.add_handler(
+            CommandHandler("privacy", self.privacy.privacy_command))
+
+        # Only one handler per group takes an update, so this one only gets what all handlers above leave
+        self.application.add_handlers(self.conversation.catch_all())
 
     def _register_jobs(self) -> None:
         """Registers the jobs, each with its name for the field job and
@@ -192,15 +201,15 @@ class Bot:
             CallbackQueryHandler(
                 self.message.updates_unsubscribe, pattern="^afmelden_updates$"),
             CallbackQueryHandler(
-                self.start.parse_request, pattern="^account_request$"),
+                self.start.account_request, pattern="^account_request$"),
             CallbackQueryHandler(
                 self.help.help_command_button, pattern="^info$")
         ]
 
     @without_per_message_warning()
-    def _build_normal_conversation(self) -> ConversationHandler:
+    def _build_normal_conversation(self) -> Conversation:
         """Full conversation handler used on the primary host."""
-        return ConversationHandler(
+        return Conversation(
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
                           CommandHandler("aanmelden_serie", self.start.verification),
@@ -210,7 +219,7 @@ class Bot:
                           CommandHandler("message", self.message.message_start, filters.User(self.allowed_users)),
                           CommandHandler("message_all", self.message.message_all, filters.User(self.allowed_users)),
                           CommandHandler("add_movie", self.message.add_movie, filters.User(self.allowed_users)),
-                          MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
+                          MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.outside_conversation)],
             states={
                 VERIFY: self._welcome_button_handlers(),
                 VERIFY_PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.verify_pwd)],
@@ -261,13 +270,11 @@ class Bot:
                 ADD_MOVIE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_id)],
             },
             fallbacks=[CommandHandler("stop", self.stop)] + self._welcome_button_handlers(),
-            conversation_timeout=1800,
-            per_chat=True,
-            per_user=True
+            account_for=self.account_for,
         )
 
     @without_per_message_warning()
-    def _build_maintenance_conversation(self) -> ConversationHandler:
+    def _build_maintenance_conversation(self) -> Conversation:
         """Slimmed conversation handler used on the fallback host.
 
         Plex/Sonarr/Radarr/Transmission flows are replaced with a maintenance
@@ -275,7 +282,7 @@ class Bot:
         updates and the admin /message, /message_all, /add_movie commands all
         keep working because they only touch data.json and Telegram.
         """
-        return ConversationHandler(
+        return Conversation(
             entry_points=[CommandHandler("start", self.start.start_msg),
                           CommandHandler("help", self.help.help_command),
                           CommandHandler("aanmelden_serie", self.maintenance.media_maintenance),
@@ -285,7 +292,7 @@ class Bot:
                           CommandHandler("message", self.message.message_start, filters.User(self.allowed_users)),
                           CommandHandler("message_all", self.message.message_all, filters.User(self.allowed_users)),
                           CommandHandler("add_movie", self.message.add_movie, filters.User(self.allowed_users)),
-                          MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.start_msg)],
+                          MessageHandler(filters.TEXT & ~filters.COMMAND, self.start.outside_conversation)],
             states={
                 # Film / Serie / Serie-updates go through verification so
                 # blocked-user / first-time-password checks still apply,
@@ -316,9 +323,7 @@ class Bot:
                 ADD_MOVIE_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.message.add_movie_id)],
             },
             fallbacks=[CommandHandler("stop", self.stop)] + self._welcome_button_handlers(),
-            conversation_timeout=1800,
-            per_chat=True,
-            per_user=True
+            account_for=self.account_for,
         )
 
     async def publish_command_list(self, context: CallbackContext) -> None:
@@ -583,5 +588,6 @@ class Bot:
 
     async def stop(self, update: Update, context: CallbackContext) -> None:
         """ Cancel command """
+        log.info(**command_or_choice_line(update))
         await self.function.send_message(f"Oke gestopt. Stuur /start om opnieuw te beginnen.", update, context)
         return ConversationHandler.END

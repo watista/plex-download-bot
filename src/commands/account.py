@@ -4,19 +4,28 @@ import asyncio
 from telegram import Update
 from telegram.ext import CallbackContext, ConversationHandler
 
+from src.log import get_logger
 from src.states import REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER
+
+
+log = get_logger(__name__)
 
 
 class Account:
 
-    def __init__(self, logger, functions):
+    def __init__(self, logger, functions, telegram):
 
         # Set default values
         self.log = logger
         self.function = functions
+        self.telegram = telegram
 
     async def request_account(self, update: Update, context: CallbackContext) -> int:
         """ Handles the first_name question for the account request """
+
+        # The name is the only answer that gets into the log
+        log.info(f"account request: name '{update.message.text}'", event="account_request", question="name",
+                 name=update.message.text)
 
         # Create a dict to store the information
         self.info_dict = {
@@ -35,6 +44,9 @@ class Account:
     async def request_account_email(self, update: Update, context: CallbackContext) -> int:
         """ Handles the email question for the account request """
 
+        # Only the Beheerder gets the answer
+        log.info("account request: email answered", event="account_request", question="email")
+
         # Add info to dict
         self.info_dict["email"] = update.message.text
 
@@ -48,6 +60,9 @@ class Account:
 
     async def request_account_phone(self, update: Update, context: CallbackContext) -> int:
         """ Handles the email question for the account request """
+
+        # Only the Beheerder gets the answer
+        log.info("account request: phone answered", event="account_request", question="phone")
 
         # Add info to dict
         self.info_dict["phone"] = self.function.sanitize_text(
@@ -63,6 +78,9 @@ class Account:
 
     async def request_account_refer(self, update: Update, context: CallbackContext) -> None:
         """ Handles the email question for the account request """
+
+        # Only the Beheerder gets the answer
+        log.info("account request: via answered", event="account_request", question="via")
 
         # Add info to dict
         self.info_dict["referrer"] = self.function.sanitize_text(
@@ -85,8 +103,9 @@ class Account:
         await asyncio.sleep(1)
         await self.function.send_message(f"Veel kijkplezier alvast! 😎", update, context)
 
-        # Send the request info
-        await self.log.logger(f"*🎉 New account requested 🎉*\n\nName: {self.info_dict['first_name']}\nEmail: {self.info_dict['email']}\nPhone: {self.info_dict['phone']}\nVia: {self.info_dict['referrer']}", False, "info")
+        # Send the request info, only to the Beheerder: e-mail and phone never get into the log
+        await self.telegram.send_admin_message(f"*🎉 New account requested 🎉*\n\nName: {self.info_dict['first_name']}\nEmail: {self.info_dict['email']}\nPhone: {self.info_dict['phone']}\nVia: {self.info_dict['referrer']}",
+                                               "account request")
 
         # End the conversation
         return ConversationHandler.END
