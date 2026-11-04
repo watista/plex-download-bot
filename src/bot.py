@@ -21,6 +21,7 @@ from src.commands.schedule import Schedule
 from src.commands.message import Message
 from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
+from src.commands.log import LogCommand
 from src.conversation import Conversation, command_or_choice_line
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
@@ -150,6 +151,10 @@ class Bot:
         self.message = Message(args, logger, self.function, self.telegram)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
+        # /log reads the day files of this host, which it names as in the messages to the group
+        host = self.primary_name if self.mode == "normal" else self.fallback_name
+        self.log_command = LogCommand(args.env, os.getenv("LOG_FOLDER"), data_json, host, self.allowed_users)
+
         # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
         # normal mode; on the standby (maintenance) host they would just fail.
         if self.mode == "normal":
@@ -187,6 +192,8 @@ class Bot:
             self._guarded(CommandHandler("help", self.help.help_command)))
         self.application.add_handler(
             self._guarded(CommandHandler("privacy", self.privacy.privacy_command)))
+        # Only for the Beheerder in the private chat: from anyone else, or in a group, it goes on to the catch-all
+        self.application.add_handlers([self._guarded(handler) for handler in self.log_command.handlers()])
 
         # Only one handler per group takes an update, so this one only gets what all handlers above leave
         self.application.add_handlers([self._guarded(handler) for handler in self.conversation.catch_all()])
