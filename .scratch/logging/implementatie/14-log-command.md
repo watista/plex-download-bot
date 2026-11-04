@@ -1,6 +1,6 @@
 # 14 /log
 
-Status: open
+Status: bezig (branch `logging/14-log-command`, sinds 2026-11-04)
 Blocked by: 02
 Niet tegelijk met: 05, 07 (`src/bot.py`)
 
