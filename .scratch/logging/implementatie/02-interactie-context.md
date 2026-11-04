@@ -1,6 +1,6 @@
 # 02 Interactie-context en Code
 
-Status: open
+Status: dicht
 Blocked by: 01
 Niet tegelijk met: –
 
