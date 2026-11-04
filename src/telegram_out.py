@@ -3,14 +3,17 @@
 """ Verzendfunctie: the one way the bot itself sends a message to Telegram """
 
 import html
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from time import monotonic
 
 from telegram import Bot, LinkPreviewOptions
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TelegramError
+from telegram.request import HTTPXRequest, RequestData
 
-from src.faults import Fault, FaultKind
+from src.faults import Fault, FaultKind, FaultReporter
 from src.log import get_logger, mask
 
 
@@ -21,6 +24,12 @@ MAX_LENGTH = 4096
 
 # How a BadRequest starts when Telegram rejects the formatting, in lower case
 REJECTED_FORMATTING = ("can't parse entities", "can't parse message text")
+
+# The method of the Bot API that polls, which gets no http_call
+POLLING = "getUpdates"
+
+# The token of the bot in the url of a request, after /bot
+WITH_TOKEN = re.compile(r"(/bot)[^/]+")
 
 
 @dataclass(frozen=True)
@@ -65,6 +74,70 @@ def plain_text(text: str, fmt: str | None) -> str:
     if fmt == "MarkdownV2":
         return re.sub(r"\\(.)", r"\1", text, flags=re.DOTALL)
     return text
+
+
+class TelegramRequest(HTTPXRequest):
+    """ The requests of the bot to Telegram: set with ApplicationBuilder.request() and .get_updates_request().
+
+    Every successful answer ends a Storing of Telegram in faults, the meldfunctie, also an answer to polling: so the
+    Herstelmelding after a Storing in the night comes at once, not with the next message. A failed attempt is not
+    counted here, because PTB has to see its own exceptions to try again: it is counted where it comes up, in
+    error_handler (polling), the wrapper and the verzendfunctie.
+
+    faults is given after the bot is built: the meldfunctie needs the verzendfunctie, which needs the bot, which is
+    built with this request. Until then an answer only goes to PTB.
+
+    Every request but getUpdates, which polls every few seconds, gets an http_call on DEBUG. It has the method, the
+    url without the token, the status and the duration, but not the request and the response: those hold the text
+    of messages, like a password or the e-mail and phone of an account request.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.faults: FaultReporter | None = None
+
+    async def do_request(self, url: str, method: str, request_data: RequestData | None = None,
+                         **timeouts) -> tuple[int, bytes]:
+        endpoint = url.rsplit("/", 1)[-1]
+        started = monotonic()
+        try:
+            status, payload = await super().do_request(url, method, request_data, **timeouts)
+        except Exception as error:
+            if endpoint != POLLING:
+                _http_call(endpoint, method, url, started, error=error)
+            raise
+        if endpoint != POLLING:
+            _http_call(endpoint, method, url, started, status=status)
+        if 200 <= status < 300 and self.faults is not None:
+            await self._ok()
+        return status, payload
+
+    async def _ok(self) -> None:
+        """ Ends a Storing of Telegram. A Fout in that is a Bug that does not reach PTB: PTB would make a NetworkError
+        of it, a Storing of Telegram that no successful answer could end.
+        """
+        try:
+            await self.faults.ok("telegram")
+        except Exception as error:
+            fault = Fault.bug(what="Ending the Storing of Telegram failed")
+            fault.__cause__ = error
+            await self.faults.report(fault, continued="gave PTB the answer of Telegram")
+
+
+def _http_call(endpoint: str, method: str, url: str, started: float, status: int | None = None,
+               error: Exception | None = None) -> None:
+    """ The line of one request to Telegram, on DEBUG: the status, or the exception it ended in """
+    duration_ms = round((monotonic() - started) * 1000)
+    if not log.enabled_for(logging.DEBUG):
+        return
+    url = WITH_TOKEN.sub(r"\1***", url)
+    if error is None:
+        outcome = f"HTTP {status}"
+    else:
+        outcome = f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
+    log.debug(f"telegram {endpoint}: {method} {url}: {outcome} in {duration_ms} ms", event="http_call",
+              service="telegram", method=method, url=url, http_status=status, duration_ms=duration_ms,
+              exc_type=type(error).__name__ if error is not None else None)
 
 
 class TelegramOut:
