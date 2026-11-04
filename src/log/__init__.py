@@ -8,6 +8,7 @@ import logging
 import os
 import traceback
 from base64 import b64encode
+from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -25,6 +26,9 @@ PROJECT_DIR = Path(__file__).resolve().parents[2]
 # Fields with a fixed place. The fields of each kind of line go between msg and fault, in the order of the caller.
 HEAD = ("ts", "level", "user_id", "account", "tg_name", "event", "msg")
 TAIL = ("fault", "service", "interaction_id", "job", "logger", "src", "exc_type", "exc")
+
+# The fields that say who a line is about: user_id with account for a Gebruiker, or with tg_name for a Bezoeker
+PERSON = ("user_id", "account", "tg_name")
 
 # Variables in dot-env whose values never get into a line or a Telegram message
 SECRETS = ("BOT_TOKEN", "BOT_TOKEN_DEV", "RADARR_API", "SONARR_API", "PLEX_API", "TRANSMISSION_PWD")
@@ -90,6 +94,29 @@ class OwnCodeOrWarning(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         return record.levelno >= logging.WARNING or is_own(record.name)
+
+
+class ContextFields(logging.Filter):
+    """ Gives every record the fields of the context it was written in, also a record of a library, on a copy.
+
+    A field given as keyword wins. A person given as keywords, like the receiver of a message, replaces the
+    person of the context as a whole, so a line never mixes two persons.
+    """
+
+    def __init__(self, context: Callable[[], dict]):
+        super().__init__()
+        self._context = context
+
+    def filter(self, record: logging.LogRecord) -> bool | logging.LogRecord:
+        context = self._context()
+        if not context:
+            return True
+        fields = getattr(record, "fields", {})
+        if any(fields.get(key) is not None for key in PERSON):
+            context = {key: value for key, value in context.items() if key not in PERSON}
+        with_context = copy.copy(record)
+        with_context.fields = {**context, **fields}
+        return with_context
 
 
 class MaskSecrets(logging.Filter):
@@ -226,12 +253,13 @@ class DayFileHandler(logging.Handler):
         super().close()
 
 
-def _configured(handler: logging.Handler, level: int, only_own_code: bool,
+def _configured(handler: logging.Handler, level: int, only_own_code: bool, context: Callable[[], dict],
                 formatter: logging.Formatter | None = None) -> logging.Handler:
     """ The handler with its level, filters and formatter, libraries below WARNING left out if only_own_code """
     handler.setLevel(level)
     if only_own_code:
         handler.addFilter(OwnCodeOrWarning())
+    handler.addFilter(ContextFields(context))
     handler.addFilter(MaskSecrets())
     handler.setFormatter(formatter or JsonFormatter())
     return handler
@@ -243,6 +271,9 @@ def setup_logging(env: str, level: str, folder: str, verbose: bool) -> None:
     The main file always gets own code from INFO and libraries from WARNING. With level DEBUG a
     debug file per day gets everything from DEBUG, also of libraries.
     """
+
+    # The context of the Interaction a line is written in. Imported here, because src.interaction logs through this module.
+    from src.interaction import context_fields
 
     level = level.upper()
     debug = level == "DEBUG"
@@ -258,12 +289,14 @@ def setup_logging(env: str, level: str, folder: str, verbose: bool) -> None:
     logging.getLogger(ROOT).setLevel(logging.DEBUG if debug else logging.INFO)
 
     Path(folder).mkdir(parents=True, exist_ok=True)
-    root.addHandler(_configured(DayFileHandler(folder, env), logging.INFO, only_own_code=True))
+    root.addHandler(_configured(DayFileHandler(folder, env), logging.INFO, only_own_code=True,
+                                context=context_fields))
     if debug:
-        root.addHandler(_configured(DayFileHandler(folder, env, debug=True), logging.DEBUG, only_own_code=False))
+        root.addHandler(_configured(DayFileHandler(folder, env, debug=True), logging.DEBUG, only_own_code=False,
+                                    context=context_fields))
     if verbose:
         root.addHandler(_configured(logging.StreamHandler(), logging.DEBUG if debug else logging.INFO,
-                                    only_own_code=True, formatter=ConsoleFormatter()))
+                                    only_own_code=True, context=context_fields, formatter=ConsoleFormatter()))
 
     # Python warnings become lines of the logger py.warnings
     logging.captureWarnings(True)

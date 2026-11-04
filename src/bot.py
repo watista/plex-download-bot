@@ -7,6 +7,7 @@ import traceback
 import warnings
 from contextlib import contextmanager
 from datetime import datetime
+from functools import partial
 from typing import Optional
 
 from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_ACCOUNT_EMAIL, REQUEST_ACCOUNT_PHONE, REQUEST_ACCOUNT_REFER, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD, MOVIE_OPTION, MOVIE_NOTIFY, SERIE_OPTION, SERIE_NOTIFY, MOVIE_UPGRADE, SERIE_UPGRADE, SERIE_UPGRADE_OPTION, MOVIE_UPGRADE_INFO, SERIE_UPGRADE_INFO, HELP_CHOICE, HELP_OTHER, MESSAGE_ID, MESSAGE_MESSAGE, REQUEST_AGAIN, MESSAGE_ALL_ID, AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE, AANMELDEN_SERIE, ADD_MOVIE, ADD_MOVIE_USER, MOVIE_UPGRADE_INFO_OTHER
@@ -23,6 +24,7 @@ from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
+from src.interaction import InteractionProcessor, account_for, guard_job
 from src.log import get_logger
 
 from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict
@@ -101,18 +103,22 @@ class Bot:
         if args.env == "live":
             persistence = PicklePersistence(filepath="/root/scripts/plex-download-bot/bot_state.pkl")
             token = os.getenv('BOT_TOKEN')
+            data_json = "data.json"
         else:
             persistence = PicklePersistence(filepath="bot_state.pkl")
             token = os.getenv('BOT_TOKEN_DEV')
+            data_json = "data.dev.json"
 
         # Create the Application using the new async API. post_init starts
         # the outbound heartbeat pusher so the fallback's watcher can see this
         # bot is alive; post_stop sends a group-chat notice when the fallback
         # bot shuts down (e.g. after the primary comes back).
+        # The InteractionProcessor handles the updates one by one, each as an
+        # Interaction with a Code and the person who sent it.
         self.application = (
             Application.builder()
             .token(token)
-            .concurrent_updates(False)
+            .concurrent_updates(InteractionProcessor(1, partial(account_for, data_json=data_json)))
             .read_timeout(300)
             .persistence(persistence)
             .post_init(self._post_init)
@@ -135,19 +141,29 @@ class Bot:
         # Add error handler
         self.application.add_error_handler(self.error_handler)
 
-        # Run the publish command function
-        self.application.job_queue.run_once(lambda _: self.application.create_task(self.publish_command_list()), when=0)
-        self.application.job_queue.run_once(lambda ctx: self.application.create_task(self.notify_admin_startup(ctx)), when=0)
-
-        # Recurring jobs need Plex/Sonarr/Radarr/Transmission — only in normal mode
-        if self.mode == "normal":
-            self.application.job_queue.run_repeating(self.schedule.check_notify_list, interval=1800, first=0)
-            self.application.job_queue.run_repeating(self.sonarr.scan_missing_media, interval=21600, first=0)
-            self.application.job_queue.run_repeating(self.radarr.scan_missing_media, interval=21600, first=0)
+        self._register_jobs()
 
         # Start the bot
         self.application.run_polling(
             allowed_updates=Update.ALL_TYPES, poll_interval=1, timeout=5)
+
+    def _register_jobs(self) -> None:
+        """Registers the jobs, each with its name for the field job and
+        guarded so every run is an Interaction of its own."""
+        job_queue = self.application.job_queue
+
+        # Once at the start
+        job_queue.run_once(guard_job(self.publish_command_list), when=0, name="publish_command_list")
+        job_queue.run_once(guard_job(self.notify_admin_startup), when=0, name="notify_admin_startup")
+
+        # Recurring jobs need Plex/Sonarr/Radarr/Transmission — only in normal mode
+        if self.mode == "normal":
+            job_queue.run_repeating(guard_job(self.schedule.check_notify_list), interval=1800, first=0,
+                                    name="check_notify_list")
+            job_queue.run_repeating(guard_job(self.sonarr.scan_missing_media), interval=21600, first=0,
+                                    name="scan_missing_sonarr")
+            job_queue.run_repeating(guard_job(self.radarr.scan_missing_media), interval=21600, first=0,
+                                    name="scan_missing_radarr")
 
     def _welcome_button_handlers(self) -> list:
         """CallbackQueryHandlers for the buttons on the /start welcome message.
@@ -294,7 +310,7 @@ class Bot:
             per_user=True
         )
 
-    async def publish_command_list(self):
+    async def publish_command_list(self, context: CallbackContext) -> None:
         """ Create and publish command list """
         command_list = [
             BotCommand("start", "Commando om de bot te starten"),
