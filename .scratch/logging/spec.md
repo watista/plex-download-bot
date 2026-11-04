@@ -113,6 +113,7 @@ Bronnen: 04, 06, 12.
 - Het wachtwoord van een login, in welke vorm dan ook, ook niet de lengte. Van een login wordt alleen de uitkomst vastgelegd.
 - E-mail, telefoon en "via" uit een accountaanvraag. Die staan al in de admin-melding in Telegram, en het logbestand wordt nooit opgeruimd.
 - De tekst van invoer buiten een Gesprek, en van genegeerde tekst. Juist daar kan iemand na een time-out zijn wachtwoord opnieuw sturen.
+- De DEBUG-regels van PTB met de tekst van berichten: de aanroepen van de Bot API met hun parameters en antwoord (loggers `telegram.Bot` en `telegram.ext.ExtBot`), en "Processing update" en "Dropping pending update" (`telegram.ext.Application`). Eén filter op alle handlers laat ze weg, ook uit het debug-bestand: daarin stonden anders wachtwoorden, en e-mail en telefoon uit een accountaanvraag (besloten bij 05).
 - De Telegram-naam van een Gebruiker; die staat er alleen bij een Bezoeker.
 - Het tvdbId als aanduiding van media: dat gebeurt met titel, jaar en tmdbId. Alleen het `item` van een Inrichtingsfout kan een tvdb-ID zijn ([hoofdstuk 9](#9-afremmen-en-toestand)).
 - **Geheimen.** Eén filter op alle handlers vervangt de waarden van `BOT_TOKEN`, `BOT_TOKEN_DEV`, `RADARR_API`, `SONARR_API`, `PLEX_API` en `TRANSMISSION_PWD` door `***`. Dat gebeurt in `msg` en in elk ander veld, ook in eigen regels. Dezelfde maskering (`mask()`) geldt voor alles wat de bot via de verzendfunctie naar Telegram stuurt.
@@ -155,7 +156,7 @@ Bronnen: 06, 07 en 12.
    | Uitvoer | Eigen code | Libraries |
    |---|---|---|
    | hoofdbestand | vanaf INFO | vanaf WARNING |
-   | debug-bestand (bij `LOG_TYPE=DEBUG`) | vanaf DEBUG | vanaf DEBUG, ook httpx en httpcore bij elke poll |
+   | debug-bestand (bij `LOG_TYPE=DEBUG`) | vanaf DEBUG | vanaf DEBUG, ook httpx en httpcore bij elke poll, maar zonder de regels van PTB met de tekst van berichten (zie [Nooit in een logregel](#nooit-in-een-logregel)) |
    | console (alleen bij `--verbose`) | vanaf `LOG_TYPE` | vanaf WARNING |
 
    De console toont tekst in dezelfde weergave als de `jq`-regel: `ts level account event msg`. Eigen code zijn de loggers van de bot, die onder één naam hangen. Elke andere logger telt als library, ook een die nu nog niet bekend is.
@@ -203,7 +204,7 @@ Bronnen: 04, 06 en 11.
 |---|---|---|---|
 | `command` | elk command, ook `/stop` | welk command | in maintenance mode: onderhoudsbericht |
 | `menu_choice` | knop in het startmenu of het /help-menu | welke knop | in maintenance mode: onderhoudsbericht |
-| `login` | wachtwoord ingevoerd, of een geblokkeerde Bezoeker probeert het | nooit de tekst | gelukt + accountnaam / fout (poging n van 3) / geblokkeerd / geweigerd (staat al op de blokkadelijst) |
+| `login` | wachtwoord ingevoerd, of een geblokkeerde Bezoeker probeert het | nooit de tekst | gelukt + accountnaam, in maintenance mode met de onderhoudsmelding als die volgt / fout (poging n van 3) / geblokkeerd / geweigerd (staat al op de blokkadelijst) |
 | `search_term` | titel ingetypt bij film, serie of aanmelden voor een serie | zoekterm letterlijk + waarvoor (`media_type`, bij aanmelden ook `purpose: series_updates`) | aantal resultaten; bij aanmelden het aantal series dat je kunt kiezen |
 | `search_button` | "toon meer", "probeer opnieuw", ja/nee bij "nog een keer proberen?" | welke knop | – |
 | `media_request` | optie gekozen | optienummer, titel, jaar, tmdbId | download gestart / wordt al gedownload / al gedownload / nog niet uit / geen downloadmatch / unmonitored (al in Radarr of Sonarr, of meer dan 5 seizoenen met `seasons`) / geen ruimte / fout (`failed`) |
@@ -215,7 +216,9 @@ Bronnen: 04, 06 en 11.
 | `help_question` | vraag via /help → Anders | tekst letterlijk | – |
 | `admin_command` | `/message`, `/message_all`, `/add_movie`, `/log` | `/message`: ID van de ontvanger + tekst; `/message_all`: tekst; `/add_movie`: ID van de ontvanger + tmdbId; `/log`: het argument | `/message_all`: aantal verstuurd en overgeslagen |
 | `outside_conversation` | tekst terwijl er geen Gesprek loopt | niet de tekst | `/start` getoond |
-| `ignored` | tekst terwijl de bot op een knopdruk wacht, een knop uit een oud bericht, een onbekend command, `/log` van iemand anders of in de groep | soort invoer, stap van het Gesprek, waarde van de knop of het command; niet de tekst | – |
+| `ignored` | tekst terwijl de bot op een knopdruk wacht, een knop uit een oud bericht, een onbekend command, een command dat op dat moment niets doet (`/stop` zonder Gesprek, `/start` midden in een Gesprek), `/log` van iemand anders of in de groep | soort invoer, stap van het Gesprek, waarde van de knop of het command; niet de tekst | – |
+
+Een command of een knop in een menu krijgt altijd zijn regel `command` of `menu_choice`. Volgt er in dezelfde Interactie een regel van een andere soort, zoals `general_updates` of `login` (geweigerd), dan staat de uitkomst in die regel (besloten bij 05).
 
 `stats.json` blijft ongewijzigd en krijgt geen logregel.
 

@@ -1,6 +1,6 @@
 # 05 Gebruikersacties: commands, login, account, help en admin
 
-Status: bezig (branch `logging/05-gebruikersacties-overig`, sinds 2026-11-04)
+Status: dicht
 Blocked by: 03
 Niet tegelijk met: 07, 14 (`src/bot.py`, `start.py`)
 
@@ -27,11 +27,12 @@ De rest van de catalogus, en vangnetten zodat ook genegeerde invoer en een verlo
 
 ## Besluiten bij de uitvoering
 
-Genomen op 2026-11-04. De eerste drie wijken af van de letter van de spec en zijn voorgelegd (zie [Open](#open)):
+Genomen op 2026-11-04. De eerste vier zijn voorgelegd en besloten op 2026-11-04, en bijgewerkt in de spec ([Catalogus](../spec.md#catalogus), [Nooit in een logregel](../spec.md#nooit-in-een-logregel) en de tabel in [3. Bestanden](../spec.md#3-bestanden)):
 
-- **Een command of knop in een menu krijgt altijd zijn regel** `command` of `menu_choice`; een admin-command alleen `admin_command`. Volgt er in dezelfde Interactie een regel van een andere soort, dan staat die er los achter: `/aanmelden_updates` geeft `command` plus `general_updates`, en een geblokkeerde Bezoeker die op 🎬 Film drukt geeft `menu_choice` plus `login` (`refused`).
-- **Het vangnet staat na alle handlers**, buiten de ConversationHandler. Zo vangt het ook wat buiten een Gesprek binnenkomt: een knop uit een oud bericht, `/stop` zonder Gesprek, en een command midden in een Gesprek dat daar niet werkt, zoals `/start` of `/message`. Van een command komt alleen het command zelf in de regel, zonder argumenten en zonder `@botnaam`.
-- **In maintenance mode** krijgt een Gebruiker die op 🎬 Film drukt `menu_choice` met `outcome: maintenance`. Een Bezoeker logt eerst in en krijgt de onderhoudsmelding daarna; zijn regel `login` heeft gewoon `outcome: success`, en geen regel noemt de onderhoudsmelding.
+- **Een command of knop in een menu krijgt altijd zijn regel** `command` of `menu_choice`; een admin-command alleen `admin_command`. Volgt er in dezelfde Interactie een regel van een andere soort, dan staat de uitkomst in die regel: `/aanmelden_updates` geeft `command` plus `general_updates`, en een geblokkeerde Bezoeker die op 🎬 Film drukt geeft `menu_choice` plus `login` (`refused`).
+- **Het vangnet staat na alle handlers**, buiten de ConversationHandler. Zo vangt het ook wat buiten een Gesprek binnenkomt: een knop uit een oud bericht, `/stop` zonder Gesprek, en een command midden in een Gesprek dat daar niets doet, zoals `/start` of `/message`. Die worden allemaal `ignored`. Van een command komt alleen het command zelf in de regel, zonder argumenten en zonder `@botnaam`.
+- **In maintenance mode** krijgt een Gebruiker die op 🎬 Film drukt `menu_choice` met `outcome: maintenance`. Een Bezoeker logt eerst in en krijgt de onderhoudsmelding daarna: zijn regel `login` heeft `outcome: success`, `maintenance: true` en ": maintenance message" achter `msg`.
+- **Het debug-bestand krijgt geen tekst van berichten.** PTB schreef op DEBUG de tekst van elk bericht weg: `telegram.Bot` en `telegram.ext.ExtBot` de parameters en het antwoord van elke aanroep van de Bot API, en `telegram.ext.Application` elke update ("Processing update", "Dropping pending update"). Zo kwamen wachtwoorden, en e-mail en telefoon uit een accountaanvraag, in het debug-bestand. Het filter `WithoutMessageText` in `src/log/__init__.py` laat die regels weg uit elk bestand. De andere DEBUG-regels van PTB blijven.
 - **`conversation_expired` heeft geen Code**: een Gesprek verloopt in een job, buiten een Interactie. De regel krijgt zelf `user_id` met `account` of `tg_name`.
 - **Een handler schrijft zijn regel zelf**, zodat `logger` en `src` van die handler zijn. `src/conversation.py` levert alleen de inhoud van de regels die meerdere handlers delen: `log.info(**command_or_choice_line(update))` en `ignored_line(update, step)`.
 - **De velden**:
@@ -40,7 +41,7 @@ Genomen op 2026-11-04. De eerste drie wijken af van de letter van de spec en zij
   |---|---|
   | `command` | `command` (`/start`), `outcome: maintenance` |
   | `menu_choice` | `menu` (`start`, `help`), `button` (de callback_data), `outcome: maintenance` |
-  | `login` | `outcome`: `success` met `logged_in_as`, `wrong_password` met `attempt`, `blocked` met `attempt: 3`, `refused` |
+  | `login` | `outcome`: `success` met `logged_in_as` (en in maintenance mode zo nodig `maintenance: true`), `wrong_password` met `attempt`, `blocked` met `attempt: 3`, `refused` |
   | `general_updates` | `choice` (`on`, `off`), `outcome` (`changed`, `unchanged`) |
   | `account_request` | `question` (`name`, `email`, `phone`, `via`); alleen bij `name` ook `name` |
   | `help_question` | `text` |
@@ -50,15 +51,6 @@ Genomen op 2026-11-04. De eerste drie wijken af van de letter van de spec en zij
   | `conversation_expired` | `step` |
 
   `step` is de naam van de state in kleine letters, zoals `verify_pwd`.
-
-## Open
-
-Voorgelegd op 2026-11-04:
-
-- **Het debug-bestand bevat wel wachtwoorden.** Bij `LOG_TYPE=DEBUG` schrijft PTB op DEBUG de tekst van elk bericht weg: `telegram.Bot` de respons van elke `getUpdates` en de parameters van elke `sendMessage`, en `telegram.ext.Application` elke update ("Processing update"). Zo komen wachtwoorden, en e-mail en telefoon uit een accountaanvraag (ook via de admin-melding), in het debug-bestand. Het debug-bestand krijgt volgens de spec alles van libraries vanaf DEBUG ([3. Bestanden](../spec.md#3-bestanden)), en dat botst met [Nooit in een logregel](../spec.md#nooit-in-een-logregel). De eigen regels en het hoofdbestand hebben het wachtwoord niet.
-- **`/stop` zonder Gesprek en een bekend command midden in een Gesprek worden `ignored`.** De spec noemt `/stop` "een gewone command-actie" en `ignored` alleen voor "een onbekend command".
-- **Twee regels voor één actie**: `command` of `menu_choice`, met daarachter `general_updates` of `login`. Uitgangspunt 5 wil de uitkomst "in dezelfde regel".
-- **Een Bezoeker in maintenance mode**: geen regel noemt de onderhoudsmelding na het inloggen.
 
 ## Spec
 

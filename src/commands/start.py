@@ -152,7 +152,10 @@ class Start:
         # Check if given password is known in json. Only the outcome gets a line, never the password.
         for key, value in json_data["users"].items():
             if value == update.message.text:
-                log.info(f"logged in as {key}", event="login", outcome="success", logged_in_as=key)
+                # In maintenance mode the option a Bezoeker chose before logging in may get the maintenance message
+                maintenance = self.in_maintenance(context.user_data.get("media_option"))
+                log.info(f"logged in as {key}{': maintenance message' if maintenance else ''}", event="login",
+                         outcome="success", logged_in_as=key, maintenance=maintenance or None)
                 await self.telegram.send_admin_message(f"*ℹ️ First time login for user ℹ️*\nGebruiker: {key}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
                                                        "first login")
                 await self.function.send_message(f"Je wachtwoord klopt!\n\nJe bent nu ingelogd als gebruiker: {key}", update, context)

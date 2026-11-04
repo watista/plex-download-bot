@@ -152,9 +152,21 @@ class StartTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         [line] = self.lines("login")
         self.assertEqual((line["msg"], line["outcome"], line["logged_in_as"]),
                          ("logged in as wouter", "success", "wouter"))
+        self.assertNotIn("maintenance", line)
         self.assertEqual(self.admin_messages(), ["first login"])
         self.assertNotIn(PASSWORD, self.raw(MAIN))
         self.log.logger.assert_not_awaited()
+
+    async def test_in_maintenance_mode_a_login_ends_with_the_maintenance_message(self):
+        context = MagicMock(user_data={"media_option": "serie_request", "login_tries": 0})
+
+        state = await self.start("maintenance").verify_pwd(message(PASSWORD, 777, "Sanne"), context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        self.maintenance.notice.assert_awaited_once()
+        [line] = self.lines("login")
+        self.assertEqual((line["msg"], line["outcome"], line["maintenance"]),
+                         ("logged in as wouter: maintenance message", "success", True))
 
     async def test_a_wrong_password_three_times(self):
         context = MagicMock(user_data={"media_option": "movie_request", "login_tries": 0})

@@ -42,3 +42,4 @@ Telegram wordt een dienst met Storingen, zoals de andere diensten. Een melding d
 - PTB vangt `RetryAfter` en `TimedOut` bij het pollen zelf af. Elke andere `TelegramError` gaat naar `error_handler`. De wachttijd loopt op van 1 tot 30 seconden.
 - `HTTPXRequest.do_request` en `ApplicationBuilder.request()` en `.get_updates_request()` bestaan in PTB 21.10.0.
 - In oktober waren er 805 WARNING-regels in bijna een etmaal storing.
+- Een `http_call` van `TelegramRequest` met `request` en `response` zou de tekst van berichten weer in het debug-bestand zetten: wachtwoorden in de updates, en e-mail en telefoon in de admin-melding van een accountaanvraag. Issue 05 liet daarom de DEBUG-regels van PTB met berichttekst weg (`WithoutMessageText` in `src/log/__init__.py`, en [Nooit in een logregel](../spec.md#nooit-in-een-logregel)). Leg voor wat een `http_call` van Telegram dan wel krijgt, bijvoorbeeld alleen de methode, de status en de duur.
