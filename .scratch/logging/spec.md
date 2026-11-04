@@ -567,7 +567,7 @@ Logs on thuisserver since 2026-12-01
 
 ### Lezen
 
-12. De lezer leest de dagbestanden binair en achterwaarts in blokken, doet eerst een goedkope substring-check en pas daarna `json.loads`, alles in `asyncio.to_thread`. Een halve laatste regel die de bot nog aan het schrijven is, slaat hij over.
+12. De lezer leest de dagbestanden binair en achterwaarts in blokken, doet eerst een goedkope substring-check en pas daarna `json.loads`, alles in `asyncio.to_thread`. Een halve laatste regel die de bot nog aan het schrijven is, slaat hij over. Voor "Later ➡️" leest hij ook achterwaarts, tot de positie in de knop (besloten bij 14).
 
 ---
 
@@ -621,11 +621,12 @@ Bronnen: 14 en 15, met 01, 09 en 12.
 
 ### Telegram
 
-11. **Eén verzendfunctie: `await send(chat_id, text, fmt, silent=False)`**:
-    - Hij maskeert met `mask()`, kapt af op 4096 tekens, en als Telegram de opmaak weigert, verstuurt hij het bericht één keer opnieuw als platte tekst met de regel ⚠️. De weigering schrijft hij als ERROR-regel met `fault: bug`, zonder eigen melding.
+11. **Eén verzendfunctie: `await send(chat_id, text, fmt, silent=False, markup=None, edit=None)`**:
+    - Hij maskeert met `mask()`, kapt af op 4096 tekens zoals Telegram ze telt (in UTF-16, zonder een teken te halveren), en als Telegram de opmaak weigert, verstuurt hij het bericht één keer opnieuw als platte tekst met de regel ⚠️. De weigering schrijft hij als ERROR-regel met `fault: bug`, zonder eigen melding.
+    - `markup` zijn de knoppen onder het bericht. Met `edit`, het ID van een bericht van de bot in die chat, komt de tekst in de plaats van dat bericht, zoals na een druk op een van zijn knoppen (besloten bij 14, voor `/log`).
     - `NetworkError`, `TimedOut` en `RetryAfter` zet hij om in een Fault van Telegram (Storing).
     - `Forbidden` ("bot was blocked by the user") geeft hij terug als "niet afgeleverd", met de reden. Dat is geen Fault.
-    - Hij wordt gebruikt door de meldfunctie, `send_admin_message`, `send_user_message` en de Foutmelding van de wrapper.
+    - Hij wordt gebruikt door de meldfunctie, `send_admin_message`, `send_user_message`, de Foutmelding van de wrapper en `/log`.
     - Gewone antwoorden in een Gesprek (`Functions.send_message`) blijven erbuiten. Een `NetworkError` daar valt door naar de wrapper.
 12. **`send_admin_message(text)`** voor andere berichten aan de Beheerder: zie [hoofdstuk 6](#6-gebruikersberichten-en-andere-berichten-aan-de-beheerder).
 13. **`await send_user_message(user_id, kind, text, media=None)`** verstuurt een Gebruikersbericht en schrijft de regel `user_message`.
@@ -663,9 +664,9 @@ Elke module heeft eigen tests, behalve `src/log/files.py`.
 |---|---|---|---|
 | Logregels | `src/log/__init__.py` (vervangt `src/log.py`) | `setup_logging(env, level, folder, verbose)`, `get_logger(name)`, `mask(text)` | JSON-formatter met de velden, een handler per dagbestand en het debug-bestand, de console, de filters voor context, maskeren en eigen code tegenover libraries, `captureWarnings` |
 | Bestandsnamen | `src/log/files.py` (intern) | naam per dag, lijst van dagbestanden | gedeeld door de dagbestand-handler en de lezer |
-| Loglezer | `src/log/search.py` | `search(query, before=None)`: regels van nieuw naar oud, elk met een positie (datum van het bestand plus byte-offset). `query` is een set user ID's plus een accountnaam, of een Code | achterwaarts lezen, eerst een substring-check, in `asyncio.to_thread` |
+| Loglezer | `src/log/search.py` | `search(folder, env, query, before=None, after=None)`: regels van nieuw naar oud, alleen die vóór `before` en na `after`, elk met een positie (datum van het bestand plus byte-offset). `query` is een set user ID's plus een accountnaam, of een Code | achterwaarts lezen, eerst een substring-check, in `asyncio.to_thread` |
 | Meldfunctie | `src/faults.py` | `Fault`, `FaultKind`, `FaultReporter.report / ok / fixed / report_crash`, plus het installeren van de excepthook | de toestand in `faults.json` onder één lock (jobs en updates lopen door elkaar op dezelfde loop), de beslisregels van [hoofdstuk 8](#8-fouten) en [9](#9-afremmen-en-toestand), de HTML-opmaak van [hoofdstuk 10](#10-admin-melding-bij-een-fout), `Not sent meanwhile`, `bot_crashed` |
-| Verzendfunctie | `src/telegram_out.py` | `send`, `send_user_message`, `send_admin_message`, `TelegramRequest` | maskeren, de terugval op platte tekst, omzetten van Telegram-excepties, `user_message` en `admin_message_sent` |
+| Verzendfunctie | `src/telegram_out.py` | `send`, `send_user_message`, `send_admin_message`, `TelegramRequest` | maskeren, afkappen, de terugval op platte tekst, knoppen en een bericht vervangen, omzetten van Telegram-excepties, `user_message` en `admin_message_sent` |
 | Interactie | `src/interaction.py` | `InteractionProcessor`, `guard`, `guard_job`, `guard_task`, `working_on`, `tally`, `current_code()` | de contextvars, het samenstellen van de Foutmelding, `job_finished`, het herstarten van de heartbeat |
 | Requestregel | `src/services/request.py` | `call(service, action, attempt, retries)` | de indeling van antwoorden, opnieuw proberen, `http_call`, `ok` |
 | `/log` | `src/commands/log.py` | het command en de handler voor de knoppen | het argument herkennen, de HTML-pagina bouwen, bladeren. De positie van de laatste regel gaat in de knop |

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import httpx
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 from telegram.ext import ExtBot
 
@@ -39,9 +40,18 @@ class FakeBot:
         self.attempts = []
         self._answers = list(answers)
 
-    async def send_message(self, chat_id, text, parse_mode=None, disable_notification=None, **kwargs):
+    async def send_message(self, chat_id, text, parse_mode=None, disable_notification=None, reply_markup=None,
+                           **kwargs):
         self.attempts.append(SimpleNamespace(chat_id=chat_id, text=text, parse_mode=parse_mode,
-                                             silent=disable_notification))
+                                             silent=disable_notification, markup=reply_markup, edit=None))
+        self._answer()
+
+    async def edit_message_text(self, text, chat_id, message_id, parse_mode=None, reply_markup=None, **kwargs):
+        self.attempts.append(SimpleNamespace(chat_id=chat_id, text=text, parse_mode=parse_mode, silent=None,
+                                             markup=reply_markup, edit=message_id))
+        self._answer()
+
+    def _answer(self) -> None:
         answer = self._answers.pop(0) if self._answers else None
         if answer is not None:
             raise answer
@@ -76,6 +86,34 @@ class SendTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([len(attempt.text) for attempt in self.bot.attempts], [4096, 4096])
         self.assertEqual(self.bot.attempts[1].text, "b" * 4096)
+
+    async def test_the_4096_characters_are_counted_as_telegram_does_in_utf_16(self):
+        telegram = self.telegram()
+
+        # An emoji is two characters for Telegram, and is never cut in half
+        await telegram.send(555, "a" + "😀" * 2048, None)
+
+        self.assertEqual(self.bot.attempts[0].text, "a" + "😀" * 2047)
+
+    async def test_with_buttons_and_in_place_of_a_message(self):
+        telegram = self.telegram()
+        buttons = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Earlier", callback_data="earlier")]])
+
+        await telegram.send(555, "<b>page 1</b>", "HTML", markup=buttons)
+        await telegram.send(555, "<b>page 2</b>", "HTML", markup=buttons, edit=7)
+
+        sent, edited = self.bot.attempts
+        self.assertEqual((sent.text, sent.markup, sent.edit), ("<b>page 1</b>", buttons, None))
+        self.assertEqual((edited.chat_id, edited.text, edited.markup, edited.edit), (555, "<b>page 2</b>", buttons, 7))
+
+    async def test_rejected_html_in_place_of_a_message_goes_again_in_its_place(self):
+        buttons = InlineKeyboardMarkup([[InlineKeyboardButton("Later ➡️", callback_data="later")]])
+        telegram = self.telegram(BadRequest("Can't parse entities: can't find end tag"), None)
+
+        await telegram.send(555, "<b>page 2", "HTML", markup=buttons, edit=7)
+
+        html, plain = self.bot.attempts
+        self.assertEqual((plain.parse_mode, plain.markup, plain.edit), (None, buttons, 7))
 
     async def test_rejected_html_goes_again_as_plain_text_with_a_bug_line(self):
         rejection = "Can't parse entities: unsupported start tag \"x\" at byte offset 0"

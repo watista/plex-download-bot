@@ -9,9 +9,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from telegram import CallbackQuery, Chat, Message, MessageEntity, Update, User
-from telegram.ext import Application, ConversationHandler
+from telegram.ext import Application, BaseHandler, ConversationHandler
 
 from src.bot import Bot
+from src.commands.log import LogCommand
 from src.commands.subscribe import Subscribe
 from src.log import setup_logging
 from src.states import AFMELDEN_OPTIE, HELP_CHOICE, MOVIE_OPTION, VERIFY_PWD
@@ -25,6 +26,15 @@ def message(text: str, user_id: int = 1, first_name: str = "Wouter") -> Update:
     entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, len(text.split()[0]))] if text.startswith("/") else None
     sent = Message(1, datetime.now(), Chat(user_id, Chat.PRIVATE), from_user=user, text=text, entities=entities)
     # A command like /start@plex_bot is only for the bot with that name
+    sent.set_bot(MagicMock(username="plex_bot"))
+    return Update(1, message=sent)
+
+
+def in_group(text: str, user_id: int = 1, first_name: str = "Wouter") -> Update:
+    """ An update with a command of this user in a group """
+    user = User(user_id, first_name, is_bot=False)
+    sent = Message(1, datetime.now(), Chat(-100, Chat.GROUP), from_user=user, text=text,
+                   entities=[MessageEntity(MessageEntity.BOT_COMMAND, 0, len(text.split()[0]))])
     sent.set_bot(MagicMock(username="plex_bot"))
     return Update(1, message=sent)
 
@@ -69,6 +79,10 @@ class ConversationTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         # Every handler is guarded, so an exception in one only reaches the meldfunctie
         self.bot.faults = FakeFaults()
         self.bot.telegram = SimpleNamespace(send=FakeSend())
+
+        # /log, for the Beheerder only
+        self.bot.log_command = LogCommand("dev", str(self.folder), str(data_json), "thuisserver", self.bot.allowed_users,
+                                          self.bot.telegram.send)
         self.addCleanup(self.no_fout)
 
         self.bot._register_handlers()
@@ -78,17 +92,21 @@ class ConversationTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         """ No handler raised: the guard would have hidden it from the test """
         self.assertEqual([report.fault for report in self.bot.faults.reports], [])
 
-    async def send(self, update: Update, state: int | None = None):
-        """ Handles the update like PTB: the first handler that takes it, while the Gesprek is in this state """
+    def taker(self, update: Update, state: int | None = None) -> tuple[BaseHandler, object]:
+        """ The first handler that takes the update, like PTB, while the Gesprek is in this state, with its check """
         if state is not None:
             self.conversation._conversations[(update.effective_chat.id, update.effective_user.id)] = state
         for handler in self.bot.application.handlers[0]:
-            check = handler.check_update(update)
-            if check:
-                # The ConversationHandler hands it to one of its own handlers
-                callback = check[2].callback if handler is self.conversation else handler.callback
-                return await callback(update, MagicMock(user_data={"gebruiker": "wouter"}))
+            if check := handler.check_update(update):
+                return handler, check
         self.fail("no handler took the update")
+
+    async def send(self, update: Update, state: int | None = None):
+        """ Handles the update like PTB: the first handler that takes it, while the Gesprek is in this state """
+        handler, check = self.taker(update, state)
+        # The ConversationHandler hands it to one of its own handlers
+        callback = check[2].callback if handler is self.conversation else handler.callback
+        return await callback(update, MagicMock(user_data={"gebruiker": "wouter"}))
 
     async def test_a_button_of_an_old_message_is_ignored_with_its_value(self):
         # Option 3 of an earlier search, while the bot waits for a choice in the help menu
@@ -132,6 +150,31 @@ class ConversationTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
         [line] = self.lines("ignored")
         self.assertEqual(line["command"], "/message_all")
+
+    async def test_log_of_someone_else_is_ignored(self):
+        await self.send(message("/log wouter"))
+
+        [line] = self.lines("ignored")
+        self.assertEqual(line["msg"], "ignored command /log outside a conversation")
+
+    async def test_log_of_the_beheerder_in_a_group_is_ignored(self):
+        await self.send(in_group("/log wouter", user_id=99))
+
+        [line] = self.lines("ignored")
+        self.assertEqual(line["command"], "/log")
+
+    async def test_a_button_of_log_pressed_by_someone_else_is_ignored(self):
+        await self.send(press("log:e:p:20261207:0:wouter"), state=MOVIE_OPTION)
+
+        [line] = self.lines("ignored")
+        self.assertEqual(line["msg"], "ignored button 'log:e:p:20261207:0:wouter' at step movie_option")
+
+    async def test_log_of_the_beheerder_in_the_middle_of_a_gesprek_and_its_buttons(self):
+        command, _ = self.taker(message("/log wouter", user_id=99), state=MOVIE_OPTION)
+        button, _ = self.taker(press("log:e:p:20261207:0:wouter", user_id=99), state=MOVIE_OPTION)
+
+        self.assertEqual(command.callback.__wrapped__, self.bot.log_command.log_command)
+        self.assertEqual(button.callback.__wrapped__, self.bot.log_command.page_button)
 
     async def test_a_message_without_text_is_ignored(self):
         user = User(1, "Wouter", is_bot=False)

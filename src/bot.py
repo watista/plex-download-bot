@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import socket
 import time
 import warnings
 from contextlib import contextmanager
@@ -21,6 +22,7 @@ from src.commands.schedule import NOTIFY_COUNTS, Schedule
 from src.commands.message import Message
 from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
+from src.commands.log import LogCommand
 from src.conversation import Conversation, command_or_choice_line
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
@@ -150,6 +152,10 @@ class Bot:
         self.message = Message(args, logger, self.function, self.telegram)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
+        # /log reads the day files of this host, and says which host that is
+        self.log_command = LogCommand(args.env, os.getenv("LOG_FOLDER"), data_json, socket.gethostname(),
+                                      self.allowed_users, self.telegram.send)
+
         # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
         # normal mode; on the standby (maintenance) host they would just fail.
         if self.mode == "normal":
@@ -187,6 +193,8 @@ class Bot:
             self._guarded(CommandHandler("help", self.help.help_command)))
         self.application.add_handler(
             self._guarded(CommandHandler("privacy", self.privacy.privacy_command)))
+        # Only for the Beheerder in the private chat: from anyone else, or in a group, it goes on to the catch-all
+        self.application.add_handlers([self._guarded(handler) for handler in self.log_command.handlers()])
 
         # Only one handler per group takes an update, so this one only gets what all handlers above leave
         self.application.add_handlers([self._guarded(handler) for handler in self.conversation.catch_all()])

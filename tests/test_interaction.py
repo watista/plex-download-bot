@@ -20,6 +20,7 @@ from telegram.ext import Application, BaseHandler, CallbackContext, Conversation
 from telegram.warnings import PTBUserWarning
 
 from src.bot import Bot
+from src.commands.log import LogCommand
 from src.faults import Fault, FaultKind
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, current_code, guard,
                              guard_job, guard_task, new_code, tally, working_on)
@@ -714,6 +715,7 @@ class BotHandlersTest(unittest.TestCase):
         for commands in ("function", "privacy", "help", "maintenance", "start", "account", "message", "serie", "movie",
                          "subscribe"):
             setattr(bot, commands, MagicMock())
+        bot.log_command = LogCommand("dev", "log", "data.dev.json", "thuisserver", bot.allowed_users, bot.telegram.send)
         with patch("src.bot.guard", side_effect=Guarded):
             bot._register_handlers()
         return bot
