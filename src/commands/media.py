@@ -3,7 +3,6 @@
 import asyncio
 import os
 import json
-import traceback
 import time
 from datetime import datetime
 from typing import Optional
@@ -15,6 +14,8 @@ from src.states import REQUEST_AGAIN, REQUEST_MOVIE, REQUEST_SERIE, AANMELDEN_SE
 from src.services.plex import Plex
 from src.services.transmission import TransmissionService, check_transmission_and_trigger_scans
 from src.commands.start import Start
+from src.faults import Fault
+from src.interaction import working_on
 from src.log import get_logger
 
 
@@ -22,6 +23,9 @@ log = get_logger(__name__)
 
 # The media type in a line, per label of the conversation
 MEDIA_TYPES = {"film": "movie", "serie": "series"}
+
+# The service that downloads the media, per label of the conversation
+SERVICES = {"film": "radarr", "serie": "sonarr"}
 
 
 def title_and_year(media: dict) -> str:
@@ -47,13 +51,17 @@ def chosen_media(user_data: dict) -> dict:
 class Media(ABC):
     """ Base class for media handling """
 
-    def __init__(self, args, logger, functions, telegram, media_handler, label, media_folder, option_state):
+    # The fields of a media item that the conditions of get_media_states look at
+    filter_fields: tuple[str, ...] = ()
+
+    def __init__(self, args, logger, functions, telegram, faults, media_handler, label, media_folder, option_state):
 
         # Set default values
         self.args = args
         self.log = logger
         self.function = functions
         self.telegram = telegram
+        self.faults = faults
         self.media_handler = media_handler
         self.label = label
         self.media_folder = media_folder
@@ -244,6 +252,9 @@ class Media(ABC):
         context.user_data['media_item'] = {key: context.user_data['media_data'].get(key) for key in ("title", "year", "tmdbId")}
         chosen = context.user_data['media_item']
 
+        # Every Fout from here on is about this media item
+        working_on(chosen)
+
         # Only the size check below may unmonitor this download, user_data is persisted between requests
         context.user_data.pop("set_monitored", None)
 
@@ -269,8 +280,12 @@ class Media(ABC):
                     await asyncio.sleep(1)
                     context.user_data["set_monitored"] = False
 
-                # Do actions if defined
-                failed = "action" in details and not await getattr(self, details["action"])(update, context)
+                # Do actions if defined. A Fout in it ends the Gesprek, but the line of the choice says so first.
+                try:
+                    failed = "action" in details and not await getattr(self, details["action"])(update, context)
+                except Exception:
+                    self.log_choice(option, chosen, "failed")
+                    raise
 
                 # What the bot found. While Transmission is down, the user hears there is no room to start the download.
                 if failed:
@@ -281,10 +296,7 @@ class Media(ABC):
                     outcome = "no_space"
                 else:
                     outcome = details["outcome"]
-                found = outcome.replace("_", " ") + (f", {seasons} seasons" if too_many_seasons else "")
-                log.info(f"chose option {option}: {title_and_year(chosen)}: {found}", event="media_request",
-                         option=option, media_type=MEDIA_TYPES[self.label], outcome=outcome,
-                         seasons=seasons if too_many_seasons else None, media=chosen)
+                self.log_choice(option, chosen, outcome, seasons if too_many_seasons else None)
 
                 # user was informerd in previous steps about the error
                 if failed:
@@ -391,13 +403,16 @@ class Media(ABC):
                 # Return the next specific state
                 return details["next_state"]
 
-        # Fallback error: if no state matches
-        log.info(f"chose option {option}: {title_and_year(chosen)}: failed", event="media_request", option=option,
-                 media_type=MEDIA_TYPES[self.label], outcome="failed", media=chosen)
-        await self.function.send_message(f"*😵 Oeps, daar ging iets fout*\n\nDe serverbeheerder is op de hoogte gesteld van het probleem, je kan het nog een keer proberen in de hoop dat het dan wel werkt, of je kan het op een later moment nogmaals proberen.", update, context)
-        await self.log.logger(f"Error happened during media state filtering, see the logs for the media JSON.", False, "error", True)
-        await self.log.logger(f"Media JSON:\n{context.user_data['media_data']}", False, "error", False)
-        return ConversationHandler.END
+        # No state matches: a Bug, with the fields that the conditions looked at
+        self.log_choice(option, chosen, "failed")
+        raise Fault.bug(what="No media state matched",
+                        details={key: context.user_data['media_data'].get(key) for key in self.filter_fields})
+
+    def log_choice(self, option: int, media: dict, outcome: str, seasons: int | None = None) -> None:
+        """ The line media_request of the option the user chose: what the bot did or found, for the caller """
+        found = outcome.replace("_", " ") + (f", {seasons} seasons" if seasons else "")
+        log.info(f"chose option {option}: {title_and_year(media)}: {found}", stacklevel=2, event="media_request",
+                 option=option, media_type=MEDIA_TYPES[self.label], outcome=outcome, seasons=seasons, media=media)
 
     async def ask_notify_question(self, update: Update, context: CallbackContext, type: str, msg: str) -> None:
         """ Asks if the user want to stay notified about the download """
@@ -476,7 +491,7 @@ class Media(ABC):
 
         # Check if enough space is left
         if not download_folder:
-            await self.function.send_message(f"*😵 Er is op dit moment een probleem met de opslag van de Plęx server*\n\nDe serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
+            await self.function.send_message(f"*😵 Er is op dit moment een probleem met de opslag van de Plęx server*\n\nProbeer het op een later moment nog is.", update, context)
             await self.log.logger(f"Error happened during the check of the diskspace", False, "error", True)
             return False
 
@@ -484,18 +499,14 @@ class Media(ABC):
         set_monitored = context.user_data.get("set_monitored", True)
         payload = await self.create_download_payload(context.user_data['media_data'], download_folder, set_monitored)
 
-        # Check if payload creation was succesfull
-        if not payload:
-            await self.function.send_message(f"Er ging iets mis bij het starten van de downløad. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
-            return False
-
         # Queue download
         response = await self.media_handler.queue_download(payload)
 
-        # Check if download queue was succesfull
+        # Until Radarr and Sonarr raise a Fault themselves (issue 09), they give back None and tell the Beheerder
         if not response:
-            await self.function.send_message(f"Er ging iets mis bij het starten van de downløad. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
-            return False
+            service = SERVICES[self.label]
+            raise Fault.bug(what=f"{service.title()} did not queue the download", service=service,
+                            reason=self.media_handler.last_error)
 
         return True
 
@@ -553,4 +564,7 @@ class Media(ABC):
                 json.dump(data, file, indent=4)
                 file.truncate()
         except Exception as e:
-            await self.log.logger(f"Error during write to stats.json for media {context.user_data['media_data']['title']} and user {context.user_data['gebruiker']}, username {update.effective_user.first_name}.\n\nError: {' '.join(e.args)}\nTraceback:\n{traceback.format_exc()}", False, "error", True)
+            # The request itself went fine, so the Gesprek goes on without it in the stats
+            fault = Fault.bug(what="Could not write the request to stats.json")
+            fault.__cause__ = e
+            await self.faults.report(fault, continued="went on without counting the request")

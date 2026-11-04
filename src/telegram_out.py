@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from telegram import Bot, LinkPreviewOptions
-from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter
+from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TelegramError
 
 from src.faults import Fault, FaultKind
 from src.log import get_logger, mask
@@ -34,6 +34,18 @@ class Delivery:
 
 
 DELIVERED = Delivery()
+
+
+def telegram_disruption(error: BaseException) -> Fault | None:
+    """ The Storing of Telegram that an exception of PTB stands for, None for any other exception.
+
+    A NetworkError (TimedOut is one) or RetryAfter means Telegram is not responding; the bot does not wait for
+    RetryAfter. A BadRequest is a NetworkError too, but then Telegram did answer. The caller raises the Fault from
+    the error, or sets it as its cause.
+    """
+    if isinstance(error, (NetworkError, RetryAfter)) and not isinstance(error, BadRequest):
+        return Fault.disruption(service="telegram", what="Telegram is not responding", reason=str(error))
+    return None
 
 
 def rejects_formatting(error: BadRequest) -> bool:
@@ -135,10 +147,8 @@ class TelegramOut:
                                          link_preview_options=LinkPreviewOptions(is_disabled=True))
         except Forbidden as e:
             return Delivery(e.message)
-        except BadRequest:
-            # A subclass of NetworkError, but Telegram did answer
-            raise
-        except (NetworkError, RetryAfter) as e:
-            # TimedOut is a NetworkError. The bot does not wait for RetryAfter.
-            raise Fault.disruption(service="telegram", what="Telegram is not responding", reason=str(e)) from e
+        except TelegramError as e:
+            if (fault := telegram_disruption(e)) is None:
+                raise
+            raise fault from e
         return DELIVERED

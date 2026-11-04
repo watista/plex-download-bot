@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from telegram.ext import ConversationHandler
 
 from src.commands.serie import Serie
+from src.faults import Fault, FaultKind
 from src.states import SERIE_NOTIFY, SERIE_OPTION
 from test_log import MAIN
 from test_movie_states import MovieTest
@@ -33,7 +34,7 @@ class SerieTest(MovieTest):
 
     def setUp(self):
         super().setUp()
-        self.serie = Serie(SimpleNamespace(env="dev"), self.log, self.functions, self.telegram)
+        self.serie = Serie(SimpleNamespace(env="dev"), self.log, self.functions, self.telegram, self.faults)
         self.serie.media_handler = self.radarr
         self.serie.write_to_stats = AsyncMock()
 
@@ -68,6 +69,29 @@ class SerieTest(MovieTest):
         self.assertEqual((line["choice"], line["outcome"], line["tmdb_id"]), ("yes", "subscribed", 136315))
         [message] = self.admin_messages()
         self.assertIn("User has subscribed to the serie The Bear", message)
+
+    async def test_subscribing_to_a_serie_without_a_tmdbId_is_a_bug(self):
+        without_id = {key: value for key, value in THE_BEAR.items() if key != "tmdbId"}
+        context = self.context(media_data=without_id, media_item={"title": "The Bear", "year": 2022, "tmdbId": None})
+
+        with self.assertRaises(Fault) as caught:
+            await self.serie.aanmelden(self.update("yes"), context)
+
+        fault = caught.exception
+        self.assertEqual((fault.kind, fault.what, fault.details), (FaultKind.BUG, "The series has no tmdbId",
+                                                                   {"tmdbId": None}))
+        self.assertEqual(fault.media["title"], "The Bear")
+        self.functions.send_message.assert_not_awaited()
+        self.log.logger.assert_not_awaited()
+        self.assertEqual(json.loads(self.data_json.read_text()), {"notify_list": {}})
+
+    async def test_a_serie_without_a_tvdbId_falls_through_to_the_wrapper(self):
+        without_id = {key: value for key, value in THE_SIMPSONS.items() if key != "tvdbId"}
+
+        with self.assertRaises(KeyError):
+            await self.serie.media_option(self.update("0"), self.context(media_object=[without_id]))
+
+        self.log.logger.assert_not_awaited()
 
     async def test_no_subscription_after_a_request(self):
         await self.serie.aanmelden(self.update("no"), self.context(media_data=dict(THE_BEAR)))

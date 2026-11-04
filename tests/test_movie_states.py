@@ -7,8 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.ext import ConversationHandler
 
 from src.commands.movie import Movie
+from src.faults import Fault, FaultKind
 from src.log import setup_logging
+from src.services.radarr import Radarr
+from src.services.sonarr import Sonarr
 from src.states import MOVIE_NOTIFY, MOVIE_OPTION
+from test_interaction import FakeFaults
 from test_log import MAIN, LogFolder
 
 
@@ -69,9 +73,10 @@ class MovieTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.functions = functions
         self.telegram = MagicMock()
         self.telegram.send_admin_message = AsyncMock()
+        self.faults = FakeFaults()
 
         # Movie with a fake Radarr that has room on its disk
-        self.movie = Movie(SimpleNamespace(env="dev"), self.log, functions, self.telegram)
+        self.movie = Movie(SimpleNamespace(env="dev"), self.log, functions, self.telegram, self.faults)
         self.radarr = MagicMock()
         self.radarr.get_disk_space = AsyncMock(return_value=[{"path": "/media", "freeSpace": 500 * 1024 ** 3}])
         self.radarr.queue_download = AsyncMock(return_value={"id": 1})
@@ -188,14 +193,73 @@ class MovieStateTest(MovieTest):
         [line] = self.lines("media_request")
         self.assertEqual(line["outcome"], "no_space")
 
-    async def test_failed_download_is_an_error(self):
+    async def test_a_download_that_radarr_does_not_queue_is_a_bug(self):
+        # Until issue 09 Radarr gives back None instead of raising a Fault
         self.radarr.queue_download = AsyncMock(return_value=None)
+        self.radarr.last_error = "HTTP 400 Bad Request"
+
+        with self.assertRaises(Fault) as caught:
+            await self.choose(NEW_MOVIE)
+
+        fault = caught.exception
+        self.assertEqual((fault.kind, fault.what, fault.service, fault.reason),
+                         (FaultKind.BUG, "Radarr did not queue the download", "radarr", "HTTP 400 Bad Request"))
+        [line] = self.lines("media_request")
+        self.assertEqual((line["msg"], line["outcome"]), ("chose option 1: New Movie (2025): failed", "failed"))
+        # The wrapper sends the Foutmelding
+        self.functions.send_message.assert_not_awaited()
+
+    async def test_no_matching_state_is_a_bug_with_the_fields_the_states_look_at(self):
+        # In Radarr, but without a movieFileId
+        in_radarr = {"id": 412, "title": "Dune: Part Two", "year": 2024, "tmdbId": 693134, "status": "inCinemas",
+                     "monitored": True, "overview": "Paul Atreides unites with Chani"}
+
+        with self.assertRaises(Fault) as caught:
+            await self.choose(in_radarr)
+
+        fault = caught.exception
+        self.assertEqual((fault.kind, fault.what), (FaultKind.BUG, "No media state matched"))
+        self.assertEqual(fault.details, {"id": 412, "movieFileId": None, "monitored": True, "status": "inCinemas"})
+        [line] = self.lines("media_request")
+        self.assertEqual((line["msg"], line["outcome"]), ("chose option 1: Dune: Part Two (2024): failed", "failed"))
+        self.functions.send_message.assert_not_awaited()
+        self.log.logger.assert_not_awaited()
+        self.assertEqual(self.admin_messages(), [])
+
+    async def test_a_movie_without_a_tmdbId_falls_through_to_the_wrapper(self):
+        without_id = {key: value for key, value in NEW_MOVIE.items() if key != "tmdbId"}
+
+        with self.assertRaises(KeyError):
+            await self.choose(without_id)
+
+        [line] = self.lines("media_request")
+        self.assertEqual(line["outcome"], "failed")
+        self.functions.send_message.assert_not_awaited()
+        self.log.logger.assert_not_awaited()
+
+    async def test_stats_that_cannot_be_written_are_reported_and_the_request_goes_on(self):
+        del self.movie.write_to_stats
+        self.movie.stats_json = str(self.folder / "stats.dev.json")
+
+        state = await self.choose(NEW_MOVIE)
+
+        self.assertEqual(state, MOVIE_NOTIFY)
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.what, report.continued, report.user_told),
+                         (FaultKind.BUG, "Could not write the request to stats.json",
+                          "went on without counting the request", False))
+        self.assertIsInstance(report.fault.__cause__, FileNotFoundError)
+        self.log.logger.assert_not_awaited()
+
+    async def test_no_room_on_the_disks_does_not_promise_that_the_beheerder_knows(self):
+        self.radarr.get_disk_space = AsyncMock(return_value=[{"path": "/media", "freeSpace": 100 * 1024 ** 3}])
 
         state = await self.choose(NEW_MOVIE)
 
         self.assertEqual(state, ConversationHandler.END)
-        [line] = self.lines("media_request")
-        self.assertEqual((line["msg"], line["outcome"]), ("chose option 1: New Movie (2025): failed", "failed"))
+        [message] = [call.args[0] for call in self.functions.send_message.await_args_list]
+        self.assertIn("probleem met de opslag", message)
+        self.assertNotIn("op de hoogte", message)
 
     async def test_title_in_the_lines_is_the_title_of_radarr(self):
         # The title is sanitized for the MarkdownV2 of the answers, but not for the log, also not in the next step
@@ -215,6 +279,21 @@ class MovieStateTest(MovieTest):
 
         self.radarr.queue_download.assert_awaited_once()
         self.assertTrue(self.radarr.queue_download.await_args.args[0]["monitored"])
+
+
+class QueueDownloadTest(unittest.IsolatedAsyncioTestCase):
+    """ queue_download of Radarr and Sonarr until issue 09: None when it fails, and the Bug of start_download tells
+    the Beheerder, so the service itself sends nothing """
+
+    async def test_a_failed_queue_download_gives_none_without_an_admin_message(self):
+        for service in (Radarr, Sonarr):
+            with self.subTest(service=service.__name__):
+                logger = MagicMock(logger=AsyncMock())
+                client = service(logger)
+                client.post = AsyncMock(return_value=False)
+
+                self.assertIsNone(await client.queue_download({"tmdbId": 1001}))
+                logger.logger.assert_not_awaited()
 
 
 class MovieSearchTest(MovieTest):

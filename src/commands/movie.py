@@ -18,8 +18,10 @@ log = get_logger(__name__)
 class Movie(Media):
     """ Specific class for movie handling """
 
-    def __init__(self, args, logger, functions, telegram):
-        super().__init__(args, logger, functions, telegram, Radarr(logger),
+    filter_fields = ("id", "movieFileId", "monitored", "status")
+
+    def __init__(self, args, logger, functions, telegram, faults):
+        super().__init__(args, logger, functions, telegram, faults, Radarr(logger),
                          "film", os.getenv('MOVIE_FOLDERS'), MOVIE_OPTION)
 
     async def get_media_states(self) -> dict:
@@ -92,18 +94,12 @@ class Movie(Media):
         }
 
     async def create_download_payload(self, data: dict, folder: str, monitor: bool) -> dict:
-        """ Generates the download payload for Radarr """
-
-        try:
-            tmdb_id = data["tmdbId"]
-        except KeyError as e:
-            await self.log.logger(f"Missing required field in movie download payload: {e}", False, "error", True)
-            return None
+        """ Generates the download payload for Radarr; a missing field falls through to the wrapper as a Bug """
 
         payload = {
             "qualityProfileId": 7,
             "monitored": monitor,
-            "tmdbId": tmdb_id,
+            "tmdbId": data["tmdbId"],
             "rootFolderPath": folder
         }
 

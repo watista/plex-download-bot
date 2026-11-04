@@ -15,7 +15,7 @@ from src.bot import Bot
 from src.commands.subscribe import Subscribe
 from src.log import setup_logging
 from src.states import AFMELDEN_OPTIE, HELP_CHOICE, MOVIE_OPTION, VERIFY_PWD
-from test_interaction import fake_account_for
+from test_interaction import FakeFaults, FakeSend, fake_account_for
 from test_log import MAIN, LogFolder
 
 
@@ -66,8 +66,17 @@ class ConversationTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.bot.subscribe.data_json = str(data_json)
         self.bot.subscribe.sonarr = MagicMock(lookup_by_tmdbid=AsyncMock())
 
+        # Every handler is guarded, so an exception in one only reaches the meldfunctie
+        self.bot.faults = FakeFaults()
+        self.bot.telegram = SimpleNamespace(send=FakeSend())
+        self.addCleanup(self.no_fout)
+
         self.bot._register_handlers()
         self.conversation = self.bot.conversation
+
+    def no_fout(self):
+        """ No handler raised: the guard would have hidden it from the test """
+        self.assertEqual([report.fault for report in self.bot.faults.reports], [])
 
     async def send(self, update: Update, state: int | None = None):
         """ Handles the update like PTB: the first handler that takes it, while the Gesprek is in this state """

@@ -1,6 +1,6 @@
 # 07 Wrapper, Foutmelding en error_handler
 
-Status: open
+Status: dicht
 Blocked by: 06
 Niet tegelijk met: 04, 05, 09, 14 (handlers en `src/bot.py`)
 
@@ -34,6 +34,33 @@ Fouten worden centraal afgevangen. Daarna stuurt de bot een Foutmelding met een 
 | `stats.json` niet te schrijven | `src/commands/media.py:489` | |
 
 Daarnaast verdwijnen de eigen Foutmeldingen (`media.py:422`, `:430`, `serie.py:194`, `subscribe.py:115`) en de zin "op de hoogte" (`media.py:334`, `:412`, `start.py:221`).
+
+## Besluiten bij de uitvoering
+
+Genomen op 2026-11-04. Het eerste is voorgelegd en besloten op 2026-11-04.
+
+- **Een mislukte `queue_download` is tot 09 een Bug.** Radarr en Sonarr geven tot 09 `None` terug in plaats van een Fault te gooien. `start_download` gooit dan `Fault.bug` ("Radarr did not queue the download", met `last_error` als reden), zodat de Gebruiker de Foutmelding met de Code krijgt. `queue_download` stuurt zelf geen admin-melding meer, dus er gaat één melding uit. Tot 09 telt een onbereikbare Radarr hier als Bug in plaats van als Storing, en delen alle mislukte aanvragen bij één dienst één handtekening.
+- **`stats.json` niet te schrijven: melden en doorwerken** ([Afvangen](../spec.md#afvangen), punt 5). `write_to_stats` meldt een `Fault.bug` met `continued: went on without counting the request`, en het Gesprek gaat door. De aanvraag zelf is dan al gelukt, en de Gebruiker heeft al een vraag met knoppen gekregen.
+- **De melding over de opslag (`:412`) blijft tot 09 een bericht van de handler**, alleen zonder "op de hoogte". 09 maakt er een Inrichtingsfout `disk_space` met `user_text` van.
+- **De Foutmelding**, in HTML. De Code staat in `<code>`, zodat de Gebruiker hem met een tik kopieert:
+
+  ```
+  <b>😵 Oeps, daar ging iets fout</b>
+
+  De serverbeheerder is hiervan op de hoogte. Stuur /start om opnieuw te beginnen.
+
+  Code: <code>k7p2qx</code>
+  ```
+
+  Gaf `report()` `False`, dan staat er "Probeer het later nog eens." De standaardzin is bij een Bug "Oeps, daar ging iets fout", bij een Storing "Een onderdeel van de Plęx server reageert op dit moment niet" en bij een Inrichtingsfout "Er is een probleem met de inrichting van de Plęx server".
+- **Geen Foutmelding buiten een Interactie.** De timeout van een Gesprek loopt in een job, zonder Interactie en dus zonder Code. Een Fout daar gaat alleen naar de meldfunctie, die hem een eigen Code geeft. Een Gesprek verloopt stil, dus de Gebruiker krijgt dan geen bericht.
+- **Van het pollen** is in `error_handler` alleen een `NetworkError`, `RetryAfter` of `Conflict` zonder update, job of taak. Die blijven tot 11 zoals ze waren. Al het andere is een Bug buiten de wrapper, ook een fout bij het wegschrijven van `bot_state.pkl`: die geeft PTB ook zonder update door.
+- **De interfaces**: `guard(callback, faults, send)` en `guard_job(callback, faults)`, want er komt geen object op moduleniveau ([Logregels schrijven](../spec.md#logregels-schrijven), punt 2). `error_handler` gebruikt `report_outside_wrapper(update, error, faults, send)`. `telegram_disruption(error)` in `src/telegram_out.py` is de ene regel voor "Telegram reageert niet", voor de verzendfunctie en de wrappers. `faults` komt in `Media`, `Movie` en `Serie` achter `telegram`; `logger` verdwijnt pas in 15.
+- **Eén helper in `src/bot.py`**: `_guarded(handler)` wikkelt de callback in, en bij een Gesprek die van elke handler erin: de entry points, de states met de timeout, en de fallbacks. Zo kan geen handler vergeten worden. Een test controleert dat elke callback precies één keer via `guard` loopt.
+- **De wrapper staat niet in de traceback.** Hij haalt zijn eigen frame eraf, zodat de eigen code in de admin-melding bij de handler begint. Een fout van de wrapper zelf houdt dat frame.
+- **`media_request` met `failed`, ook als de actie een Fout gooit.** `media_option` schrijft de regel van de keuze voordat de Fout doorvalt, zodat de uitkomsten uit 04 blijven kloppen. Het zet ook `working_on(chosen)`, zodat elke Fout daarna het media-item heeft.
+- **Een veld dat ontbreekt in de payload** (`tmdbId`, `tvdbId`, `title`) valt door als `KeyError`, en de wrapper maakt er een Bug van.
+- **"Geen passende state"** heeft als `details` de velden die de states bekijken (`filter_fields`): bij een film `id`, `movieFileId`, `monitored` en `status`, bij een serie `path`, `monitored` en `status`.
 
 ## Spec
 

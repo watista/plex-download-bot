@@ -6,17 +6,24 @@ import logging
 import tempfile
 import unittest
 import warnings
+from collections import namedtuple
 from datetime import datetime
+from itertools import chain
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram import Chat, Message, Update, User
-from telegram.ext import Application, CallbackContext
+from telegram.error import BadRequest, Conflict, NetworkError, RetryAfter, TimedOut
+from telegram.ext import Application, BaseHandler, CallbackContext, ConversationHandler
 from telegram.warnings import PTBUserWarning
 
 from src.bot import Bot
-from src.interaction import InteractionProcessor, JobQueueOutsideInteractions, account_for, current_code, guard_job, new_code
+from src.faults import Fault, FaultKind
+from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, current_code, guard,
+                             guard_job, new_code)
 from src.log import get_logger, setup_logging
+from src.telegram_out import DELIVERED, Delivery
 from test_log import DEBUG, MAIN, LogFolder
 
 
@@ -35,6 +42,69 @@ def message_from(user_id: int, first_name: str, text: str = "/start") -> Update:
     """ An update with a private message of this Telegram user """
     user = User(user_id, first_name, is_bot=False)
     return Update(1, message=Message(1, datetime.now(), Chat(user_id, Chat.PRIVATE), from_user=user, text=text))
+
+
+class FakeSend:
+    """ The verzendfunctie: keeps every message, and answers per message with a Delivery or an exception """
+
+    def __init__(self, *answers: Delivery | Exception):
+        self.messages = []
+        self._answers = list(answers)
+
+    async def __call__(self, chat_id, text: str, fmt: str | None, silent: bool = False) -> Delivery:
+        self.messages.append(SimpleNamespace(chat_id=chat_id, text=text, fmt=fmt, silent=silent))
+        answer = self._answers.pop(0) if self._answers else DELIVERED
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+class FakeFaults:
+    """ The meldfunctie: keeps every Fout it gets with how it came, and answers report() with known """
+
+    def __init__(self, known: bool = True):
+        self.known = known
+        self.reports = []
+
+    async def report(self, fault: Fault, user_told: bool = False, continued: str | None = None, *,
+                     outside_wrapper: bool = False) -> bool:
+        self.reports.append(SimpleNamespace(fault=fault, user_told=user_told, continued=continued,
+                                            outside_wrapper=outside_wrapper, code=current_code()))
+        return self.known
+
+
+def raising(error: Exception):
+    """ A handler that raises this exception """
+
+    async def media_option(update: Update, context: CallbackContext) -> int:
+        raise error
+
+    return media_option
+
+
+def raising_job(error: Exception):
+    """ A job that raises this exception """
+
+    async def check_notify_list(context: CallbackContext) -> None:
+        raise error
+
+    return check_notify_list
+
+
+def all_handlers(application: Application) -> list[BaseHandler]:
+    """ Every handler of the application, with the handlers in a Gesprek instead of the Gesprek itself """
+    handlers = []
+
+    def add(handler: BaseHandler) -> None:
+        if isinstance(handler, ConversationHandler):
+            for inner in [*handler.entry_points, *chain.from_iterable(handler.states.values()), *handler.fallbacks]:
+                add(inner)
+        else:
+            handlers.append(handler)
+
+    for handler in chain.from_iterable(application.handlers.values()):
+        add(handler)
+    return handlers
 
 
 class UpdateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
@@ -144,6 +214,149 @@ class UpdateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             self.assertFalse({"user_id", "account", "tg_name", "job"} & line.keys())
 
 
+class GuardTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ guard: a Fout in a handler ends the Gesprek with a Foutmelding, with a fake meldfunctie and verzendfunctie """
+
+    def setUp(self):
+        super().setUp()
+        setup_logging("dev", "INFO", str(self.folder), False)
+        self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
+        self.faults = FakeFaults()
+        self.send = FakeSend()
+
+    async def handle(self, callback) -> tuple[object, str]:
+        """ callback, guarded, as the handler of a message of anna: what it gives back, and the Code of the update """
+        update = message_from(555, "Anna")
+        seen = {}
+
+        async def process():
+            seen["state"] = await guard(callback, self.faults, self.send)(update, SimpleNamespace())
+            seen["code"] = current_code()
+
+        await InteractionProcessor(1, fake_account_for).process_update(update, process())
+        return seen["state"], seen["code"]
+
+    async def test_a_fault_ends_the_gesprek_with_an_error_message_that_has_the_code(self):
+        state, code = await self.handle(raising(Fault.bug(what="No media state matched")))
+
+        self.assertEqual(state, ConversationHandler.END)
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.what, report.user_told, report.outside_wrapper, report.code),
+                         ("No media state matched", True, False, code))
+        [message] = self.send.messages
+        self.assertEqual((message.chat_id, message.fmt), (555, "HTML"))
+        self.assertEqual(message.text, "\n".join([
+            "<b>😵 Oeps, daar ging iets fout</b>",
+            "",
+            "De serverbeheerder is hiervan op de hoogte. Stuur /start om opnieuw te beginnen.",
+            "",
+            f"Code: <code>{code}</code>",
+        ]))
+
+    async def test_when_the_beheerder_does_not_know_the_user_can_try_again_later(self):
+        self.faults.known = False
+
+        _, code = await self.handle(raising(Fault.bug(what="No media state matched")))
+
+        [message] = self.send.messages
+        self.assertNotIn("op de hoogte", message.text)
+        self.assertIn("\n\nProbeer het later nog eens. Stuur /start om opnieuw te beginnen.\n\n", message.text)
+        self.assertTrue(message.text.endswith(f"\nCode: <code>{code}</code>"))
+
+    async def test_the_user_text_of_the_fault_says_what_went_wrong(self):
+        fault = Fault.setup(service="radarr", what="No disk with 150 GB free", check="disk_space",
+                            user_text="Er is op dit moment een probleem met de opslag van de Plęx server <& co>")
+
+        await self.handle(raising(fault))
+
+        self.assertTrue(self.send.messages[0].text.startswith(
+            "<b>😵 Er is op dit moment een probleem met de opslag van de Plęx server &lt;&amp; co&gt;</b>\n\n"))
+
+    async def test_without_a_user_text_a_sentence_per_kind(self):
+        faults = [Fault.bug(what="No media state matched"),
+                  Fault.disruption(service="radarr", what="Radarr is not responding"),
+                  Fault.setup(service="sonarr", what="Carrie has no path in Sonarr", check="series_path", item=1418)]
+
+        for fault in faults:
+            await self.handle(raising(fault))
+
+        self.assertEqual([message.text.split("\n")[0] for message in self.send.messages], [
+            "<b>😵 Oeps, daar ging iets fout</b>",
+            "<b>😵 Een onderdeel van de Plęx server reageert op dit moment niet</b>",
+            "<b>😵 Er is een probleem met de inrichting van de Plęx server</b>",
+        ])
+
+    async def test_an_unknown_exception_is_a_bug(self):
+        error = KeyError("tmdbId")
+
+        state, code = await self.handle(raising(error))
+
+        self.assertEqual(state, ConversationHandler.END)
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.what, report.user_told), (FaultKind.BUG, "Unexpected exception", True))
+        self.assertIs(report.fault.__cause__, error)
+        [message] = self.send.messages
+        self.assertTrue(message.text.endswith(f"\nCode: <code>{code}</code>"))
+
+    async def test_formatting_that_telegram_rejects_is_a_bug(self):
+        # A BadRequest is a NetworkError of PTB, but Telegram did answer
+        await self.handle(raising(BadRequest("Can't parse entities: unsupported start tag \"x\" at byte offset 0")))
+
+        [report] = self.faults.reports
+        self.assertEqual(report.fault.kind, FaultKind.BUG)
+        self.assertEqual(len(self.send.messages), 1)
+
+    async def test_no_error_message_while_telegram_is_not_responding(self):
+        errors = [NetworkError("httpx.ConnectError: All connection attempts failed"), TimedOut(), RetryAfter(30),
+                  Fault.disruption(service="telegram", what="Telegram is not responding", reason="Timed out")]
+
+        states = [(await self.handle(raising(error)))[0] for error in errors]
+
+        self.assertEqual(states, [ConversationHandler.END] * 4)
+        self.assertEqual([(report.fault.kind, report.fault.service, report.user_told) for report in self.faults.reports],
+                         [(FaultKind.DISRUPTION, "telegram", False)] * 4)
+        self.assertEqual(self.send.messages, [])
+
+    async def test_a_callback_that_fails_before_it_runs_keeps_its_traceback(self):
+        # Not a coroutine function, so awaiting what it gives back fails in the wrapper itself
+        def media_option(update: Update, context: CallbackContext) -> int:
+            return 7
+
+        await self.handle(media_option)
+
+        [report] = self.faults.reports
+        self.assertIsInstance(report.fault.__cause__, TypeError)
+        self.assertIsNotNone(report.fault.__cause__.__traceback__)
+
+    async def test_a_handler_without_a_fout_gives_back_its_own_state(self):
+        async def media_option(update: Update, context: CallbackContext) -> int:
+            return 7
+
+        state, _ = await self.handle(media_option)
+
+        self.assertEqual(state, 7)
+        self.assertEqual((self.faults.reports, self.send.messages), ([], []))
+
+    async def test_telegram_not_responding_to_the_error_message_is_an_attempt_of_a_disruption(self):
+        self.send = FakeSend(Fault.disruption(service="telegram", what="Telegram is not responding", reason="Timed out"))
+
+        state, _ = await self.handle(raising(Fault.bug(what="No media state matched")))
+
+        self.assertEqual(state, ConversationHandler.END)
+        self.assertEqual([(report.fault.kind, report.fault.service) for report in self.faults.reports],
+                         [(FaultKind.BUG, None), (FaultKind.DISRUPTION, "telegram")])
+
+    async def test_an_error_message_that_is_not_delivered_is_a_warning(self):
+        self.send = FakeSend(Delivery("Forbidden: bot was blocked by the user"))
+
+        _, code = await self.handle(raising(Fault.bug(what="No media state matched")))
+
+        [line] = self.read(MAIN)
+        self.assertEqual((line["level"], line["msg"], line["reason"], line["interaction_id"]),
+                         ("WARNING", "error message not delivered: Forbidden: bot was blocked by the user",
+                          "Forbidden: bot was blocked by the user", code))
+
+
 class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
     """ Every run of a job is an Interaction of its own, run the way PTB runs a job """
 
@@ -152,10 +365,11 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         setup_logging("dev", "INFO", str(self.folder), False)
         self.enterContext(self.at("2026-11-03T14:30:00+01:00"))
         self.application = Application.builder().token("123:ABC").build()
+        self.faults = FakeFaults()
 
     async def run_job(self, callback, name: str) -> None:
         """ One run of a job, registered the way src/bot.py does it; the scheduler itself does not run """
-        job = self.application.job_queue.run_once(guard_job(callback), when=3600, name=name)
+        job = self.application.job_queue.run_once(guard_job(callback, self.faults), when=3600, name=name)
         await job.run(self.application)
 
     @staticmethod
@@ -191,7 +405,29 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(first["interaction_id"], second["interaction_id"])
         self.assertEqual(first["job"], second["job"])
 
-    async def test_the_error_handler_gets_the_context_of_the_run_that_failed(self):
+    async def test_a_fault_in_a_job_goes_to_the_meldfunctie_and_stops_the_run(self):
+        async def failing(context: CallbackContext) -> None:
+            get_logger("src.commands.schedule").info("checked 14 items")
+            raise Fault.bug(what="No media state matched")
+            get_logger("src.commands.schedule").info("checked 15 items")
+
+        await self.run_job(failing, "check_notify_list")
+
+        [own] = self.read(MAIN)
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.what, report.user_told, report.code),
+                         ("No media state matched", False, own["interaction_id"]))
+
+    async def test_an_unknown_exception_in_a_job_is_a_bug(self):
+        error = RuntimeError("Sonarr broke")
+
+        await self.run_job(raising_job(error), "scan_missing_sonarr")
+
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.what), (FaultKind.BUG, "Unexpected exception"))
+        self.assertIs(report.fault.__cause__, error)
+
+    async def test_the_error_handler_gets_the_context_of_a_run_whose_wrapper_failed(self):
         async def error_handler(update: object, context: CallbackContext) -> None:
             get_logger("src.bot").error("job failed", exc_info=context.error)
 
@@ -199,6 +435,8 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             get_logger("src.commands.schedule").info("checked 14 items")
             raise RuntimeError("Sonarr broke")
 
+        # The meldfunctie itself fails, like when faults.json cannot be read
+        self.faults.report = AsyncMock(side_effect=PermissionError("faults.json"))
         self.application.add_error_handler(error_handler)
         with warnings.catch_warnings():
             # Only in this test: PTB warns that the application, which it starts the error_handler on, is not running
@@ -206,7 +444,7 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             await self.run_job(failing, "check_notify_list")
 
         own, error = self.read(MAIN)
-        self.assertEqual(error["exc_type"], "RuntimeError")
+        self.assertEqual(error["exc_type"], "PermissionError")
         self.assertEqual(error["interaction_id"], own["interaction_id"])
         self.assertEqual(error["job"], "check_notify_list")
 
@@ -248,17 +486,20 @@ class BotJobsTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         setup_logging("dev", "INFO", str(self.folder), False)
         self.enterContext(self.at("2026-11-03T14:30:00+01:00"))
 
-    def bot(self, mode: str) -> Bot:
-        """ A bot whose jobs only write which callback ran """
+    def bot(self, mode: str, failing: str | None = None) -> Bot:
+        """ A bot whose jobs only write which callback ran; the failing one raises instead """
 
         def job(callback: str):
             async def run(context: CallbackContext) -> None:
+                if callback == failing:
+                    raise RuntimeError(f"{callback} broke")
                 get_logger("src.bot").info(f"ran {callback}")
             return run
 
         bot = Bot.__new__(Bot)
         bot.mode = mode
         bot.application = Application.builder().token("123:ABC").build()
+        bot.faults = FakeFaults()
         bot.publish_command_list = job("publish_command_list")
         bot.notify_admin_startup = job("notify_admin_startup")
         bot.schedule = SimpleNamespace(check_notify_list=job("check_notify_list"))
@@ -288,6 +529,117 @@ class BotJobsTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             "publish_command_list": "publish_command_list",
             "notify_admin_startup": "notify_admin_startup",
         })
+
+    async def test_a_job_that_fails_goes_to_the_meldfunctie_of_the_bot(self):
+        bot = self.bot("normal", failing="sonarr.scan_missing_media")
+
+        ran = await self.run_jobs(bot)
+
+        self.assertNotIn("scan_missing_sonarr", ran)
+        [report] = bot.faults.reports
+        self.assertEqual(str(report.fault.__cause__), "sonarr.scan_missing_media broke")
+
+
+# A callback as the fake guard of BotHandlersTest gives it back: wrapped, with what it was wrapped with
+Guarded = namedtuple("Guarded", "callback faults send")
+
+
+class BotHandlersTest(unittest.TestCase):
+    """ The handlers that src/bot.py registers: every callback guarded, once """
+
+    def bot(self, mode: str) -> Bot:
+        """ A bot with fake commands, whose handlers are registered with a fake guard """
+        bot = Bot.__new__(Bot)
+        bot.mode = mode
+        bot.application = Application.builder().token("123:ABC").build()
+        bot.allowed_users = [123456789]
+        bot.account_for = fake_account_for
+        bot.faults = FakeFaults()
+        bot.telegram = SimpleNamespace(send=FakeSend())
+        for commands in ("function", "privacy", "help", "maintenance", "start", "account", "message", "serie", "movie",
+                         "subscribe"):
+            setattr(bot, commands, MagicMock())
+        with patch("src.bot.guard", side_effect=Guarded):
+            bot._register_handlers()
+        return bot
+
+    def test_every_callback_is_guarded_once(self):
+        for mode in ("normal", "maintenance"):
+            with self.subTest(mode=mode):
+                bot = self.bot(mode)
+
+                handlers = all_handlers(bot.application)
+
+                # Not just the handful of handlers of the application: also every handler inside the Gesprek
+                self.assertGreater(len(handlers), 40)
+                for handler in handlers:
+                    self.assertIsInstance(handler.callback, Guarded)
+                    self.assertNotIsInstance(handler.callback.callback, Guarded)
+                    self.assertIs(handler.callback.faults, bot.faults)
+                    self.assertIs(handler.callback.send, bot.telegram.send)
+
+
+class ErrorHandlerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ error_handler: the safety net behind the wrappers """
+
+    def setUp(self):
+        super().setUp()
+        setup_logging("dev", "INFO", str(self.folder), False)
+        self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
+        self.bot = Bot.__new__(Bot)
+        self.bot.mode = "normal"
+        self.bot.faults = FakeFaults()
+        self.bot.telegram = SimpleNamespace(send=FakeSend())
+        self.bot.log = MagicMock(logger=AsyncMock())
+
+    @staticmethod
+    def context(error: Exception, job: str | None = None, coroutine=None) -> SimpleNamespace:
+        """ The context PTB hands error_handler: the error, and the job or task it came from """
+        return SimpleNamespace(error=error, job=job and SimpleNamespace(name=job), coroutine=coroutine)
+
+    async def test_an_exception_of_an_update_outside_the_wrapper_is_a_bug_with_an_error_message(self):
+        update = message_from(555, "Anna")
+        error = AttributeError("'NoneType' object has no attribute 'data'")
+        seen = {}
+
+        async def process():
+            # PTB calls error_handler in the processing of the update itself
+            await self.bot.error_handler(update, self.context(error))
+            seen["code"] = current_code()
+
+        await InteractionProcessor(1, fake_account_for).process_update(update, process())
+
+        [report] = self.bot.faults.reports
+        self.assertEqual((report.fault.kind, report.outside_wrapper, report.user_told), (FaultKind.BUG, True, True))
+        self.assertIs(report.fault.__cause__, error)
+        [message] = self.bot.telegram.send.messages
+        self.assertEqual(message.chat_id, 555)
+        self.assertTrue(message.text.endswith(f"\nCode: <code>{seen['code']}</code>"))
+
+    async def test_without_an_update_there_is_no_error_message(self):
+        # A job whose wrapper failed, and a task of create_task
+        await self.bot.error_handler(None, self.context(PermissionError("faults.json"), job="check_notify_list"))
+        await self.bot.error_handler(None, self.context(RuntimeError("heartbeat"), coroutine=object()))
+
+        self.assertEqual([(report.outside_wrapper, report.user_told) for report in self.bot.faults.reports],
+                         [(True, False), (True, False)])
+        self.assertEqual(self.bot.telegram.send.messages, [])
+
+    async def test_an_error_without_an_update_job_or_task_that_polling_does_not_give_is_a_bug(self):
+        # Like PTB writing bot_state.pkl, which hands error_handler its error without an update, a job or a task
+        await self.bot.error_handler(None, self.context(PermissionError("bot_state.pkl")))
+
+        [report] = self.bot.faults.reports
+        self.assertEqual((report.fault.kind, report.outside_wrapper, report.user_told), (FaultKind.BUG, True, False))
+        self.bot.log.logger.assert_not_awaited()
+
+    async def test_the_errors_of_polling_stay_as_they_were(self):
+        for error in (NetworkError("httpx.ConnectError"), TimedOut(), RetryAfter(30),
+                      Conflict("terminated by other getUpdates request")):
+            await self.bot.error_handler(None, self.context(error))
+
+        self.assertEqual(self.bot.faults.reports, [])
+        self.assertEqual(self.bot.log.logger.await_count, 4)
 
 
 class AccountForTest(unittest.IsolatedAsyncioTestCase):

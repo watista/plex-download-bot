@@ -10,6 +10,7 @@ from telegram.ext import CallbackContext, ConversationHandler
 from src.services.sonarr import Sonarr
 from src.commands.media import results_text, title_and_year
 from src.conversation import ignored_line
+from src.faults import Fault
 from src.log import get_logger
 
 from src.states import AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE, step_name
@@ -122,12 +123,11 @@ class Subscribe:
         context.user_data['aanmeld_data'] = context.user_data["aanmeld_object"][orig_index]
 
         # Get tmdbId
-        serie_id = str(context.user_data['aanmeld_data'].get("tmdbId"))
+        aanmeld_data = context.user_data['aanmeld_data']
+        serie_id = str(aanmeld_data.get("tmdbId"))
         if not serie_id or serie_id == "None":
-            await self.function.send_message("Er ging iets fout bij het ophalen van data van de serie. De serverbeheerder is hiervan op de hoogte en zal dit zo snel mogelijk oplossen. Probeer het op een later moment nog is.", update, context)
-            await self.log.logger(f"Error happened during parsing tmdbId in subscribe.py, see the logs for the media JSON.", False, "error", True)
-            await self.log.logger(f"Media JSON:\n{context.user_data['aanmeld_data']}", False, "error", False)
-            return ConversationHandler.END
+            raise Fault.bug(what="The series has no tmdbId", details={"tmdbId": aanmeld_data.get("tmdbId")},
+                            media={key: aanmeld_data.get(key) for key in ("title", "year", "tvdbId")})
 
         # Load JSON
         async with aiofiles.open(self.data_json, "r") as f:
