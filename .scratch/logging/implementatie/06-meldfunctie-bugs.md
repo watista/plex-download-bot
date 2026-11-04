@@ -1,6 +1,6 @@
 # 06 Meldfunctie: Bugs en de admin-melding
 
-Status: open
+Status: bezig (branch `logging/06-meldfunctie-bugs`, sinds 2026-11-04)
 Blocked by: 03
 Niet tegelijk met: 08 (`src/faults.py`)
 
