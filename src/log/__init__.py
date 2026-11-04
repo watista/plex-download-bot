@@ -6,6 +6,7 @@ import copy
 import json
 import logging
 import os
+import sys
 import traceback
 from base64 import b64encode
 from collections.abc import Callable
@@ -165,16 +166,26 @@ class BotLogger:
         self._log(logging.ERROR, msg, exc_info, stacklevel, media, fields)
 
     def log(self, level: int, msg: str, *, exc_info=None, stacklevel: int = 1, media: dict | None = None,
-            **fields) -> None:
-        self._log(level, msg, exc_info, stacklevel, media, fields)
+            at: traceback.FrameSummary | None = None, **fields) -> None:
+        """ A line on this level. at is the frame that src names instead of the caller, like where a Fout happened. """
+        self._log(level, msg, exc_info, stacklevel, media, fields, at)
 
-    def _log(self, level: int, msg: str, exc_info, stacklevel: int, media: dict | None, fields: dict) -> None:
+    def _log(self, level: int, msg: str, exc_info, stacklevel: int, media: dict | None, fields: dict,
+             at: traceback.FrameSummary | None = None) -> None:
         if not self._logger.isEnabledFor(level):
             return
         if media is not None:
             fields = {**fields, **_media_fields(media)}
-        # The two frames of this class are not the caller
-        self._logger.log(level, msg, exc_info=exc_info, stacklevel=stacklevel + 2, extra={"fields": fields})
+        if at is None:
+            # The two frames of this class are not the caller
+            self._logger.log(level, msg, exc_info=exc_info, stacklevel=stacklevel + 2, extra={"fields": fields})
+            return
+        if isinstance(exc_info, BaseException):
+            exc_info = (type(exc_info), exc_info, exc_info.__traceback__)
+        elif exc_info and not isinstance(exc_info, tuple):
+            exc_info = sys.exc_info()
+        self._logger.handle(self._logger.makeRecord(self._logger.name, level, at.filename, at.lineno, msg, (),
+                                                    exc_info or None, func=at.name, extra={"fields": fields}))
 
 
 def get_logger(name: str) -> BotLogger:
@@ -189,6 +200,12 @@ def source_path(pathname: str) -> str:
         return Path(pathname).resolve().relative_to(PROJECT_DIR).as_posix()
     except ValueError:
         return pathname
+
+
+def is_own_file(pathname: str) -> bool:
+    """ True for a file of the bot itself: in the project, and outside its virtualenv """
+    path = Path(source_path(pathname))
+    return not pathname.startswith("<") and not path.is_absolute() and "site-packages" not in path.parts
 
 
 def line_fields(record: logging.LogRecord) -> dict:

@@ -7,7 +7,7 @@ import json
 import secrets
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar, copy_context
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, TypeVar
 
 import aiofiles
@@ -30,12 +30,17 @@ CODE_LENGTH = 6
 
 @dataclass(frozen=True)
 class Interaction:
-    """ The context of an Interaction: its Code, and the person of an update or the name of a job """
+    """ The context of an Interaction.
+
+    Its Code, the person of an update or the name of a job, and the media item it is working on (working_on),
+    which only the meldfunctie reads.
+    """
     code: str
     user_id: int | None = None
     account: str | None = None
     tg_name: str | None = None
     job: str | None = None
+    media: dict | None = field(default=None, compare=False)
 
 
 # The Interaction that the current code runs in, None outside one (start, polling, the heartbeat)
@@ -51,6 +56,21 @@ def current_code() -> str | None:
     """ The Code of the current Interaction, None outside one """
     interaction = _current.get()
     return interaction.code if interaction else None
+
+
+def current_interaction() -> Interaction | None:
+    """ The current Interaction, None outside one """
+    return _current.get()
+
+
+def working_on(media: dict | None) -> None:
+    """ Sets the media item the current Interaction is working on, which the meldfunctie takes when a Fault has none.
+
+    A job with a loop sets it per item. Outside an Interaction there is no context to set it in.
+    """
+    interaction = _current.get()
+    if interaction is not None:
+        _current.set(replace(interaction, media=media))
 
 
 async def account_for(user_id: int, data_json: str) -> str | None:
