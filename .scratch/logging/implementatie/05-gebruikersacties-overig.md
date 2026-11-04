@@ -1,6 +1,6 @@
 # 05 Gebruikersacties: commands, login, account, help en admin
 
-Status: open
+Status: bezig (branch `logging/05-gebruikersacties-overig`, sinds 2026-11-04)
 Blocked by: 03
 Niet tegelijk met: 07, 14 (`src/bot.py`, `start.py`)
 
