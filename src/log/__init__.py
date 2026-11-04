@@ -170,6 +170,10 @@ class BotLogger:
     def __init__(self, logger: logging.Logger):
         self._logger = logger
 
+    def enabled_for(self, level: int) -> bool:
+        """ Whether a line on this level gets written, so a caller can skip the work of building it """
+        return self._logger.isEnabledFor(level)
+
     def debug(self, msg: str, *, exc_info=None, stacklevel: int = 1, media: dict | None = None, **fields) -> None:
         self._log(logging.DEBUG, msg, exc_info, stacklevel, media, fields)
 

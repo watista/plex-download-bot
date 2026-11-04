@@ -70,6 +70,43 @@ class SerieTest(MovieTest):
         [message] = self.admin_messages()
         self.assertIn("User has subscribed to the serie The Bear", message)
 
+        # The series has its path in Sonarr
+        [fix] = self.faults.fixes
+        self.assertEqual((fix.service, fix.check, fix.item, fix.msg),
+                         ("sonarr", "series_path", 136315, "The Bear now has a path in Sonarr"))
+        self.assertEqual(self.faults.reports, [])
+
+    async def test_a_new_series_gets_its_path_from_the_answer_of_sonarr(self):
+        # The lookup is from before the series was in Sonarr, so it has no path; the answer to the request has one
+        self.radarr.queue_download = AsyncMock(return_value={"id": 9, "path": "/media/series/The Simpsons"})
+        context = self.context(media_object=[dict(THE_SIMPSONS)])
+
+        await self.serie.media_option(self.update("0"), context)
+        await self.serie.aanmelden(self.update("yes"), context)
+
+        self.assertEqual(context.user_data["media_data"]["path"], "/media/series/The Simpsons")
+        self.assertEqual(self.faults.reports, [])
+        self.assertEqual([fix.check for fix in self.faults.fixes], ["setting", "disk_space", "series_path"])
+
+    async def test_subscribing_to_a_series_without_a_path_is_reported_and_goes_on(self):
+        without_path = {key: value for key, value in THE_BEAR.items() if key != "path"}
+
+        state = await self.serie.aanmelden(self.update("yes"), self.context(media_data=without_path))
+
+        self.assertEqual(state, ConversationHandler.END)
+        [report] = self.faults.reports
+        fault = report.fault
+        self.assertEqual((fault.kind, fault.service, fault.check, fault.item, fault.what),
+                         (FaultKind.SETUP, "sonarr", "series_path", 136315, "The Bear has no path in Sonarr"))
+        self.assertEqual(fault.media["title"], "The Bear")
+        self.assertEqual(report.continued, "subscribed from the first episode on")
+        self.assertEqual(json.loads(self.data_json.read_text())["notify_list"]["1"]["serie_episode"],
+                         {"136315": {"started": False, "last": "S00E00"}})
+        [line] = self.lines("series_updates")
+        self.assertEqual(line["outcome"], "subscribed")
+        self.log.logger.assert_not_awaited()
+        self.assertEqual(self.faults.fixes, [])
+
     async def test_subscribing_to_a_serie_without_a_tmdbId_is_a_bug(self):
         without_id = {key: value for key, value in THE_BEAR.items() if key != "tmdbId"}
         context = self.context(media_data=without_id, media_item={"title": "The Bear", "year": 2022, "tmdbId": None})

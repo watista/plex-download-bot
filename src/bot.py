@@ -24,6 +24,7 @@ from src.commands.maintenance import Maintenance
 from src.conversation import Conversation, command_or_choice_line
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
+from src.services.arr import media_link
 from src.faults import FaultReporter
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, guard, guard_job,
                              report_outside_wrapper)
@@ -123,7 +124,7 @@ class Bot:
         self.telegram = TelegramOut(self.application.bot, admin_chat_id, self.account_for)
 
         # The meldfunctie: the line of every Fout, and an admin message when one is due. Its state is next to data.json.
-        self.faults = FaultReporter(self.telegram.send, admin_chat_id, faults_json)
+        self.faults = FaultReporter(self.telegram.send, admin_chat_id, faults_json, media_link=media_link)
 
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
@@ -139,10 +140,10 @@ class Bot:
         if self.mode == "normal":
             self.serie = Serie(args, logger, self.function, self.telegram, self.faults)
             self.movie = Movie(args, logger, self.function, self.telegram, self.faults)
-            self.schedule = Schedule(args, logger, self.function, self.telegram)
-            self.subscribe = Subscribe(args, logger, self.function, self.telegram)
-            self.sonarr = Sonarr(logger)
-            self.radarr = Radarr(logger)
+            self.schedule = Schedule(args, logger, self.function, self.telegram, self.faults)
+            self.subscribe = Subscribe(args, logger, self.function, self.telegram, self.faults)
+            self.sonarr = Sonarr(self.faults)
+            self.radarr = Radarr(self.faults)
             self.start.subscribe = self.subscribe
 
         self._register_handlers()

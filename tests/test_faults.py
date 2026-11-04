@@ -3,14 +3,17 @@
 import asyncio
 import inspect
 import json
+import os
 import re
 import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.faults import Fault, FaultKind, FaultReporter, admin_message_html
 from src.interaction import Interaction, InteractionProcessor, current_code, guard, guard_job, working_on
 from src.log import PROJECT_DIR, setup_logging
+from src.services.arr import media_link
 from src.telegram_out import DELIVERED, Delivery
 from test_interaction import CODE, FakeFaults, FakeSend, message_from
 from test_log import MAIN, LogFolder
@@ -226,6 +229,15 @@ class AdminMessageHtmlTest(unittest.TestCase):
                         "Media: &lt;Untitled&gt;", "User: a&amp;b", "<code>src/x.py:1 in &lt;lambda&gt;</code>"):
             self.assertIn(escaped, html)
 
+    def test_the_title_links_to_the_item_in_its_service(self):
+        fault = Fault.bug(what="Sonarr refused the series request", service="sonarr", media={"title": "Tom & Jerry"})
+
+        html = admin_message_html(fault, Interaction("k7p2qx"), [], user_told=False,
+                                  link='https://sonarr.example.com/series/tom-&-"jerry"')
+
+        self.assertIn('Media: <a href="https://sonarr.example.com/series/tom-&amp;-&quot;jerry&quot;">'
+                      'Tom &amp; Jerry</a>', html.splitlines())
+
     def test_the_reason_and_the_exception_are_cut_at_300_characters(self):
         reason = Fault.bug(what="Radarr refused the movie request", reason="r" * 301)
         exception = Fault.bug(what="Unexpected exception")
@@ -277,9 +289,9 @@ class ReporterCase(LogFolder):
         self.state_file = self.folder / "faults.dev.json"
         self.send = FakeSend()
 
-    def reporter(self) -> FaultReporter:
+    def reporter(self, **kwargs) -> FaultReporter:
         """ A new meldfunctie on the state file of this test """
-        return FaultReporter(self.send, ADMIN_CHAT, self.state_file, now=self.clock)
+        return FaultReporter(self.send, ADMIN_CHAT, self.state_file, now=self.clock, **kwargs)
 
     async def in_an_update(self, call, user_id: int = 555, first_name: str = "Anna") -> tuple[bool, str]:
         """ call() in an update of this Telegram user, as PTB hands it to the InteractionProcessor: its result and Code """
@@ -321,17 +333,18 @@ class ReportTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
     """ report: the line of every Fout and an admin message about a Bug, with a fake verzendfunctie and a fake clock """
 
     async def test_the_example_of_the_spec(self):
-        reporter = self.reporter()
+        reporter = self.reporter(media_link=media_link)
 
-        _, code = await self.in_an_update(lambda: reporter.report(refused_in_the_code_of_the_spec(), user_told=True),
-                                          user_id=123456789)
+        with patch.dict(os.environ, {"RADARR_URL": "https://radarr.example.com/api/v3"}):
+            _, code = await self.in_an_update(lambda: reporter.report(refused_in_the_code_of_the_spec(),
+                                                                      user_told=True), user_id=123456789)
 
-        # The title becomes a link to Radarr in issue 09
+        # The title links to the movie in Radarr
         self.assertEqual(self.send.messages[0].text, "\n".join([
             "🐞 <b>Bug</b> · Radarr refused the movie request",
             "Reason: <i>This movie has already been added</i> (HTTP 400)",
             "User: anna",
-            "Media: Dune: Part Two (2024)",
+            'Media: <a href="https://radarr.example.com/movie/693134">Dune: Part Two (2024)</a>',
             "<blockquote expandable><code>src/services/arr.py:98 in post",
             "src/services/radarr.py:31 in add_movie",
             "src/commands/movie.py:84 in start_download",

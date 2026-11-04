@@ -14,7 +14,7 @@ from src.states import REQUEST_AGAIN, REQUEST_MOVIE, REQUEST_SERIE, AANMELDEN_SE
 from src.services.plex import Plex
 from src.services.transmission import TransmissionService, check_transmission_and_trigger_scans
 from src.commands.start import Start
-from src.faults import Fault
+from src.faults import Fault, service_name
 from src.interaction import working_on
 from src.log import get_logger
 
@@ -27,11 +27,23 @@ MEDIA_TYPES = {"film": "movie", "serie": "series"}
 # The service that downloads the media, per label of the conversation
 SERVICES = {"film": "radarr", "serie": "sonarr"}
 
+# The setting with the media folders, per label of the conversation
+FOLDER_SETTINGS = {"film": "MOVIE_FOLDERS", "serie": "SERIE_FOLDERS"}
+
+# The room a disk needs for a new download
+ROOM_NEEDED = 150 * 1024 ** 3
+
 
 def title_and_year(media: dict) -> str:
     """ How a media item of Radarr or Sonarr reads in a line: its title, with the year when it has one """
     title = media.get("title") or f"tmdb {media.get('tmdbId')}"
     return f"{title} ({media['year']})" if media.get("year") else title
+
+
+def _disk_of(folder: str, disks) -> str | None:
+    """ The disk a folder is on: the most specific of the disks it lies under, None when it lies under none """
+    under = [disk for disk in disks if folder == disk or folder.startswith(disk.rstrip(os.sep) + os.sep)]
+    return max(under, key=len, default=None)
 
 
 def results_text(n: int) -> str:
@@ -247,9 +259,10 @@ class Media(ABC):
         option = int(update.callback_query.data) + 1
         context.user_data['media_data'] = context.user_data["media_object"][option - 1]
 
-        # The media item as Radarr or Sonarr names it, for the lines of this and the next steps:
-        # the title in media_data is sanitized for the answers below
-        context.user_data['media_item'] = {key: context.user_data['media_data'].get(key) for key in ("title", "year", "tmdbId")}
+        # The media item as Radarr or Sonarr names it, for the lines of this and the next steps: the title in
+        # media_data is sanitized for the answers below. titleSlug names it in the link of an admin message.
+        context.user_data['media_item'] = {key: context.user_data['media_data'].get(key)
+                                           for key in ("title", "year", "tmdbId", "titleSlug")}
         chosen = context.user_data['media_item']
 
         # Every Fout from here on is about this media item
@@ -282,25 +295,20 @@ class Media(ABC):
 
                 # Do actions if defined. A Fout in it ends the Gesprek, but the line of the choice says so first.
                 try:
-                    failed = "action" in details and not await getattr(self, details["action"])(update, context)
+                    if "action" in details:
+                        await getattr(self, details["action"])(update, context)
                 except Exception:
                     self.log_choice(option, chosen, "failed")
                     raise
 
                 # What the bot found. While Transmission is down, the user hears there is no room to start the download.
-                if failed:
-                    outcome = "failed"
-                elif too_many_seasons:
+                if too_many_seasons:
                     outcome = "unmonitored"
                 elif not transmission_up and details.get("action") == "start_download":
                     outcome = "no_space"
                 else:
                     outcome = details["outcome"]
                 self.log_choice(option, chosen, outcome, seasons if too_many_seasons else None)
-
-                # user was informerd in previous steps about the error
-                if failed:
-                    return ConversationHandler.END
 
                 if too_many_seasons:
 
@@ -317,9 +325,13 @@ class Media(ABC):
                     # Return to next state
                     return details["next_state"]
 
-                # Do extra action if defined
+                # Do extra action if defined. The download is in Radarr or Sonarr already, so the request goes on
+                # without it.
                 if "extra_action" in details:
-                    await getattr(self.media_handler, details["extra_action"])()
+                    try:
+                        await getattr(self.media_handler, details["extra_action"])()
+                    except Fault as fault:
+                        await self.faults.report(fault, continued="went on without the search for missing media")
 
                 # Inform owner about unmonitored series if defined
                 if "inform_unmonitored" in details:
@@ -483,74 +495,58 @@ class Media(ABC):
             return ConversationHandler.END
 
 
-    async def start_download(self, update: Update, context: CallbackContext) -> bool:
-        """ Starts the download in Radarr or Sonarr """
+    async def start_download(self, update: Update, context: CallbackContext) -> None:
+        """ Starts the download in Radarr or Sonarr. A Fout of the disk space check or the request falls through. """
 
         # Get folder to download to
         download_folder = await self.check_disk_space(context)
-
-        # Check if enough space is left
-        if not download_folder:
-            await self.function.send_message(f"*😵 Er is op dit moment een probleem met de opslag van de Plęx server*\n\nProbeer het op een later moment nog is.", update, context)
-            await self.log.logger(f"Error happened during the check of the diskspace", False, "error", True)
-            return False
 
         # Create the download payload
         set_monitored = context.user_data.get("set_monitored", True)
         payload = await self.create_download_payload(context.user_data['media_data'], download_folder, set_monitored)
 
-        # Queue download
-        response = await self.media_handler.queue_download(payload)
+        # Queue download. The lookup is from before the media was in Radarr or Sonarr, so it has no path yet:
+        # the answer has it, for the steps after this one.
+        added = await self.media_handler.queue_download(payload)
+        if isinstance(added, dict) and added.get("path"):
+            context.user_data['media_data']['path'] = added["path"]
 
-        # Until Radarr and Sonarr raise a Fault themselves (issue 09), they give back None and tell the Beheerder
-        if not response:
-            service = SERVICES[self.label]
-            raise Fault.bug(what=f"{service.title()} did not queue the download", service=service,
-                            reason=self.media_handler.last_error)
+    async def check_disk_space(self, context: CallbackContext) -> str:
+        """ The first media folder with more than 150 GB free on its disk in Radarr or Sonarr.
 
-        return True
+        Two checks, each an Inrichtingsfout when it fails. A folder on no disk is one of the setting: reported, after
+        which the other folders are tried, unless no folder is on a disk. No folder with room is one of the disk space.
+        """
+        service, setting = SERVICES[self.label], FOLDER_SETTINGS[self.label]
+        name = service_name(service)
+        folders = [os.path.normpath(p.strip()) for p in (context.user_data["media_folder"] or "").split(",")
+                   if p.strip()]
+        free = {os.path.normpath(disk["path"]): disk.get("freeSpace", 0)
+                for disk in await self.media_handler.get_disk_space()}
 
-    async def check_disk_space(self, context: CallbackContext) -> Optional[str]:
-        """Checks if any configured media folder has >= 150GB free on its mount."""
+        # Each folder with the disk it is on
+        on_disk = {folder: disk for folder in folders if (disk := _disk_of(folder, free))}
+        lost = [folder for folder in folders if folder not in on_disk]
+        if not on_disk:
+            raise Fault.setup(service=service, what=f"{setting} has no folder on a disk of {name}", check="setting",
+                              item=setting, details={"folders": folders, "disks": sorted(free)})
+        if lost:
+            await self.faults.report(Fault.setup(service=service, what=f"{setting} has a folder on no disk of {name}",
+                                                 check="setting", item=setting,
+                                                 details={"folders": lost, "disks": sorted(free)}),
+                                     continued="looked for room in the other folders")
+        else:
+            await self.faults.fixed(service, "setting", setting,
+                                    msg=f"Every folder in {setting} is on a disk of {name}")
 
-        # Get list of disks and diskspace
-        disk_list = [p.strip() for p in context.user_data["media_folder"].split(",") if p.strip()]
-        disk_space = await self.media_handler.get_disk_space()
-
-        # Check retrieve diskspace succesfull
-        if not disk_space:
-            await self.log.logger("No disk space data returned", False, "error", True)
-            return None
-
-        # 150GB to bytes
-        GB_150 = 150 * 1024 ** 3
-
-        # Pre-normalize mount paths
-        mounts = []
-        for d in disk_space:
-            mount = os.path.normpath(d["path"])
-            mounts.append({**d, "path": mount})
-
-        def is_under(folder: str, mount: str) -> bool:
-            folder = os.path.normpath(folder)
-            mount = os.path.normpath(mount)
-            return folder == mount or folder.startswith(mount + os.sep)
-
-        for folder in disk_list:
-            folder_norm = os.path.normpath(folder)
-
-            # find best (most specific) mount for this folder
-            candidates = [d for d in mounts if is_under(folder_norm, d["path"])]
-            if not candidates:
-                continue
-
-            best = max(candidates, key=lambda d: len(d["path"]))
-
-            if best.get("freeSpace", 0) > GB_150:
-                # return the folder you want to use (the configured one)
-                return folder_norm
-
-        return None
+        room = next((folder for folder, disk in on_disk.items() if free[disk] > ROOM_NEEDED), None)
+        if room is None:
+            raise Fault.setup(service=service, what=f"No disk of {name} has 150 GB free", check="disk_space",
+                              details={disk: f"{free[disk] // 1024 ** 3} GB free"
+                                       for disk in dict.fromkeys(on_disk.values())},
+                              user_text="Er is op dit moment een probleem met de opslag van de Plęx server")
+        await self.faults.fixed(service, "disk_space", None, msg=f"A disk of {name} has 150 GB free again")
+        return room
 
     async def write_to_stats(self, update: Update, context: CallbackContext) -> None:
         """ Writes stats to the stats.json file """
