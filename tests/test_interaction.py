@@ -60,17 +60,26 @@ class FakeSend:
 
 
 class FakeFaults:
-    """ The meldfunctie: keeps every Fout it gets with how it came, and answers report() with known """
+    """ The meldfunctie: keeps every Fout it gets with how it came, and answers report() with known. Keeps the
+    services of ok() and the checks of fixed() too. """
 
     def __init__(self, known: bool = True):
         self.known = known
         self.reports = []
+        self.oks = []
+        self.fixes = []
 
     async def report(self, fault: Fault, user_told: bool = False, continued: str | None = None, *,
                      outside_wrapper: bool = False) -> bool:
         self.reports.append(SimpleNamespace(fault=fault, user_told=user_told, continued=continued,
                                             outside_wrapper=outside_wrapper, code=current_code()))
         return self.known
+
+    async def ok(self, service: str) -> None:
+        self.oks.append(service)
+
+    async def fixed(self, service: str, check: str, item: int | str | None, msg: str) -> None:
+        self.fixes.append(SimpleNamespace(service=service, check=check, item=item, msg=msg))
 
 
 def raising(error: Exception):

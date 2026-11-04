@@ -19,9 +19,6 @@ log = get_logger(__name__)
 # The old dtype values
 LEVELS = {"error": logging.ERROR, "warning": logging.WARNING, "info": logging.INFO}
 
-# The services as the arr clients call themselves, until the request rule of issue 09
-SERVICES = {"movie": "radarr", "serie": "sonarr"}
-
 
 def caller_logger(depth: int):
     """ The logger of the module that called the method this many frames up """
@@ -131,7 +128,6 @@ class Log:
             return
 
         # The fields of an http_call from the given details
-        service = SERVICES.get(service, service)
         method = action.split(" ")[0]
         fields = {"method": method} if method in ("GET", "POST", "PUT", "DELETE") else {}
         for key, value in details.items():

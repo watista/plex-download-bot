@@ -1,60 +1,26 @@
 #!/usr/bin/python3
 
 import os
-from typing import Union
 from urllib.parse import quote
 from src.services.arr import ArrApiHandler
 
 
 class Sonarr(ArrApiHandler):
-    """ Specific class for the Radarr API """
+    """ Specific class for the Sonarr API """
 
-    def __init__(self, logger):
-        super().__init__(logger, os.getenv('SONARR_API'), os.getenv('SONARR_URL'), "serie")
+    def __init__(self, faults):
+        super().__init__(faults, os.getenv('SONARR_API'), os.getenv('SONARR_URL'), "sonarr", "series")
 
-    async def lookup_by_name(self, serie_name: str) -> Union[list[dict], dict]:
-        """ Function that does a serie lookup """
+    async def lookup_by_name(self, serie_name: str) -> list[dict]:
+        """ The series Sonarr finds for a title """
+        return await self.get(f"/series/lookup?term={quote(serie_name, safe='')}", action="series search")
 
-        # Build url_string and make the request
-        response = await self.get(f"/series/lookup?term={quote(serie_name, safe='')}")
+    async def queue_download(self, payload: dict) -> dict:
+        """ Adds a series to Sonarr, which starts its download: gives back the series as Sonarr has it now, with its
+        path """
+        return await self.post("/series", payload, action="series request")
 
-        # Check if return value is empty
-        if response is False:
-            await self.log.logger(f"❌ *Error while fetching serie list for term {serie_name}.*\nReason: {self.last_error}\nCheck the error log for more information. ❌", False, "error")
-            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
-            return None
-
-        # Return the data
-        return response
-
-    async def queue_download(self, payload: dict) -> Union[list[dict], dict]:
-        """ Function that starts a download """
-
-        # Build url_string and make the request
-        response = await self.post(f"/series?", payload)
-
-        # The caller raises a Bug with last_error, which tells the Beheerder (until issue 09, where post raises)
-        if response is False:
-            return None
-
-        # Return the data
-        return response
-
-    async def scan_missing_media(self, context=None) -> Union[list[dict], dict]:
-        """ Function that scans for missing monitored series """
-
-        # Set payload
-        payload = {"name": "MissingEpisodeSearch",
-                   "filterKey": "monitored", "filterValue": "true"}
-
-        # Build url_string and make the request
-        response = await self.post(f"/command?", payload)
-
-        # Check if return value is empty
-        if response is False:
-            await self.log.logger(f"❌ *Error while scanning for missing series.*\nReason: {self.last_error}\nCheck the error log for more information. ❌", False, "warning")
-            await self.log.logger(f"Reason: {self.last_error}", False, "error", False)
-            return None
-
-        # Return the data
-        return response
+    async def scan_missing_media(self, context=None) -> dict:
+        """ Starts the search for the missing monitored episodes """
+        payload = {"name": "MissingEpisodeSearch", "filterKey": "monitored", "filterValue": "true"}
+        return await self.post("/command", payload, action="search for missing episodes")
