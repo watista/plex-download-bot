@@ -575,7 +575,7 @@ class BotHandlersTest(unittest.TestCase):
         for commands in ("function", "privacy", "help", "maintenance", "start", "account", "message", "serie", "movie",
                          "subscribe"):
             setattr(bot, commands, MagicMock())
-        bot.log_command = LogCommand("dev", "log", "data.dev.json", "primary", bot.allowed_users)
+        bot.log_command = LogCommand("dev", "log", "data.dev.json", "thuisserver", bot.allowed_users, bot.telegram.send)
         with patch("src.bot.guard", side_effect=Guarded):
             bot._register_handlers()
         return bot

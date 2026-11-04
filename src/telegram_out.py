@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from time import monotonic
 
-from telegram import Bot, LinkPreviewOptions
+from telegram import Bot, InlineKeyboardMarkup, LinkPreviewOptions
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TelegramError
 from telegram.request import HTTPXRequest, RequestData
 
@@ -60,6 +60,19 @@ def telegram_disruption(error: BaseException) -> Fault | None:
     if isinstance(error, (NetworkError, RetryAfter)) and not isinstance(error, BadRequest):
         return Fault.disruption(service="telegram", what="Telegram is not responding", reason=str(error))
     return None
+
+
+def length(text: str) -> int:
+    """ The length of a text as Telegram counts it: in UTF-16, so an emoji counts two """
+    return len(text.encode("utf-16-le")) // 2
+
+
+def cut(text: str) -> str:
+    """ The text cut at the 4096 characters that Telegram takes, as it counts them, without cutting a character in
+    half """
+    if length(text) <= MAX_LENGTH:
+        return text
+    return text.encode("utf-16-le")[:2 * MAX_LENGTH].decode("utf-16-le", errors="ignore")
 
 
 def rejects_formatting(error: BadRequest) -> bool:
@@ -158,15 +171,19 @@ class TelegramOut:
         self._admin_chat_id = admin_chat_id
         self._account_for = account_for
 
-    async def send(self, chat_id: int | str, text: str, fmt: str | None, silent: bool = False) -> Delivery:
+    async def send(self, chat_id: int | str, text: str, fmt: str | None, silent: bool = False,
+                   markup: InlineKeyboardMarkup | None = None, edit: int | None = None) -> Delivery:
         """ Sends text in fmt: HTML, MarkdownV2 or None for plain text.
 
         The secrets are masked and the text is cut at 4096 characters. When Telegram rejects the
         formatting, the text goes once more as plain text, with the rejection on top. That rejection is a
         Bug, which gets a line but no admin message of its own.
+
+        markup holds the buttons under the message. With edit, the ID of a message of the bot in that chat,
+        the text goes in place of that message, as after a press on one of its buttons.
         """
         try:
-            return await self._attempt(chat_id, text, fmt, silent)
+            return await self._attempt(chat_id, text, fmt, silent, markup, edit)
         except BadRequest as e:
             if not rejects_formatting(e):
                 raise
@@ -176,7 +193,7 @@ class TelegramOut:
 
         try:
             return await self._attempt(chat_id, f"⚠️ Telegram rejected the formatting: {rejection}\n\n"
-                                                f"{plain_text(text, fmt)}", None, silent)
+                                                f"{plain_text(text, fmt)}", None, silent, markup, edit)
         except BadRequest as e:
             # Nothing left to try: it stays with the line of the rejection, and the caller hears why
             return Delivery(e.message)
@@ -229,15 +246,22 @@ class TelegramOut:
                                    write_timeout=CRASH_TIMEOUT, pool_timeout=CRASH_TIMEOUT) as request:
             yield cls(Bot(token, request=request, get_updates_request=request), admin_chat_id, account_for).send
 
-    async def _attempt(self, chat_id: int | str, text: str, fmt: str | None, silent: bool) -> Delivery:
-        """ One attempt to send the text, with its secrets masked and cut at 4096 characters.
+    async def _attempt(self, chat_id: int | str, text: str, fmt: str | None, silent: bool,
+                       markup: InlineKeyboardMarkup | None, edit: int | None) -> Delivery:
+        """ One attempt to send the text, or to put it in place of message edit, with its secrets masked and cut at
+        4096 characters.
 
         Telegram not responding is a Storing, and a message it does not deliver (blocked by the user) is not a Fout.
         """
+        text = cut(mask(text))
+        no_preview = LinkPreviewOptions(is_disabled=True)
         try:
-            await self._bot.send_message(chat_id=chat_id, text=mask(text)[:MAX_LENGTH], parse_mode=fmt,
-                                         disable_notification=silent,
-                                         link_preview_options=LinkPreviewOptions(is_disabled=True))
+            if edit is None:
+                await self._bot.send_message(chat_id=chat_id, text=text, parse_mode=fmt, disable_notification=silent,
+                                             reply_markup=markup, link_preview_options=no_preview)
+            else:
+                await self._bot.edit_message_text(text=text, chat_id=chat_id, message_id=edit, parse_mode=fmt,
+                                                  reply_markup=markup, link_preview_options=no_preview)
         except Forbidden as e:
             return Delivery(e.message)
         except TelegramError as e:

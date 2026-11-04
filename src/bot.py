@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import socket
 import time
 import warnings
 from contextlib import contextmanager
@@ -151,9 +152,9 @@ class Bot:
         self.message = Message(args, logger, self.function, self.telegram)
         self.allowed_users = list(map(int, os.getenv('CHAT_ID_ADMIN').split(",")))
 
-        # /log reads the day files of this host, which it names as in the messages to the group
-        host = self.primary_name if self.mode == "normal" else self.fallback_name
-        self.log_command = LogCommand(args.env, os.getenv("LOG_FOLDER"), data_json, host, self.allowed_users)
+        # /log reads the day files of this host, and says which host that is
+        self.log_command = LogCommand(args.env, os.getenv("LOG_FOLDER"), data_json, socket.gethostname(),
+                                      self.allowed_users, self.telegram.send)
 
         # Plex/Sonarr/Radarr/Transmission-dependent components are only used in
         # normal mode; on the standby (maintenance) host they would just fail.

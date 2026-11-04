@@ -8,12 +8,16 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 from itertools import islice
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import BinaryIO
 
-from src.log import files
+from src.log import ROOT, files
 
+
+# The folder of the package of the bot, whose modules the own loggers are named after
+PACKAGE = Path(__file__).resolve().parents[1]
 
 # The bytes read at a time, going back from the end of a file
 BLOCK = 64 * 1024
@@ -82,17 +86,28 @@ async def search(folder: str, env: str, query: Query, before: Position | None = 
 
 
 def from_library(line: dict) -> bool:
-    """ True for a line of a library, False for one of the bot itself.
+    """ True for a line of a library, False for one of the bot itself: by its logger, as the setup tells them apart.
 
-    A line of a library never has an event or a fault. Otherwise src tells: that of a line of the bot names a file in
-    the project, outside its virtualenv, and that of a library a file in site-packages, or outside the project with
-    its full path.
+    A line of a library never has an event or a fault. A logger of the bot hangs under the name of its package, which
+    the field logger leaves out, so it names a module of the bot. Any other logger is a library.
     """
     if line.get("event") is not None or line.get("fault") is not None:
         return False
-    path = str(line.get("src", "")).rsplit(" in ", 1)[0].rsplit(":", 1)[0]
-    return not path or path.startswith("<") or PurePosixPath(path).is_absolute() or \
-        "site-packages" in PurePosixPath(path).parts
+    logger = line.get("logger")
+    return not (isinstance(logger, str) and _is_own_logger(logger))
+
+
+@lru_cache(maxsize=256)
+def _is_own_logger(name: str) -> bool:
+    """ Whether the logger of a line is one of the bot: the package itself, the script that starts the bot, or a
+    module or package in it """
+    if name in (ROOT, "__main__"):
+        return True
+    parts = name.split(".")
+    if not all(part.isidentifier() for part in parts):
+        return False
+    path = PACKAGE.joinpath(*parts)
+    return path.with_suffix(".py").is_file() or path.is_dir()
 
 
 class _Matcher:
@@ -108,17 +123,26 @@ class _Matcher:
         self._user_id_needles = [f'"user_id": {user_id}'.encode() for user_id in query.user_ids]
         self._account_needle = None if query.account is None else \
             f'"account": {json.dumps(query.account, ensure_ascii=False)}'.casefold()
+        self._ascii_account_needle = self._account_needle.encode() \
+            if self._account_needle is not None and self._account_needle.isascii() else None
         self._code_needle = None if query.code is None else f'"interaction_id": {json.dumps(query.code)}'.encode()
 
     def might_match(self, raw: bytes) -> bool:
+        """ The cheap check on the bytes of a line: False when it cannot be one of the query """
         if any(needle in raw for needle in self._user_id_needles):
             return True
         if self._code_needle is not None and self._code_needle in raw:
             return True
-        # In any case, also of letters outside ASCII, so on the text
-        return self._account_needle is not None and self._account_needle in raw.decode("utf-8", "replace").casefold()
+        if self._account_needle is None:
+            return False
+        # The account in any case. Most lines are ASCII, whose casefold is its lower case, so the bytes do;
+        # the others only as text.
+        if raw.isascii():
+            return self._ascii_account_needle is not None and self._ascii_account_needle in raw.lower()
+        return self._account_needle in raw.decode("utf-8", "replace").casefold()
 
     def matches(self, line: dict) -> bool:
+        """ Whether the fields of a line are those of the query """
         user_id, account = line.get("user_id"), line.get("account")
         return ((isinstance(user_id, int) and user_id in self._user_ids)
                 or (self._account is not None and isinstance(account, str) and account.casefold() == self._account)

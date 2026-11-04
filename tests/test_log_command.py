@@ -3,20 +3,19 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from telegram import Chat, Message, MessageEntity, Update, User
 from telegram.error import BadRequest
 
+import test_search
 from src.commands.log import LogCommand
 from src.log import setup_logging
-from src.telegram_out import plain_text
-from test_conversation import message, press
-import test_search
+from src.telegram_out import TelegramOut, length
+from test_conversation import in_group, message, press
 from test_log import LogFolder
+from test_telegram_out import fake_account_for
 
 
 # The Beheerder, in CHAT_ID_ADMIN
@@ -37,15 +36,6 @@ def library_line(ts: str, msg: str, **fields) -> dict:
     return {**test_search.library_line(ts, msg, **fields), "ts": f"2026-12-{ts}+01:00"}
 
 
-def in_group(text: str, user_id: int = ADMIN) -> Update:
-    """ A command of this user in a group """
-    user = User(user_id, "Wouter", is_bot=False)
-    sent = Message(1, datetime.now(), Chat(-100, Chat.GROUP), from_user=user, text=text,
-                   entities=[MessageEntity(MessageEntity.BOT_COMMAND, 0, len(text.split()[0]))])
-    sent.set_bot(AsyncMock(username="plex_bot"))
-    return Update(1, message=sent)
-
-
 class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
     """ /log: recognizing the argument, the page in HTML, the texts when nothing is found, and browsing """
 
@@ -59,15 +49,15 @@ class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         data_json = Path(tmp.name) / "data.dev.json"
         data_json.write_text(json.dumps({"user_id": USERS, "blocked_users": {}}))
 
-        self.command = LogCommand("dev", str(self.folder), str(data_json), "thuisserver", [ADMIN])
-
-        # Every message that is sent or edited, with its keywords
+        # The verzendfunctie on a fake PTB bot, which keeps every message that is sent or edited, with its keywords
         self.shown = []
 
         async def show(**kwargs) -> None:
             self.shown.append(kwargs)
 
         self.bot = SimpleNamespace(send_message=AsyncMock(side_effect=show), edit_message_text=AsyncMock(side_effect=show))
+        send = TelegramOut(self.bot, "-1001234", fake_account_for).send
+        self.command = LogCommand("dev", str(self.folder), str(data_json), "thuisserver", [ADMIN], send)
 
     def write(self, day: str, *lines: dict) -> None:
         """ Adds lines to the main file of dev of this day in December """
@@ -77,7 +67,7 @@ class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     async def log(self, argument: str = "") -> str:
         """ The text of the answer to /log with this argument """
-        await self.command.log_command(message(f"/log {argument}".strip(), user_id=ADMIN), SimpleNamespace(bot=self.bot))
+        await self.command.log_command(message(f"/log {argument}".strip(), user_id=ADMIN), None)
         return self.shown[-1]["text"]
 
     def buttons(self) -> dict[str, str]:
@@ -88,7 +78,7 @@ class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     async def press(self, data: str) -> str:
         """ The text that the message gets after a press on a button with this callback_data """
-        await self.command.page_button(press(data, user_id=ADMIN), SimpleNamespace(bot=self.bot))
+        await self.command.page_button(press(data, user_id=ADMIN), None)
         return self.shown[-1]["text"]
 
     def wouter(self) -> None:
@@ -251,16 +241,16 @@ class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
                                    account="wouter", event="search_term") for index, msg in enumerate(msgs)])
         everything = searches["07"] + searches["08"]
 
-        # As many as fit in one message, as Telegram counts: without the tags, in UTF-16
+        # As many as fit in one message of 4096 characters, with the tags, so the verzendfunctie never cuts one
         first = await self.log("wouter")
-        self.assertLessEqual(self.length(first), 4096)
-        self.assertGreater(self.length(first), 4096 - 60)
+        self.assertLessEqual(length(first), 4096)
+        self.assertGreater(length(first), 4096 - 60)
         self.assertIn("searched 'title 08 10:58'", first)
         self.assertEqual(list(self.buttons()), ["⬅️ Earlier"])
 
         # Earlier: the lines right before the first page, which go on over the file of the day before
         earlier = await self.press(self.buttons()["⬅️ Earlier"])
-        self.assertLessEqual(self.length(earlier), 4096)
+        self.assertLessEqual(length(earlier), 4096)
         self.assertEqual(list(self.buttons()), ["⬅️ Earlier", "Later ➡️"])
         oldest_on_first = first.split("\n")[3].split("</b> ", 1)[1]
         newest_on_earlier = earlier.split("\n")[-3].split("</b> ", 1)[1]
@@ -278,11 +268,6 @@ class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         # Each press is an admin command of its own
         self.assertEqual({line.get("button") for line in self.read_admin_commands()}, {None, "earlier", "later"})
 
-    @staticmethod
-    def length(page: str) -> int:
-        """ The length of a page as Telegram counts it """
-        return len(plain_text(page, "HTML").encode("utf-16-le")) // 2
-
     async def test_the_position_and_the_argument_fit_in_the_callback_data(self):
         self.write("07", *[line(f"07T08:{minute:02}:00.000", "y" * 150, user_id=1, account="wouter")
                            for minute in range(60)])
@@ -297,12 +282,13 @@ class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.wouter()
         self.bot.send_message.side_effect = [BadRequest("Can't parse entities: unsupported start tag"), None]
 
-        await self.command.log_command(message("/log wouter", user_id=ADMIN), SimpleNamespace(bot=self.bot))
+        await self.command.log_command(message("/log wouter", user_id=ADMIN), None)
 
         retry = self.bot.send_message.await_args.kwargs
         self.assertIsNone(retry["parse_mode"])
         self.assertTrue(retry["text"].startswith("⚠️ Telegram rejected the formatting: Can't parse entities"))
         self.assertIn("14:06 Bug · radarr: This movie has already been added k7p2qx", retry["text"])
+        self.assertTrue(retry["text"].endswith("Logs on thuisserver since 2026-12-07"))
         [bug] = [line for line in self.read("dev-plex-download-bot-2026-12-08.jsonl") if line.get("fault")]
         self.assertEqual((bug["level"], bug["fault"], bug["service"]), ("ERROR", "bug", "telegram"))
 
@@ -311,7 +297,7 @@ class LogCommandTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.bot.edit_message_text.side_effect = BadRequest("Message is not modified: specified new message content "
                                                             "and reply markup are exactly the same")
 
-        await self.command.page_button(press("log:l:p:20261207:0:wouter", user_id=ADMIN), SimpleNamespace(bot=self.bot))
+        await self.command.page_button(press("log:l:p:20261207:0:wouter", user_id=ADMIN), None)
 
         self.bot.edit_message_text.assert_awaited_once()
         self.bot.send_message.assert_not_awaited()
@@ -321,7 +307,8 @@ class WhoTest(unittest.TestCase):
     """ /log and its buttons are only for the Beheerder, and only in the private chat """
 
     def setUp(self):
-        self.command, self.buttons = LogCommand("dev", "log", "data.dev.json", "thuisserver", [ADMIN]).handlers()
+        self.command, self.buttons = LogCommand("dev", "log", "data.dev.json", "thuisserver", [ADMIN],
+                                                AsyncMock()).handlers()
 
     def test_the_beheerder_in_the_private_chat(self):
         self.assertTrue(self.command.check_update(message("/log wouter", user_id=ADMIN)))
@@ -332,7 +319,7 @@ class WhoTest(unittest.TestCase):
         self.assertFalse(self.buttons.check_update(press("log:e:p:20261207:0:wouter", user_id=1)))
 
     def test_the_beheerder_in_a_group(self):
-        self.assertFalse(self.command.check_update(in_group("/log wouter")))
+        self.assertFalse(self.command.check_update(in_group("/log wouter", user_id=ADMIN)))
 
     def test_only_the_buttons_of_log(self):
         self.assertFalse(self.buttons.check_update(press("movie_request", user_id=ADMIN)))

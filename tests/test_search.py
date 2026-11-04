@@ -125,10 +125,15 @@ class SearchTest(LogFiles, unittest.IsolatedAsyncioTestCase):
                                 "menu choice: movie", "command /start"])
 
     async def test_an_account_name_is_found_in_any_case_also_with_letters_outside_ascii(self):
-        self.write("2026-11-02", line("02T08:00:00.000", "command /start", user_id=7, account="Émile"))
+        self.write("2026-11-02",
+                   line("02T08:00:00.000", "command /start", user_id=7, account="Émile"),
+                   line("02T08:01:00.000", "command /help", user_id=8, account="Strasse"),
+                   line("02T08:02:00.000", "searched 'Amélie'", user_id=9, account="Kees"))
 
         self.assertEqual(await self.msgs(Query(account="émile")), ["command /start"])
         self.assertEqual(await self.msgs(Query(account="ÉMILE")), ["command /start"])
+        self.assertEqual(await self.msgs(Query(account="STRAßE")), ["command /help"])
+        self.assertEqual(await self.msgs(Query(account="kees")), ["searched 'Amélie'"])
 
     async def test_only_the_lines_before_a_position(self):
         newest, second, *_ = await self.search(Query(user_ids=frozenset({1})))
@@ -206,22 +211,27 @@ class WrittenByTheBotTest(LogFolder, unittest.IsolatedAsyncioTestCase):
                     "HTTP Request: GET https://radarr/api/v3/movie/lookup failed",
                     "searched 'dune' for movie: 7 results",
                 ])
+                self.assertEqual([from_library(item.line) for item in found], [True, False])
 
 
 class FromLibraryTest(unittest.TestCase):
-    """ Which lines are of a library: the src of the line is not a file of the bot """
+    """ Which lines are of a library: the logger of the line is not one of the bot """
 
     def test_own_lines(self):
         self.assertFalse(from_library(line("03T14:05:00.000", "command /start")))
-        self.assertFalse(from_library({"src": "main.py:70 in <module>"}))
-        # A Fout or an event is always of the bot, wherever src points
-        self.assertFalse(from_library({"fault": "bug", "src": "/usr/lib/python3.12/asyncio/events.py:84 in _run"}))
+        for logger in ("bot", "commands.media", "services.request", "log", "src", "__main__"):
+            with self.subTest(logger=logger):
+                self.assertFalse(from_library({"logger": logger}))
+        # A Fout or an event is always of the bot
+        self.assertFalse(from_library({"fault": "bug", "logger": "telegram.ext.Application"}))
         self.assertFalse(from_library({"event": "bot_crashed"}))
 
     def test_library_lines(self):
         self.assertTrue(from_library(library_line("03T14:05:00.000", "HTTP Request: GET")))
-        self.assertTrue(from_library({"src": "/usr/lib/python3.12/logging/__init__.py:1551 in _showwarning"}))
-        self.assertTrue(from_library({"src": "<frozen importlib._bootstrap>:488 in _call_with_frames_removed"}))
+        for logger in ("telegram.ext.Application", "apscheduler.scheduler", "py.warnings", "transmission-rpc",
+                       "commands.unknown", "..", ""):
+            with self.subTest(logger=logger):
+                self.assertTrue(from_library({"logger": logger}))
         self.assertTrue(from_library({}))
 
 

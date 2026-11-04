@@ -118,6 +118,11 @@ tail -F log/plex-download-bot-$(date +%F).jsonl | jq -r '"\(.ts) \(.level) \(.ac
 
 `jq -r .exc` shows a traceback over multiple lines again.
 
+In Telegram, the admin (`CHAT_ID_ADMIN`) can read the logs of the host the bot runs on with
+`/log <account name | user ID | code>`, in the private chat with the bot: the latest lines of a person, or
+all lines of the interaction with the code of an error message. "⬅️ Earlier" and "Later ➡️" browse
+back and forth. Without an argument, `/log` explains itself.
+
 ## High availability (primary + fallback)
 
 The bot is deployed on two hosts so users keep getting responses when the
@@ -128,7 +133,7 @@ primary server is down:
 watcher when the primary is unreachable. In maintenance mode Plex, Sonarr,
 Radarr and Transmission are not used — any film/serie/serie-updates request
 is answered with a "we're in maintenance" message. The admin `/message`,
-`/message_all` and `/add_movie` commands keep working, as do `/start` (with
+`/message_all`, `/add_movie` and `/log` commands keep working, as do `/start` (with
 the maintenance reply for media options), `/help`, `/privacy`, the new
 account flow, and `/aanmelden_updates` / `/afmelden_updates`.
 
