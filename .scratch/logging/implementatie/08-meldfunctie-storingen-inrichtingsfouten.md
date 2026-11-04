@@ -1,6 +1,6 @@
 # 08 Meldfunctie: Storingen en Inrichtingsfouten
 
-Status: open
+Status: bezig (branch `logging/08-meldfunctie-storingen-inrichtingsfouten`, sinds 2026-11-04)
 Blocked by: 06
 Niet tegelijk met: 11, 12 (`src/faults.py`)
 
