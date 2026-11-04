@@ -108,6 +108,7 @@ class CheckNotifyListTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         return {line.get("media_title", line["tmdb_id"]): line["outcome"] for line in self.checks(kind)}
 
     def finished(self) -> dict:
+        """ The line job_finished of the one run """
         [line] = self.lines("job_finished")
         return line
 

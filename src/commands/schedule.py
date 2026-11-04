@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from telegram.ext import CallbackContext
 
+from src.commands.media import title_and_year
 from src.faults import Fault, FaultKind, service_name
 from src.interaction import account_in, tally, working_on
 from src.log import get_logger
@@ -380,28 +381,25 @@ class Schedule:
         """ Checks one item of the notify list, for a Gebruikersbericht of this kind to the receiver (its user_id and
         account): async with self.checking(...) as check.
 
-        First the movie or series and its folder (media_with_folder). Without a folder the item has its outcome then,
-        and the body skips it: if check.folder is None: continue. Otherwise the body sets the outcome.
+        First the movie or series and its folder (start_check). Without a folder the item has its outcome then, and
+        the body skips it: if check.folder is None: continue. Otherwise the body sets the outcome.
 
         After the body the item counts as checked, and gets its line notify_check on DEBUG. The receiver is on that
         line as keywords, not in the context: a Fout during the item has no user fields, and stays out of
         /log <person>. A Fout that ends the run ends it without that line.
         """
-        check = await self.media_with_folder(client, media_id)
+        check = await self.start_check(client, media_id)
         yield check
 
         tally("items")
-        title = check.media.get("title") or f"tmdb {check.media.get('tmdbId')}"
-        if check.media.get("year"):
-            title += f" ({check.media['year']})"
         outcome = check.outcome.replace("_", " ") + (f" {', '.join(check.missing)}" if check.missing else "")
-        log.debug(f"checked {title} for {receiver['account'] or receiver['user_id']} ({kind}): {outcome}",
-                  event="notify_check", kind=kind, outcome=check.outcome, missing=check.missing, media=check.media,
-                  **receiver)
+        log.debug(f"checked {title_and_year(check.media)} for {receiver['account'] or receiver['user_id']} ({kind}): "
+                  f"{outcome}", event="notify_check", kind=kind, outcome=check.outcome, missing=check.missing,
+                  media=check.media, **receiver)
         # Done with it: a Fout after it is not about it
         working_on(None)
 
-    async def media_with_folder(self, client: Radarr | Sonarr, media_id: str) -> ItemCheck:
+    async def start_check(self, client: Radarr | Sonarr, media_id: str) -> ItemCheck:
         """ The start of the check of an item: the movie or series in Radarr or Sonarr, and its folder.
 
         The Interaction is working on the item from the moment Radarr or Sonarr gives it. A folder that is not there

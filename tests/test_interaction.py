@@ -20,7 +20,6 @@ from telegram.ext import Application, BaseHandler, CallbackContext, Conversation
 from telegram.warnings import PTBUserWarning
 
 from src.bot import Bot
-from src.commands.schedule import NOTIFY_COUNTS
 from src.faults import Fault, FaultKind
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, current_code, guard,
                              guard_job, guard_task, new_code, tally, working_on)
@@ -33,6 +32,9 @@ CODE = r"^[23456789abcdefghjkmnpqrstuvwxyz]{6}$"
 
 # The user list of data.json: user ID to account name
 ACCOUNTS = {123456789: "wouter", 555: "anna"}
+
+# The counts that the jobs in JobTest register, like those of check_notify_list: two said in msg, two only as fields
+NOTIFY_COUNTS = {"items": "{n} item{s} checked", "sent": "{n} message{s} sent", "not_delivered": None, "skipped": None}
 
 
 async def fake_account_for(user_id: int) -> str | None:
@@ -556,6 +558,7 @@ class JobTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     async def count_items() -> None:
+        """ A task of the run that counts one item """
         tally("items")
 
     @staticmethod

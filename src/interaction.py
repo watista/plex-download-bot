@@ -273,12 +273,12 @@ def _job_finished(run: Interaction, seconds: float, finished: bool, counts: dict
     """ The last line of a run, like "check_notify_list finished in 4.2 s: 14 items checked, 2 messages sent" """
     duration_ms = round(seconds * 1000)
     values = {name: run.counts.get(name, 0) for name in counts} | run.counts
-    said = [phrase.format(n=values[name], s="" if values[name] == 1 else "s")
-            for name, phrase in counts.items() if phrase is not None]
+    summary = [phrase.format(n=values[name], s="" if values[name] == 1 else "s")
+               for name, phrase in counts.items() if phrase is not None]
     if finished and done:
-        said.append(done)
-    how = f"finished in {duration_ms / 1000:.1f} s" if finished else f"stopped after {duration_ms / 1000:.1f} s"
-    log.info(f"{run.job} {how}" + (f": {', '.join(said)}" if said else ""), event="job_finished",
+        summary.append(done)
+    took = f"finished in {duration_ms / 1000:.1f} s" if finished else f"stopped after {duration_ms / 1000:.1f} s"
+    log.info(f"{run.job} {took}" + (f": {', '.join(summary)}" if summary else ""), event="job_finished",
              outcome="ok" if finished else "stopped", duration_ms=duration_ms, **values)
 
 
