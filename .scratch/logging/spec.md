@@ -404,7 +404,7 @@ Bron: 13, met 14.
 ### Voor alle soorten
 
 12. **De regel `Repeat:`** staat alleen in een melding die een herhaling is:
-    - Inrichtingsfout: `Repeat: 3rd alert · failing since 1 Oct 06:27 (96×) · next alert 8 Oct`
+    - Inrichtingsfout: `Repeat: 3rd alert · failing since 1 Oct 06:27 (96×) · next alert 12 Oct` (de 3e melding op 5 Oct, de volgende 7 dagen later)
     - Storing: `Repeat: 2nd alert · next alert 5 Nov`. Begin en pogingen staan al in `Since:`.
     - Bug: `Repeat: 4× since the last alert (12 Oct 14:02)`
 13. **De toestand overleeft een herstart.** Hij staat in `faults.json` (dev: `faults.dev.json`) naast `data.json`, wordt bijgewerkt bij elke wijziging, onder één lock, en is er per host. Erin staan:
@@ -427,13 +427,13 @@ Bronnen: 10 en 13. Prototype: branch `prototype/admin-melding-bij-fout` (commit 
      - `Reason:` (de reden van de dienst, afgekapt op 300 tekens, met de HTTP-status) of `Exception:`
      - wie: `User:`, `Visitor:` of `Job:`
      - `Media:` met titel en jaar
-     - bij een Storing: `Since:` met de tijd, het aantal mislukte pogingen en de laatste reden
+     - bij een Storing: `Since:` met de tijd en het aantal mislukte pogingen. De laatste reden staat op de regel `Reason:`, want de melding gaat uit bij een mislukte poging (besloten bij 08).
      - bij een Bug buiten de wrapper: "Caught by error_handler, outside the wrapper"
      - bij melden en doorwerken: `Continued:`
      - bij een herhaling: `Repeat:`
    - **In een uitklapbaar blok** (`<blockquote expandable>`), in deze volgorde, en alleen als er iets in staat:
      1. de velden waarop de beslissing viel
-     2. de eigen code
+     2. de eigen code, alleen bij een Bug, zoals in variant E: bij een Inrichtingsfout zegt de controle die hem gooit al wat er mis is (besloten bij 08)
      3. het tmdb- of tvdb-ID
      4. `user_id`
      5. `user told: yes/no`
@@ -452,7 +452,7 @@ Bronnen: 10 en 13. Prototype: branch `prototype/admin-melding-bij-fout` (commit 
 5. **Opmaak**: HTML, met escapen van alleen `< > &` in elke waarde.
 6. **Telegram weigert de melding**: de bot stuurt dezelfde tekst één keer opnieuw zonder `parse_mode`. De tags zijn eruit, de entities zijn teruggezet en bovenaan staat `⚠️ Telegram rejected the formatting: <reden>`. De weigering zelf is een Bug: hij krijgt een ERROR-regel met `fault: bug` en hetzelfde `interaction_id`, maar geen eigen melding. Mislukt ook de platte tekst, dan blijft het bij de logregel.
 7. **Lengte**: altijd één bericht van hooguit 4096 tekens. Wordt een melding te lang, dan kort de bot het blok van achteren in en sluit hij af met `… truncated, see log`.
-8. **Storing**: getroffen Gebruikers of jobs komen er niet in; `jq` op `service` en `fault` vindt ze in het log.
+8. **Storing**: getroffen Gebruikers of jobs komen er niet in; `jq` op `service` en `fault` vindt ze in het log. Ook `Media:` en het tmdb- of tvdb-ID blijven weg: de melding gaat over de dienst, en de Code is die van de eerste mislukte poging, terwijl het media-item van een latere poging zou zijn (besloten bij 08).
 9. **Herstelmelding (`Restored`)**: toont begin en eind, de duur, het aantal mislukte pogingen en beide codes.
 10. **Herstelmelding (`Fixed`)**: toont wat rechtgezet is, van wanneer tot wanneer het misging, hoe vaak, en de code van de eerste melding → de code van de Interactie waarin de controle slaagde.
 11. **Na een Telegram-storing**: één Herstelmelding met begin en eind, de duur, het aantal mislukte polls, en een lijst `Not sent meanwhile (N):` met soort, dienst en code van elke Fout waarvan de melding niet aankwam. Hooguit 10, de rest als `+N more`. Herstelmeldingen staan er niet in. Hij heeft geen code, omdat pollen buiten een Interactie valt.
