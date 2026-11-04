@@ -19,6 +19,8 @@ from urllib.parse import quote
 import httpx
 import requests
 import transmission_rpc
+from telegram.ext import ExtBot
+from telegram.request import BaseRequest
 from transmission_rpc.error import TransmissionAuthError
 
 from src.bot import Bot
@@ -313,6 +315,7 @@ class LogLinesTest(LogFolder, unittest.TestCase):
         for name in ("start", "help", "message", "account", "movie", "serie", "subscribe", "maintenance"):
             setattr(bot, name, MagicMock())
         bot.allowed_users = [1]
+        bot.account_for = AsyncMock()
 
         with self.at("2026-11-03T14:05:12+01:00"), warnings.catch_warnings():
             warnings.simplefilter("always")
@@ -384,6 +387,54 @@ class LogLinesTest(LogFolder, unittest.TestCase):
             "2026-03-29": ["2026-03-29T01:59:59.999+01:00", "2026-03-29T03:00:00.000+02:00", "2026-03-29T23:59:59.999+02:00"],
             "2026-03-30": ["2026-03-30T00:00:00.000+02:00"],
         })
+
+
+class FakeTelegram(BaseRequest):
+    """ Telegram that answers every request with this result """
+
+    def __init__(self, result):
+        super().__init__()
+        self._result = result
+
+    @property
+    def read_timeout(self) -> float:
+        return 1
+
+    async def initialize(self) -> None:
+        """ Nothing to set up """
+
+    async def shutdown(self) -> None:
+        """ Nothing to free """
+
+    async def do_request(self, url, method, request_data=None, **timeouts) -> tuple[int, bytes]:
+        return 200, json.dumps({"ok": True, "result": self._result}).encode()
+
+
+class MessageTextTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ What someone types and what the bot sends stay out of the files, also out of the DEBUG lines of PTB """
+
+    async def test_the_debug_file_has_no_text_of_messages(self):
+        setup_logging("dev", "DEBUG", str(self.folder), False)
+
+        # A Bezoeker sends a password, and the bot sends the Beheerder an account request with an e-mail address
+        update = {"update_id": 1, "message": {"message_id": 1, "date": 0, "chat": {"id": 777, "type": "private"},
+                                              "from": {"id": 777, "is_bot": False, "first_name": "Sanne"},
+                                              "text": "hunter2"}}
+        sent = {"message_id": 2, "date": 0, "chat": {"id": 1, "type": "private"}, "text": "Email: piet@example.com"}
+        bot = ExtBot("123:ABC", request=FakeTelegram(sent), get_updates_request=FakeTelegram([update]))
+        application = logging.getLogger("telegram.ext.Application")
+
+        with self.at("2026-11-03T14:05:12+01:00"):
+            [received] = await bot.get_updates()
+            await bot.send_message(1, "Email: piet@example.com")
+            application.debug("Processing update %s", received)
+            application.debug("Dropping pending update: %s", received)
+
+        debug = self.raw(DEBUG)
+        self.assertNotIn("hunter2", debug)
+        self.assertNotIn("piet@example.com", debug)
+        # The other DEBUG lines of PTB stay
+        self.assertIn("Getting updates: [1]", [line["msg"] for line in self.read(DEBUG)])
 
 
 class StartStopTest(LogFolder, unittest.IsolatedAsyncioTestCase):

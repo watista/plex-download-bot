@@ -1,6 +1,6 @@
 # 05 Gebruikersacties: commands, login, account, help en admin
 
-Status: open
+Status: dicht
 Blocked by: 03
 Niet tegelijk met: 07, 14 (`src/bot.py`, `start.py`)
 
@@ -24,6 +24,33 @@ De rest van de catalogus, en vangnetten zodat ook genegeerde invoer en een verlo
 - **Een vangnet voor `ignored`**: tekst terwijl de bot op een knopdruk wacht, een knop uit een oud bericht, een onbekend command.
 - **`conversation_expired`** via een `ConversationHandler.TIMEOUT`-state.
 - **De admin-berichten in deze bestanden die geen fout zijn**, gaan via `send_admin_message`: geblokkeerde login, eerste login, geblokkeerd, de /help-keuzes, een vraag en een accountaanvraag. E-mail en telefoon uit een accountaanvraag komen zo niet meer in het log.
+
+## Besluiten bij de uitvoering
+
+Genomen op 2026-11-04. De eerste vier zijn voorgelegd en besloten op 2026-11-04, en bijgewerkt in de spec ([Catalogus](../spec.md#catalogus), [Nooit in een logregel](../spec.md#nooit-in-een-logregel) en de tabel in [3. Bestanden](../spec.md#3-bestanden)):
+
+- **Een command of knop in een menu krijgt altijd zijn regel** `command` of `menu_choice`; een admin-command alleen `admin_command`. Volgt er in dezelfde Interactie een regel van een andere soort, dan staat de uitkomst in die regel: `/aanmelden_updates` geeft `command` plus `general_updates`, en een geblokkeerde Bezoeker die op 🎬 Film drukt geeft `menu_choice` plus `login` (`refused`).
+- **Het vangnet staat na alle handlers**, buiten de ConversationHandler. Zo vangt het ook wat buiten een Gesprek binnenkomt: een knop uit een oud bericht, `/stop` zonder Gesprek, en een command midden in een Gesprek dat daar niets doet, zoals `/start` of `/message`. Die worden allemaal `ignored`. Van een command komt alleen het command zelf in de regel, zonder argumenten en zonder `@botnaam`.
+- **In maintenance mode** krijgt een Gebruiker die op 🎬 Film drukt `menu_choice` met `outcome: maintenance`. Een Bezoeker logt eerst in en krijgt de onderhoudsmelding daarna: zijn regel `login` heeft `outcome: success`, `maintenance: true` en ": maintenance message" achter `msg`.
+- **Het debug-bestand krijgt geen tekst van berichten.** PTB schreef op DEBUG de tekst van elk bericht weg: `telegram.Bot` en `telegram.ext.ExtBot` de parameters en het antwoord van elke aanroep van de Bot API, en `telegram.ext.Application` elke update ("Processing update", "Dropping pending update"). Zo kwamen wachtwoorden, en e-mail en telefoon uit een accountaanvraag, in het debug-bestand. Het filter `WithoutMessageText` in `src/log/__init__.py` laat die regels weg uit elk bestand. De andere DEBUG-regels van PTB blijven.
+- **`conversation_expired` heeft geen Code**: een Gesprek verloopt in een job, buiten een Interactie. De regel krijgt zelf `user_id` met `account` of `tg_name`.
+- **Een handler schrijft zijn regel zelf**, zodat `logger` en `src` van die handler zijn. `src/conversation.py` levert alleen de inhoud van de regels die meerdere handlers delen: `log.info(**command_or_choice_line(update))` en `ignored_line(update, step)`.
+- **De velden**:
+
+  | `event` | Velden |
+  |---|---|
+  | `command` | `command` (`/start`), `outcome: maintenance` |
+  | `menu_choice` | `menu` (`start`, `help`), `button` (de callback_data), `outcome: maintenance` |
+  | `login` | `outcome`: `success` met `logged_in_as` (en in maintenance mode zo nodig `maintenance: true`), `wrong_password` met `attempt`, `blocked` met `attempt: 3`, `refused` |
+  | `general_updates` | `choice` (`on`, `off`), `outcome` (`changed`, `unchanged`) |
+  | `account_request` | `question` (`name`, `email`, `phone`, `via`); alleen bij `name` ook `name` |
+  | `help_question` | `text` |
+  | `admin_command` | `command`, plus per stap `recipient`, `text`, `tmdb_id`; `/message_all` met `sent`, `not_delivered` en `skipped`; een ID dat geen getal is: `outcome: not_a_number`, zonder de invoer |
+  | `outside_conversation` | `outcome: start_shown` |
+  | `ignored` | `input` (`text`, `command`, `button`, `other`), `step`, en `button` of `command` |
+  | `conversation_expired` | `step` |
+
+  `step` is de naam van de state in kleine letters, zoals `verify_pwd`.
 
 ## Spec
 

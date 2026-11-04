@@ -37,6 +37,14 @@ SECRETS = ("BOT_TOKEN", "BOT_TOKEN_DEV", "RADARR_API", "SONARR_API", "PLEX_API",
 # How a secret is quoted in a URL: by urllib by default, completely, and by transmission-rpc for its user and password
 QUOTE_SAFE = ("/", "", "$-_.+!*'(),;&=")
 
+# The DEBUG lines of PTB that hold the text of messages, per logger, by the start of their message: what someone
+# typed, like a password or the e-mail and phone of an account request, and what the bot sent
+MESSAGE_TEXT = {
+    "telegram.Bot": ("Calling Bot API endpoint", "Call to Bot API endpoint"),
+    "telegram.ext.ExtBot": ("Calling Bot API endpoint", "Call to Bot API endpoint"),
+    "telegram.ext.Application": ("Processing update", "Dropping pending update"),
+}
+
 
 def is_own(name: str) -> bool:
     """ True for a logger of the bot, False for a library """
@@ -95,6 +103,15 @@ class OwnCodeOrWarning(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         return record.levelno >= logging.WARNING or is_own(record.name)
+
+
+class WithoutMessageText(logging.Filter):
+    """ Leaves out the lines of PTB with the text of messages, so a password never gets into a file, also not into
+    the debug file """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        starts = MESSAGE_TEXT.get(record.name)
+        return not (starts and str(record.msg).startswith(starts))
 
 
 class ContextFields(logging.Filter):
@@ -287,6 +304,7 @@ def _configured(handler: logging.Handler, level: int, only_own_code: bool, conte
     handler.setLevel(level)
     if only_own_code:
         handler.addFilter(OwnCodeOrWarning())
+    handler.addFilter(WithoutMessageText())
     handler.addFilter(ContextFields(context))
     handler.addFilter(MaskSecrets())
     handler.setFormatter(formatter or JsonFormatter())

@@ -3,6 +3,12 @@
 from telegram import Update
 from telegram.ext import CallbackContext, ConversationHandler
 
+from src.conversation import command_or_choice_line
+from src.log import get_logger
+
+
+log = get_logger(__name__)
+
 
 class Maintenance:
     """Handlers used when the bot is running on the standby host.
@@ -24,19 +30,18 @@ class Maintenance:
         self.function = functions
 
     async def media_maintenance(self, update: Update, context: CallbackContext) -> int:
+        """/aanmelden_serie and /afmelden_serie: the maintenance message, with
+        that outcome in the line of the command."""
+        log.info(**command_or_choice_line(update, maintenance=True))
+        return await self.notice(update, context)
+
+    async def notice(self, update: Update, context: CallbackContext) -> int:
         """Reply with the maintenance message and end the conversation.
 
         Used for film/serie/serie-update flows that depend on the primary host.
         """
         if update.callback_query:
             await update.callback_query.answer()
-
-        await self.log.logger(
-            f"Maintenance reply sent - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}",
-            False,
-            "info",
-            False,
-        )
 
         await self.function.send_message(self.MAINTENANCE_TEXT, update, context)
         return ConversationHandler.END

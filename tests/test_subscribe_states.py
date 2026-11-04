@@ -65,6 +65,7 @@ class SubscribeStateTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         bot.start.verification = AsyncMock(return_value=REQUEST_SERIE)
         bot.subscribe = self.subscribe
         bot.allowed_users = [1]
+        bot.account_for = AsyncMock(return_value="test")
         self.verification = bot.start.verification
         self.conversation = bot._build_normal_conversation()
 

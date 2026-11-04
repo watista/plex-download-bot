@@ -9,9 +9,10 @@ from telegram.ext import CallbackContext, ConversationHandler
 
 from src.services.sonarr import Sonarr
 from src.commands.media import results_text, title_and_year
+from src.conversation import ignored_line
 from src.log import get_logger
 
-from src.states import AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE
+from src.states import AFMELDEN_OPTIE, AANMELD_OPTIE, AANMELD_CHOICE, step_name
 
 
 log = get_logger(__name__)
@@ -218,6 +219,7 @@ class Subscribe:
         # Only a serie from the list is a TMDB ID, a button of an older message (like option 1
         # of an earlier search) is not. Wait for a choice from the list.
         if serie_id not in serie_episode:
+            log.info(**ignored_line(update, step_name(AFMELDEN_OPTIE)))
             await self.function.send_message("Deze knop hoort niet bij de lijst met series waarvoor je bent aangemeld. Kies een serie uit de lijst, of stuur /stop om te stoppen.", update, context)
             return AFMELDEN_OPTIE
 

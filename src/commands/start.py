@@ -8,27 +8,51 @@ from typing import Union, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
 
+from src.conversation import command_of, command_or_choice_line
+from src.log import get_logger
 from src.states import VERIFY, REQUEST_ACCOUNT, REQUEST_MOVIE, REQUEST_SERIE, VERIFY_PWD
+
+
+log = get_logger(__name__)
+
+# The options of the start menu that need Plex, Sonarr, Radarr and Transmission: in maintenance mode they get the
+# maintenance message
+NEEDS_PRIMARY = ("movie_request", "serie_request", "aanmelden_serie", "afmelden_serie")
+
+# Wrong passwords after which a Bezoeker is blocked
+MAX_LOGIN_TRIES = 3
 
 
 class Start:
 
-    def __init__(self, args, logger, functions, maintenance=None):
+    def __init__(self, args, logger, functions, maintenance=None, telegram=None):
 
         # Set default values
         self.log = logger
         self.function = functions
         self.mode = getattr(args, "mode", "normal")
         self.maintenance = maintenance
+        self.telegram = telegram
 
         # Set data.json/stats.json file based on live/dev arg
         self.data_json = "data.json" if args.env == "live" else "data.dev.json"
         self.stats_json = "stats.json" if args.env == "live" else "stats.dev.json"
 
     async def start_msg(self, update: Update, context: CallbackContext) -> int:
+        """ /start: shows the start menu """
+        log.info(**command_or_choice_line(update))
+        return await self.show_menu(update, context)
 
-        # Debug usage log
-        await self.log.logger(f"User started bot with /start - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+    async def outside_conversation(self, update: Update, context: CallbackContext) -> int:
+        """ Text while no Gesprek runs: shows the start menu.
+
+        The text gets no line: it may be a password, sent again after the Gesprek expired.
+        """
+        log.info("sent text outside a conversation: showed /start", event="outside_conversation", outcome="start_shown")
+        return await self.show_menu(update, context)
+
+    async def show_menu(self, update: Update, context: CallbackContext) -> int:
+        """ Sends the start menu """
 
         # Clear previous choices
         context.user_data.pop("media_option", None)
@@ -62,39 +86,35 @@ class Start:
         return VERIFY
 
     async def verification(self, update: Update, context: CallbackContext) -> Optional[int]:
+        """ /aanmelden_serie, /afmelden_serie, or an option of the start menu that needs a login """
 
-        # check if it's called with aan/afmelden or /start
-        if update.message and update.message.text.startswith("/aanmelden_serie"):
-            await self.log.logger(f"User started bot with /aanmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "aanmelden_serie"
-        elif update.callback_query and update.callback_query.data == "aanmelden_serie":
-            await self.log.logger(f"User started bot with /aanmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "aanmelden_serie"
-            await update.callback_query.answer()
-        elif update.message and update.message.text.startswith("/afmelden_serie"):
-            await self.log.logger(f"User started bot with /afmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "afmelden_serie"
-        elif update.callback_query and update.callback_query.data == "afmelden_serie":
-            await self.log.logger(f"User started bot with /afmelden_serie - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
-            context.user_data["media_option"] = "afmelden_serie"
-            await update.callback_query.answer()
-        else:
+        # The option: the button of the start menu, or the command without its slash
+        if update.callback_query:
             context.user_data["media_option"] = update.callback_query.data
             await update.callback_query.answer()
+        else:
+            context.user_data["media_option"] = command_of(update).removeprefix("/")
 
         # Load JSON file
         async with aiofiles.open(self.data_json, "r") as file:
             json_data = json.loads(await file.read())
+        blocked = str(update.effective_user.id) in json_data["blocked_users"]
+        known = not blocked and str(update.effective_user.id) in json_data["user_id"]
+
+        # In maintenance mode a Gebruiker gets the maintenance message right away, a Bezoeker after logging in
+        log.info(**command_or_choice_line(update, maintenance=known and self.in_maintenance(context.user_data["media_option"])))
 
         # Check if user is blocked
-        if str(update.effective_user.id) in json_data["blocked_users"]:
+        if blocked:
+            log.info("login refused: on the blocklist", event="login", outcome="refused")
             await self.function.send_message(f"Je bent geblokkeerd om deze bot te gebruiken, als je denkt dat dit een fout is kan je contact opnemen met de serverbeheerder.", update, context)
-            await self.log.logger(f"*ℹ️ A blocked user tried to login ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            await self.telegram.send_admin_message(f"*ℹ️ A blocked user tried to login ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                                                   "blocked user tried to log in")
             # Finish the conversation
             return ConversationHandler.END
 
         # Check if user_id is already known and verified
-        if str(update.effective_user.id) in json_data["user_id"]:
+        if known:
 
             # Set gebruikernaam if not set
             if not context.user_data.get("gebruiker"):
@@ -129,10 +149,15 @@ class Start:
         async with aiofiles.open(self.data_json, "r") as file:
             json_data = json.loads(await file.read())
 
-        # Check if given password is known in json
+        # Check if given password is known in json. Only the outcome gets a line, never the password.
         for key, value in json_data["users"].items():
             if value == update.message.text:
-                await self.log.logger(f"*ℹ️ First time login for user ℹ️*\nGebruiker: {key}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+                # In maintenance mode the option a Bezoeker chose before logging in may get the maintenance message
+                maintenance = self.in_maintenance(context.user_data.get("media_option"))
+                log.info(f"logged in as {key}{': maintenance message' if maintenance else ''}", event="login",
+                         outcome="success", logged_in_as=key, maintenance=maintenance or None)
+                await self.telegram.send_admin_message(f"*ℹ️ First time login for user ℹ️*\nGebruiker: {key}\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                                                       "first login")
                 await self.function.send_message(f"Je wachtwoord klopt!\n\nJe bent nu ingelogd als gebruiker: {key}", update, context)
                 await asyncio.sleep(1)
 
@@ -164,11 +189,15 @@ class Start:
 
         # Bump wrong login tries
         context.user_data["login_tries"] += 1
+        attempt = context.user_data["login_tries"]
 
         # add user to blocked_json
-        if context.user_data["login_tries"] >= 3:
+        if attempt >= MAX_LOGIN_TRIES:
             # Send message and add to blocklist
-            await self.log.logger(f"*ℹ️ User has been blocked ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+            log.info(f"wrong password (attempt {attempt} of {MAX_LOGIN_TRIES}): blocked", event="login",
+                     outcome="blocked", attempt=attempt)
+            await self.telegram.send_admin_message(f"*ℹ️ User has been blocked ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}",
+                                                   "user blocked")
             await self.function.send_message(f"Je hebt 3 keer het verkeerde wachtwoord ingevoerd, je bent nu geblokkerd. Neem contact op met de serverbeheerder om deze blokkade op te heffen.", update, context)
             json_data["blocked_users"][str(
                 update.effective_user.id)] = update.effective_user.first_name
@@ -178,12 +207,27 @@ class Start:
             return ConversationHandler.END
 
         # Wrong password
-        await self.function.send_message(f"Het opgegeven wachtwoord is onjuist, je hebt nog {3 - context.user_data['login_tries']} pogingen voordat je toegang wordt geblokkeerd.", update, context)
+        log.info(f"wrong password (attempt {attempt} of {MAX_LOGIN_TRIES})", event="login", outcome="wrong_password",
+                 attempt=attempt)
+        await self.function.send_message(f"Het opgegeven wachtwoord is onjuist, je hebt nog {MAX_LOGIN_TRIES - attempt} pogingen voordat je toegang wordt geblokkeerd.", update, context)
 
         # Return and retry the verify_pwd state
         await asyncio.sleep(1)
         await self.function.send_message(f"Voer nu je wachtwoord in:", update, context)
         return VERIFY_PWD
+
+    async def account_request(self, update: Update, context: CallbackContext) -> Optional[int]:
+        """ The button for a new account in the start menu: no login needed, also not in maintenance mode """
+        log.info(**command_or_choice_line(update))
+        return await self.parse_request(update, context)
+
+    def in_maintenance(self, option: str | None) -> bool:
+        """ True when this option of the start menu gets the maintenance message.
+
+        account_request, info and aanmelden/afmelden_updates continue to work in maintenance mode, because they
+        only touch data.json and Telegram.
+        """
+        return self.mode == "maintenance" and option in NEEDS_PRIMARY
 
     async def parse_request(self, update: Update, context: CallbackContext) -> Optional[int]:
 
@@ -191,13 +235,9 @@ class Start:
             context.user_data["media_option"] = update.callback_query.data
             await update.callback_query.answer()
 
-        # In maintenance mode, intercept the options that need Plex/Sonarr/Radarr.
-        # account_request, info and aanmelden/afmelden_updates continue to work
-        # because they only touch data.json and Telegram.
-        if self.mode == "maintenance" and context.user_data.get("media_option") in (
-            "movie_request", "serie_request", "aanmelden_serie", "afmelden_serie",
-        ):
-            return await self.maintenance.media_maintenance(update, context)
+        # In maintenance mode, intercept the options that need Plex/Sonarr/Radarr
+        if self.in_maintenance(context.user_data.get("media_option")):
+            return await self.maintenance.notice(update, context)
 
         if context.user_data["media_option"] == "account_request":
             await self.function.send_message(f"Leuk dat je interesse hebt in Plęx. Voordat er een account voor je aangemaakt kan worden, is er eerst wat informatie van je nodig.", update, context)

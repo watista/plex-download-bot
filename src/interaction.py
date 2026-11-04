@@ -90,6 +90,22 @@ async def account_for(user_id: int, data_json: str) -> str | None:
     return entry.split(",", 1)[0].strip() or None
 
 
+async def person_fields(user: User, account_for: Callable[[int], Awaitable[str | None]]) -> dict:
+    """ Who a Telegram user is in a line: a Gebruiker by account name, a Bezoeker by Telegram name.
+
+    Empty when the user list cannot be read, so the line is written anyway, without guessing who it is.
+    """
+    try:
+        account = await account_for(user.id)
+    except Exception:
+        log.error(f"could not look up the account of user {user.id}", exc_info=True)
+        return {}
+    if account:
+        return {"account": account}
+    # The Telegram name only for a Bezoeker, so a Bezoeker never shows up under the account name of a Gebruiker
+    return {"tg_name": user.first_name}
+
+
 def context_fields() -> dict:
     """ The fields that every line in the current Interaction gets, also a line of a library; empty outside one """
     interaction = _current.get()
@@ -121,25 +137,13 @@ class InteractionProcessor(BaseUpdateProcessor):
         token = _current.set(Interaction(new_code(), user_id=user.id if user else None))
         try:
             if user:
-                _current.set(replace(_current.get(), **await self._person(user)))
+                # Never raises: an exception here would stop the update fetcher of PTB, and with it every
+                # update after this one
+                _current.set(replace(_current.get(), **await person_fields(user, self._account_for)))
             await coroutine
         finally:
             # Without the reset the context leaks into the next update
             _current.reset(token)
-
-    async def _person(self, user: User) -> dict:
-        """ A Gebruiker by account name, a Bezoeker by Telegram name """
-        try:
-            account = await self._account_for(user.id)
-        except Exception:
-            # Handle the update anyway, without guessing who it is. An exception here would stop the
-            # update fetcher of PTB, and with it every update after this one.
-            log.error(f"could not look up the account of user {user.id}", exc_info=True)
-            return {}
-        if account:
-            return {"account": account}
-        # The Telegram name only for a Bezoeker, so a Bezoeker never shows up under the account name of a Gebruiker
-        return {"tg_name": user.first_name}
 
     async def initialize(self) -> None:
         """ Nothing to set up """

@@ -4,6 +4,12 @@ import asyncio
 from telegram import Update
 from telegram.ext import CallbackContext
 
+from src.conversation import command_or_choice_line
+from src.log import get_logger
+
+
+log = get_logger(__name__)
+
 
 class Privacy:
 
@@ -15,8 +21,7 @@ class Privacy:
 
     async def privacy_command(self, update: Update, context: CallbackContext) -> None:
 
-        # Debug usage log
-        await self.log.logger(f"User started bot with /privacy - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+        log.info(**command_or_choice_line(update))
 
         privacy_policy = f"""*Privacy Policy for Wouter Thuis-Server Bot*
 

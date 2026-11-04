@@ -3,21 +3,33 @@
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext, ConversationHandler
+from src.conversation import MENU_BUTTONS, command_or_choice_line
+from src.log import get_logger
 from src.states import HELP_CHOICE, HELP_OTHER
+
+
+log = get_logger(__name__)
 
 
 class Help:
 
-    def __init__(self, logger, functions):
+    def __init__(self, logger, functions, telegram):
 
         # Set default values
         self.log = logger
         self.function = functions
+        self.telegram = telegram
+
+    async def _log_choice_and_tell_admin(self, update: Update, admin_text: str) -> None:
+        """ A choice in the /help menu: its line, with the src of the handler that called this, and the message that
+        tells the Beheerder """
+        log.info(**command_or_choice_line(update), stacklevel=2)
+        await self.telegram.send_admin_message(admin_text, f"help: {MENU_BUTTONS[update.callback_query.data].meaning}")
 
     async def help_command_button(self, update: Update, context: CallbackContext) -> int:
 
-        # Debug usage log
-        await self.log.logger(f"User started bot with /help - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+        # The button in the start menu
+        log.info(**command_or_choice_line(update))
 
         # Extract callback data and acknowledge the callback
         await update.callback_query.answer()
@@ -53,8 +65,8 @@ class Help:
 
     async def help_command(self, update: Update, context: CallbackContext) -> int:
 
-        # Debug usage log
-        await self.log.logger(f"User started bot with /help - Username: {update.effective_user.first_name} - User ID: {update.effective_user.id}", False, "info", False)
+        # /help
+        log.info(**command_or_choice_line(update))
 
         # Create the options keyboard
         reply_markup = InlineKeyboardMarkup([
@@ -90,8 +102,8 @@ class Help:
         # Extract callback data and acknowledge the callback
         await update.callback_query.answer()
 
-        # Log
-        await self.log.logger(f"*ℹ️ User invoked the /help - Hoe gebruik je deze bot command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        # Log, and tell the Beheerder
+        await self._log_choice_and_tell_admin(update, f"*ℹ️ User invoked the /help - Hoe gebruik je deze bot command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}")
 
         # Send messages
         await self.function.send_message("Deze bot kan je voor 5 zaken gebruiken:\n\n 1. Een account aanvragen voor de Plęx server\n 2. Nieuwe films aanvragen\n 3. Nieuwe series aanvragen\n 4. Aan- en afmelden voor serie updates", update, context)
@@ -118,8 +130,8 @@ class Help:
         # Extract callback data and acknowledge the callback
         await update.callback_query.answer()
 
-        # Log
-        await self.log.logger(f"*ℹ️ User invoked the /help - FAQ command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        # Log, and tell the Beheerder
+        await self._log_choice_and_tell_admin(update, f"*ℹ️ User invoked the /help - FAQ command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}")
 
         # Send messages
         await self.function.send_message("Heb je net een nieuw account en kom je ergens niet uit? Hier wat extra info over de meest voorkomende vragen:", update, context)
@@ -150,8 +162,8 @@ class Help:
         # Extract callback data and acknowledge the callback
         await update.callback_query.answer()
 
-        # Log
-        await self.log.logger(f"*ℹ️ User invoked the /help - New account command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        # Log, and tell the Beheerder
+        await self._log_choice_and_tell_admin(update, f"*ℹ️ User invoked the /help - New account command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}")
 
         # Send messages
         await self.function.send_message("*Een nieuw account aanvragen*\n\nBen je zo enthousiast over Plęx en denk je dat een vriend, broertje, moeder of opa ook wel een Plęx account wilt? Vraag dan een nieuw account aan via deze bot.", update, context)
@@ -168,8 +180,8 @@ class Help:
         # Extract callback data and acknowledge the callback
         await update.callback_query.answer()
 
-        # Log
-        await self.log.logger(f"*ℹ️ User invoked the /help - Quality command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        # Log, and tell the Beheerder
+        await self._log_choice_and_tell_admin(update, f"*ℹ️ User invoked the /help - Quality command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}")
 
         # Send messages
         await self.function.send_message("Staat er een film of serie op Plęx en is de kwaliteit ronduit slecht, staat er reclame in het scherm of zitten er ingebakken chinese ondertitels in? Dan kan je de film of serie opnieuw aanvragen. Je krijgt na het kiezen van de film/serie de vraag of er iets mis is met de kwaliteit. Geef hierbij aan wat er mis is en de film/serie zal opnieuw op de server gezet worden met goede kwaliteit.", update, context)
@@ -184,8 +196,8 @@ class Help:
         # Extract callback data and acknowledge the callback
         await update.callback_query.answer()
 
-        # Log
-        await self.log.logger(f"*ℹ️ User invoked the /help - Other command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}", False, "info")
+        # Log, and tell the Beheerder
+        await self._log_choice_and_tell_admin(update, f"*ℹ️ User invoked the /help - Other command ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}")
 
         # Send messages
         await self.function.send_message("Heb je nog een vraag, op- of aanmerking die niet beantwoord is? Stuur dan een bericht via Whatsapp of typ en stuur je bericht nu in Telegram en je zal zo snel mogelijk een reactie krijgen. Stuur ook meteen even je telefoonnummer mee voor de handigheid. Wil je geen bericht sturen? Klik dan op, of stuur /stop", update, context)
@@ -195,9 +207,11 @@ class Help:
 
     async def other_reply(self, update: Update, context: CallbackContext) -> None:
 
-        # Send messages
+        # The question as it was typed; the Beheerder gets it in Telegram
+        log.info(f"asked a question: '{update.message.text}'", event="help_question", text=update.message.text)
         await self.function.send_message("Bedankt voor je bericht, er wordt zo snel mogelijk contact met je opgenomen!", update, context)
-        await self.log.logger(f"*ℹ️ User send a question ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}\n\n{update.message.text}", False, "info")
+        await self.telegram.send_admin_message(f"*ℹ️ User send a question ℹ️*\nUsername: {update.effective_user.first_name}\nUser ID: {update.effective_user.id}\n\n{update.message.text}",
+                                               "question via /help")
 
         # End convo
         return ConversationHandler.END
