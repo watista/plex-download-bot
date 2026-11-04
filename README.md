@@ -22,9 +22,8 @@ PLEX_API: Your Plex API key
 PLEX_ID: Your Plex server ID
 CHAT_ID_GROUP: The Telegram Chat ID
 CHAT_ID_ADMIN: User telegram ID
-LOG_TYPE: Log severity (Options are: ERROR, WARNING, INFO, DEBUG). On DEBUG the chatter of
-libraries like httpcore, httpx and telegram (the getUpdates poll loop) is written to a separate
-`<name>-<date>-debug.log` file instead of the main log; their warnings and errors stay in both
+LOG_TYPE: INFO or DEBUG. The main log always has INFO and up; DEBUG adds a debug file per day
+with everything, see Logs below. Any other value logs on INFO, with a warning at every start
 LOG_FOLDER: Folder to write logs to
 TRANSMISSION_IP: The external IP of your Transmission instance
 TRANSMISSION_PORT: Transmission port
@@ -89,6 +88,35 @@ python3 ~./plex-download-bot/main.py
 ./main.py --mode normal/maintenance     # Run mode (default: normal)
 
 ```
+
+## Logs
+
+The bot writes one file per calendar day in local time to `LOG_FOLDER`, as JSON Lines: one JSON
+object per line, in UTF-8.
+
+- `plex-download-bot-YYYY-MM-DD.jsonl` on live (also in maintenance mode), and
+`dev-plex-download-bot-YYYY-MM-DD.jsonl` on dev. This main file always has the bot's own lines from
+INFO and the lines of libraries from WARNING.
+- With `LOG_TYPE=DEBUG` there is a second file per day, `…-YYYY-MM-DD-debug.jsonl`, with everything
+from DEBUG, libraries included. It gets big fast: switch DEBUG on temporarily.
+- Nothing is renamed or removed. Old `.log` files stay as they are.
+- The bot tokens, API keys and the Transmission password from `dot-env` are replaced by `***` in
+every line, also in the lines of libraries.
+- `--verbose` also shows the lines on the console: own lines from `LOG_TYPE`, libraries from WARNING.
+
+Read a file as text with `jq`:
+
+```
+jq -r '"\(.ts) \(.level) \(.account // "-") \(.event // "-") \(.msg)"' log/plex-download-bot-2026-11-03.jsonl
+```
+
+Follow today's file over SSH. This stops following at midnight, when the bot starts the next file:
+
+```
+tail -F log/plex-download-bot-$(date +%F).jsonl | jq -r '"\(.ts) \(.level) \(.account // "-") \(.event // "-") \(.msg)"'
+```
+
+`jq -r .exc` shows a traceback over multiple lines again.
 
 ## High availability (primary + fallback)
 
