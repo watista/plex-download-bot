@@ -197,7 +197,8 @@ class MovieStateTest(MovieTest):
 
     async def test_downloaded_movie_whose_plex_link_fails_gets_the_answer_without_it(self):
         self.enterContext(patch.dict(os.environ, {"PLEX_URL": "http://plex.example.com:32400"}))
-        self.enterContext(patch("src.services.plex.PlexServer", side_effect=requests.exceptions.ConnectionError("Connection refused")))
+        refused = requests.exceptions.ConnectionError("Connection refused")
+        self.enterContext(patch("src.services.plex.PlexServer", side_effect=refused))
         self.movie.plex = Plex(self.faults)
 
         await self.choose(DOWNLOADED)

@@ -7,6 +7,7 @@ import re
 from collections.abc import Callable
 from time import monotonic
 from typing import TYPE_CHECKING, Any
+from xml.etree.ElementTree import ParseError
 
 import requests
 from plexapi.exceptions import PlexApiException
@@ -29,11 +30,12 @@ RETRY_AFTER = 300.0
 # The seconds a request to Plex may take, shorter than the 30 of plexapi
 TIMEOUT = 10
 
-# The settings that the connection needs: the URL of Plex and its token
-SETTINGS = ("PLEX_URL", "PLEX_API")
-
 # How plexapi starts the text of an HTTP error: the status and its name, like "(503) service_unavailable;"
 HTTP_ERROR = re.compile(r"\((\d{3})\) (\w+);")
+
+# What the connection raises when PLEX_URL is no URL that requests can use, or what answers there is no XML of Plex
+NOT_PLEX = (requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema, requests.exceptions.InvalidURL,
+            ParseError)
 
 
 class Plex:
@@ -48,25 +50,29 @@ class Plex:
         self._url = os.getenv("PLEX_URL")
         self._token = os.getenv("PLEX_API")
         self._server: PlexServer | None = None
-        self._next_connect = 0.0
+        self._next_connect_at = 0.0
 
     async def link(self, media: dict | list, media_type: str) -> str | None:
         """ The link to a media item of Radarr or Sonarr in Plex, for an answer that also goes out without it.
         media_type is film or serie; of a list of lookup results it is the first.
 
         None when Plex has no match for the title, a line on WARNING, or while the client waits to connect again. A
-        Fout is reported here and not raised, as the answer goes on without the link.
+        Fout is reported here and not raised, as the answer goes on without the link; an exception the client does
+        not expect is a Bug.
         """
         try:
             return await self._link(next(iter(media), {}) if isinstance(media, list) else media, media_type)
-        except Fault as fault:
-            await self.faults.report(fault, continued="sent the answer without a Plex link")
+        except Exception as error:
+            await self.faults.report(error if isinstance(error, Fault) else _bug(error),
+                                     continued="sent the answer without a Plex link")
             return None
 
     async def _link(self, media: dict, media_type: str) -> str | None:
         """ The link to the media in Plex, None without a match or a connection; raises the Fault of what failed """
         section, service = ("Movies", "radarr") if media_type == "film" else ("TV Shows", "sonarr")
-        title, tmdb_id, name = (media.get("title") or "").strip(), media.get("tmdbId"), service_name(service)
+        name = service_name(service)
+        title = (media.get("title") or "").strip()
+        tmdb_id = media.get("tmdbId")
         if not title:
             raise Fault.setup(service=service, what=f"{name} gives no title for tmdb {tmdb_id}", check="media_title",
                               item=tmdb_id)
@@ -86,36 +92,39 @@ class Plex:
     async def _connect(self) -> PlexServer | None:
         """ The connection to Plex, made at the first link; None while the client waits to connect again.
 
-        A missing setting is an Inrichtingsfout of that setting. So is a URL that does not lead to Plex: at the
-        connection the bot only asks for the root of Plex, so whatever plexapi makes a Bug of here (a 404, an answer
-        that is no XML of Plex, a URL that requests cannot use) says the URL is wrong.
+        A missing setting is an Inrichtingsfout of that setting. So is a URL that does not lead to Plex: one that
+        requests cannot use, or where the root answers with an HTTP error or with something that is no XML of Plex.
         """
         if self._server is not None:
             return self._server
-        for setting, value in zip(SETTINGS, (self._url, self._token)):
+        for setting, value in (("PLEX_URL", self._url), ("PLEX_API", self._token)):
             if not value:
                 raise Fault.setup(service="plex", what=f"{setting} is not set", check="setting", item=setting)
-        if monotonic() < self._next_connect:
+        if monotonic() < self._next_connect_at:
             log.debug(f"no Plex link: the last connection failed less than {RETRY_AFTER / 60:g} minutes ago")
             return None
 
+        # Until a connection succeeds, the next link waits
+        self._next_connect_at = monotonic() + RETRY_AFTER
         try:
             self._server = await self._request("connection",
                                                lambda: PlexServer(self._url, self._token, timeout=TIMEOUT))
         except Fault as fault:
-            self._next_connect = monotonic() + RETRY_AFTER
+            # The requestregel makes a Bug of an HTTP error that is no Storing and no key it refuses
             if fault.kind != FaultKind.BUG:
                 raise
-            raise Fault.setup(service="plex", what="PLEX_URL does not lead to Plex", check="setting", item="PLEX_URL",
-                              reason=fault.reason, http_status=fault.http_status) from fault.__cause__
+            raise _not_plex(reason=fault.reason, http_status=fault.http_status) from None
+        except NOT_PLEX as error:
+            raise _not_plex() from error
         await self.faults.fixed("plex", "setting", "PLEX_URL", msg="Plex answers at PLEX_URL again")
         return self._server
 
-    async def _request(self, action: str, ask: Callable[[], Any], **fields) -> Any:
-        """ A request with plexapi through the requestregel: what ask gives back, or the Fault.
+    async def _request(self, action: str, ask: Callable[[], Any], request: Any = None) -> Any:
+        """ A request with plexapi through the requestregel: what ask gives back, or the Fault. request says what
+        was asked, for the http_call.
 
         The attempt converts what plexapi raises: not reaching Plex to what the requestregel calls unreachable, and
-        an HTTP error to its status. Anything else it raises is a Bug. fields go to the http_call.
+        an HTTP error to its status. Anything else falls through as it is.
         """
 
         async def attempt() -> Answer:
@@ -131,10 +140,20 @@ class Plex:
                     raise
                 return Answer(int(http_error[1]), reason=http_error[2].replace("_", " "))
 
-        try:
-            # plexapi sends the token in a header, so the URL is without it
-            return await call("plex", action, attempt, self.faults, retries=1, method="GET", url=self._url, **fields)
-        except Fault:
-            raise
-        except Exception as error:
-            raise Fault.bug(service="plex", what=f"Plex gave an unexpected answer to the {action}") from error
+        # plexapi sends the token in a header, so the URL is without it
+        return await call("plex", action, attempt, self.faults, retries=1, method="GET", url=self._url,
+                          request=request)
+
+
+def _not_plex(**fields) -> Fault:
+    """ The Inrichtingsfout of a PLEX_URL that does not lead to Plex, with the reason and status of its answer """
+    return Fault.setup(service="plex", what="PLEX_URL does not lead to Plex", check="setting", item="PLEX_URL",
+                       **fields)
+
+
+def _bug(error: Exception) -> Fault:
+    """ The Bug that an exception the client does not expect is: of Plex, from that exception, as the wrapper makes
+    one """
+    fault = Fault.bug(service="plex", what="Making a Plex link failed")
+    fault.__cause__ = error
+    return fault

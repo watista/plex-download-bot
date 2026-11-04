@@ -4,6 +4,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from xml.etree.ElementTree import ParseError
 
 import requests
 from plexapi.exceptions import BadRequest, NotFound, Unauthorized
@@ -158,7 +159,8 @@ class PlexTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
     async def test_a_url_that_does_not_lead_to_plex_is_an_inrichtingsfout_of_plex_url(self):
         for error in (requests.exceptions.MissingSchema("Invalid URL 'plex:32400/': No scheme supplied."),
-                      NotFound(f"(404) not_found; {URL}/ <html>Not Found</html>")):
+                      NotFound(f"(404) not_found; {URL}/ <html>Not Found</html>"),
+                      ParseError("mismatched tag: line 12, column 2")):
             with self.subTest(type(error).__name__):
                 self.plex_server.side_effect = error
                 self.faults.reports.clear()
@@ -199,10 +201,27 @@ class PlexTest(LogFolder, unittest.IsolatedAsyncioTestCase):
 
         [report] = self.faults.reports
         fault = report.fault
-        self.assertEqual((fault.kind, fault.service, fault.what),
-                         (FaultKind.BUG, "plex", "Plex gave an unexpected answer to the library search"))
+        self.assertEqual((fault.kind, fault.service, fault.what), (FaultKind.BUG, "plex", "Making a Plex link failed"))
         self.assertIs(fault.__cause__, no_library)
         self.assertEqual(report.continued, "sent the answer without a Plex link")
+
+    async def test_an_unexpected_exception_at_the_connection_is_a_bug_too(self):
+        self.plex_server.side_effect = TypeError("'NoneType' object is not subscriptable")
+
+        await self.plex().link(DUNE, "film")
+
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.service), (FaultKind.BUG, "plex"))
+        self.assertIsInstance(report.fault.__cause__, TypeError)
+
+    async def test_an_exception_while_making_the_link_is_a_bug_and_the_answer_goes_on(self):
+        self.server.library.section.return_value.search.return_value = [SimpleNamespace(title="Dune")]
+
+        self.assertIsNone(await self.plex().link(DUNE, "film"))
+
+        [report] = self.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.what), (FaultKind.BUG, "Making a Plex link failed"))
+        self.assertIsInstance(report.fault.__cause__, AttributeError)
 
     async def test_the_first_of_a_list_of_lookup_results(self):
         self.assertEqual(await self.plex().link([DUNE, {"title": "Dune: Part Two"}], "film"), LINK)
