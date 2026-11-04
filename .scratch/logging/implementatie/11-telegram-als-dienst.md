@@ -1,6 +1,6 @@
 # 11 Telegram als dienst
 
-Status: open
+Status: bezig (branch `logging/11-telegram-als-dienst`, sinds 2026-11-04)
 Blocked by: 07, 08
 Niet tegelijk met: 12 (`src/faults.py`, `src/bot.py`)
 
