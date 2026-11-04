@@ -1,6 +1,6 @@
 # 15 Log opruimen
 
-Status: open
+Status: bezig (branch `logging/15-log-opruimen`, sinds 2026-11-04)
 Blocked by: 03, 04, 05, 07, 09, 10, 11, 12, 13
 Niet tegelijk met: –
 
