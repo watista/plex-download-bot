@@ -1,6 +1,6 @@
 # 10 Plex en Transmission via de requestregel
 
-Status: open
+Status: bezig (branch `logging/10-plex-transmission`, sinds 2026-11-04)
 Blocked by: 09
 Niet tegelijk met: 13 (`schedule.py`)
 
