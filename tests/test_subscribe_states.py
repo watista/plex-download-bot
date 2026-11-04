@@ -3,7 +3,6 @@
 import json
 import tempfile
 import unittest
-import warnings
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from telegram import CallbackQuery, Chat, Message, Update, User
 from telegram.ext import ConversationHandler
-from telegram.warnings import PTBUserWarning
 
 from src.bot import Bot
 from src.commands.subscribe import Subscribe
@@ -56,11 +54,7 @@ class SubscribeStateTest(unittest.IsolatedAsyncioTestCase):
         bot.subscribe = self.subscribe
         bot.allowed_users = [1]
         self.verification = bot.start.verification
-
-        # The live bot gets the per_message warning too, it does not matter for these tests
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", PTBUserWarning)
-            self.conversation = bot._build_normal_conversation()
+        self.conversation = bot._build_normal_conversation()
 
     async def press(self, data: str, state: int, **user_data):
         """ Presses the button with this callback_data while the conversation of user 1 is in this state """

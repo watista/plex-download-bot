@@ -4,6 +4,8 @@ import asyncio
 import os
 import time
 import traceback
+import warnings
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -21,9 +23,11 @@ from src.commands.subscribe import Subscribe
 from src.commands.maintenance import Maintenance
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
+from src.log import get_logger
 
 from telegram.error import NetworkError, TimedOut, RetryAfter, Conflict
 from telegram import Update, BotCommand
+from telegram.warnings import PTBUserWarning
 from telegram.ext import (
     CommandHandler,
     filters,
@@ -34,6 +38,22 @@ from telegram.ext import (
     ConversationHandler,
     PicklePersistence
 )
+
+
+log = get_logger(__name__)
+
+
+@contextmanager
+def without_per_message_warning():
+    """ Ignores the PTBUserWarning about per_message=False while a ConversationHandler is built.
+
+    per_message=False is right: the conversations also have CommandHandlers and MessageHandlers,
+    and with per_message=True they could only have CallbackQueryHandlers. Without this, every start
+    writes the same warning to the log, while a warning in the log should always be something new.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="If 'per_message=False'", category=PTBUserWarning)
+        yield
 
 
 class Bot:
@@ -150,6 +170,7 @@ class Bot:
                 self.help.help_command_button, pattern="^info$")
         ]
 
+    @without_per_message_warning()
     def _build_normal_conversation(self) -> ConversationHandler:
         """Full conversation handler used on the primary host."""
         return ConversationHandler(
@@ -218,6 +239,7 @@ class Bot:
             per_user=True
         )
 
+    @without_per_message_warning()
     def _build_maintenance_conversation(self) -> ConversationHandler:
         """Slimmed conversation handler used on the fallback host.
 
@@ -315,6 +337,7 @@ class Bot:
         pusher so the fallback's watcher can tell the bot process is alive.
         The fallback (maintenance mode) does not push.
         """
+        log.info(f"bot started: {self.args.env}, {self.mode} mode", event="bot_started")
         if self.mode == "normal":
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
@@ -355,6 +378,7 @@ class Bot:
             )
 
         await self._send_group_message(application, msg)
+        log.info(f"bot stopped: {self.args.env}, {self.mode} mode", event="bot_stopped")
 
     async def _send_group_message(self, application: Application, msg: str) -> None:
         """Send a one-off MarkdownV2 message to CHAT_ID_GROUP; swallow errors.

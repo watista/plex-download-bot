@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 from pathlib import Path
 from setproctitle import setproctitle
 
-from src.log import Log
+from src.log import setup_logging
+from src.log.legacy import Log
 from src.bot import Bot
 
 
@@ -61,6 +62,9 @@ if __name__ == '__main__':
 
     # Validate environment variables
     validate_env_vars(args.mode)
+
+    # Write the log lines to a file per day
+    setup_logging(args.env, os.getenv("LOG_TYPE"), os.getenv("LOG_FOLDER"), args.verbose)
 
     # Init classes
     logger = Log(args)
