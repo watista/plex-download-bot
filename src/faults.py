@@ -9,25 +9,25 @@ import logging
 import os
 import sys
 import traceback
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from types import TracebackType
 
 from telegram.constants import MessageLimit
 from telegram.error import TelegramError
 
-from src.interaction import Interaction, current_code, current_interaction, new_code
+from src.interaction import Interaction, Send, current_code, current_interaction, new_code
 from src.log import get_logger, is_own_file, source_path
-
-if TYPE_CHECKING:
-    # Only for the type: src.telegram_out imports this module
-    from src.telegram_out import Delivery
 
 
 log = get_logger(__name__)
+
+# Opens the verzendfunctie on a new Bot, for the report of a crash: async with new_send() as send
+NewSend = Callable[[], AbstractAsyncContextManager[Send]]
 
 
 class FaultKind(StrEnum):
@@ -126,7 +126,8 @@ def local_now() -> datetime:
 @dataclass(frozen=True)
 class _Occurrence:
     """ One time a Fout comes: the Fault, the Interaction it came in and its Code, where in the code, and what the
-    caller of report() said about it. frames are the own frames for the admin message, the innermost first.
+    caller of report() said about it. frames are the own frames for the admin message, the innermost first, and
+    event the kind of its line, only for a crash.
     """
     fault: Fault
     interaction: Interaction | None
@@ -136,6 +137,7 @@ class _Occurrence:
     user_told: bool
     continued: str | None
     outside_wrapper: bool
+    event: str | None = None
 
 
 class FaultReporter:
@@ -144,13 +146,15 @@ class FaultReporter:
     send is the verzendfunctie, admin_chat_id the chat of the Beheerder, and now the clock. The state lives in
     state_file (faults.json, on dev faults.dev.json), so it survives a restart. It is updated under one lock,
     because jobs and updates run interleaved on the same event loop. media_link(service, media) gives the link to a
-    media item in its service, for the title on the line Media:, or None.
+    media item in its service, for the title on the line Media:, or None. new_send opens the verzendfunctie on a new
+    Bot, for the report of a crash.
     """
 
-    def __init__(self, send: Callable[..., Awaitable["Delivery"]], admin_chat_id: int | str,
+    def __init__(self, send: Send, admin_chat_id: int | str,
                  state_file: str | os.PathLike, now: Callable[[], datetime] = local_now,
-                 media_link: Callable[[str, dict], str | None] | None = None):
+                 media_link: Callable[[str, dict], str | None] | None = None, *, new_send: NewSend):
         self._send = send
+        self._new_send = new_send
         self._admin_chat_id = admin_chat_id
         self._state_file = Path(state_file)
         self._now = now
@@ -169,7 +173,36 @@ class FaultReporter:
         """
 
         # Taken first: the caller is src of a Fault that was never raised
+        return await self._report(fault, _place(sys._getframe(1)), user_told, continued, outside_wrapper)
+
+    def report_crash(self, exc: BaseException) -> None:
+        """ Reports the exception that crashed the bot, as a Fout with the line bot_crashed.
+
+        Telegram not responding is a Storing of Telegram, of which this only counts the attempt: no admin message
+        about it can arrive. Anything else but a Fault is a Bug, with a Code of its own and an admin message that the
+        throttle per signature keeps at one per 24 hours, also in a crash loop.
+
+        The excepthook calls it after run_polling closed its event loop and shut down the Bot of the Application. So
+        report() runs in a new event loop, and sends through the verzendfunctie on a new Bot that new_send opens.
+        """
+        fault = as_fault(exc, what="The bot crashed")
         caller = _place(sys._getframe(1))
+
+        async def report() -> None:
+            # The lock may belong to the closed event loop; nothing else runs anymore
+            self._lock = asyncio.Lock()
+            async with self._new_send() as send:
+                self._send, send_of_the_application = send, self._send
+                try:
+                    await self._report(fault, caller, event="bot_crashed")
+                finally:
+                    self._send = send_of_the_application
+
+        asyncio.run(report())
+
+    async def _report(self, fault: Fault, caller: traceback.FrameSummary, user_told: bool = False,
+                      continued: str | None = None, outside_wrapper: bool = False, event: str | None = None) -> bool:
+        """ report(), with the place of its caller, and the kind of the line of a crash """
         interaction = current_interaction()
 
         # Only a Bug outside an Interaction gets a Code of its own
@@ -178,7 +211,8 @@ class FaultReporter:
         own = [frame for frame in stack if is_own_file(frame.filename)]
         occurrence = _Occurrence(fault, interaction, code, innermost=own[-1] if own else caller,
                                  frames=[_src(frame) for frame in reversed(own or stack[-3:] or [caller])],
-                                 user_told=user_told, continued=continued, outside_wrapper=outside_wrapper)
+                                 user_told=user_told, continued=continued, outside_wrapper=outside_wrapper,
+                                 event=event)
 
         if fault.kind == FaultKind.BUG:
             return await self._report_bug(occurrence)
@@ -435,7 +469,8 @@ class FaultReporter:
             exc = "".join(traceback.format_exception(fault)).rstrip("\n")
 
         log.log(LEVELS[fault.kind], f"{fault.what}: {cause}" if cause else fault.what, at=occurrence.innermost,
-                media=_media(fault, occurrence.interaction), reason=fault.reason, http_status=fault.http_status,
+                event=occurrence.event, media=_media(fault, occurrence.interaction), reason=fault.reason,
+                http_status=fault.http_status,
                 repeat=repeat, details=fault.details if full else None, fault=fault.kind, service=fault.service,
                 interaction_id=occurrence.code, exc_type=type(original).__name__ if original is not None else None,
                 exc=exc)
@@ -550,6 +585,42 @@ class FaultReporter:
         except OSError as e:
             # The state stays in memory; reporting the Fout goes on
             log.error(f"could not write {self._state_file.name}: {e}")
+
+
+def install_excepthook(faults: FaultReporter) -> None:
+    """ Makes a crash of the bot a Fout: the excepthook hands the exception to faults.report_crash, and then to the
+    hook that was there, so it is in the journal too.
+
+    Installed as soon as the meldfunctie exists; a crash before that is only in the journal. A KeyboardInterrupt is no
+    crash.
+    """
+    standard = sys.excepthook
+
+    def excepthook(exc_type: type[BaseException], exc: BaseException, tb: TracebackType | None) -> None:
+        if issubclass(exc_type, Exception):
+            try:
+                faults.report_crash(exc)
+            except Exception as e:
+                # The crash itself is in the journal all the same
+                log.error(f"could not report the crash: {e}", exc_info=e)
+        standard(exc_type, exc, tb)
+
+    sys.excepthook = excepthook
+
+
+def as_fault(error: BaseException, what: str = "Unexpected exception") -> Fault:
+    """ The Fout that an exception is: a Fault as it is, Telegram not responding as a Storing of Telegram, and
+    anything else as a Bug with what, that came from it """
+    # Imported here: src.telegram_out imports this module
+    from src.telegram_out import telegram_disruption
+
+    if isinstance(error, Fault):
+        return error
+    fault = telegram_disruption(error)
+    if fault is None:
+        fault = Fault.bug(what=what)
+    fault.__cause__ = error
+    return fault
 
 
 def _place(frame) -> traceback.FrameSummary:

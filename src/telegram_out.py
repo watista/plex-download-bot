@@ -5,7 +5,8 @@
 import html
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from time import monotonic
 
@@ -14,6 +15,7 @@ from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, Tele
 from telegram.request import HTTPXRequest, RequestData
 
 from src.faults import Fault, FaultKind, FaultReporter
+from src.interaction import Send
 from src.log import get_logger, mask
 
 
@@ -30,6 +32,9 @@ POLLING = "getUpdates"
 
 # The token of the bot in the url of a request, after /bot
 WITH_TOKEN = re.compile(r"(/bot)[^/]+")
+
+# The seconds that the new Bot of a crash waits for Telegram, per step of a request
+CRASH_TIMEOUT = 5
 
 
 @dataclass(frozen=True)
@@ -208,6 +213,21 @@ class TelegramOut:
             log.warning(f"user message {kind}{about} not delivered: {delivery.reason}", user_id=user_id,
                         account=account, event="user_message", kind=kind, reason=delivery.reason, media=media)
         return delivery
+
+    @classmethod
+    @asynccontextmanager
+    async def on_new_bot(cls, token: str, admin_chat_id: int | str,
+                         account_for: Callable[[int], Awaitable[str | None]]) -> AsyncIterator[Send]:
+        """ The verzendfunctie on a new Bot, for the report of a crash: by then run_polling has shut down the Bot of
+        the Application, and closed its event loop.
+
+        The new Bot waits CRASH_TIMEOUT seconds for Telegram at each step of a request (a free connection, connect,
+        write and read), so a crash does not keep the bot from stopping. Telegram not responding in that time is a
+        Storing of Telegram, as always. The new Bot never polls, so its one request does both, and is closed after.
+        """
+        async with TelegramRequest(connect_timeout=CRASH_TIMEOUT, read_timeout=CRASH_TIMEOUT,
+                                   write_timeout=CRASH_TIMEOUT, pool_timeout=CRASH_TIMEOUT) as request:
+            yield cls(Bot(token, request=request, get_updates_request=request), admin_chat_id, account_for).send
 
     async def _attempt(self, chat_id: int | str, text: str, fmt: str | None, silent: bool) -> Delivery:
         """ One attempt to send the text, with its secrets masked and cut at 4096 characters.

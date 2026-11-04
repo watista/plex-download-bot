@@ -2,6 +2,7 @@
 
 """ Interactie: one update or one run of a job, with a Code that every line of it carries """
 
+import asyncio
 import functools
 import html
 import json
@@ -29,13 +30,16 @@ log = get_logger(__name__)
 
 T = TypeVar("T")
 
-# The verzendfunctie: send(chat_id, text, fmt)
+# The verzendfunctie: send(chat_id, text, fmt, silent=False)
 Send = Callable[..., Awaitable["Delivery"]]
 
 
 # The characters of a Code: no 0 o 1 l i, which look alike
 ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
 CODE_LENGTH = 6
+
+# The seconds after a Bug in the heartbeat before guard_task starts it again
+RESTART_AFTER = 60
 
 
 @dataclass(frozen=True)
@@ -230,6 +234,25 @@ def guard_job(callback: Callable[[CallbackContext], Awaitable[T]],
     return guarded
 
 
+async def guard_task(coro_fn: Callable[[], Awaitable[None]], faults: "FaultReporter",
+                     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
+    """ Runs coro_fn, the heartbeat, which is no handler and no job: asyncio.create_task(guard_task(...)).
+
+    A Fout in it goes to faults, the meldfunctie, like in guard: any exception but a Fault is a Bug. It is outside an
+    Interaction, so a Bug gets a Code of its own there. RESTART_AFTER seconds later coro_fn starts again, because
+    without the heartbeat the watcher takes the home server for down and starts the fallback bot, and then two bots
+    poll. The throttle of a Bug keeps one that comes back at one admin message per 24 hours. When coro_fn ends by
+    itself, so does this.
+    """
+    while True:
+        try:
+            await coro_fn()
+            return
+        except Exception as error:
+            await faults.report(_as_fault(_without_wrapper_frame(error)))
+        await sleep(RESTART_AFTER)
+
+
 async def report_outside_wrapper(update: object, error: Exception, faults: "FaultReporter", send: Send) -> None:
     """ What error_handler does with an exception that no wrapper caught: a Fout, reported as caught outside the wrapper.
 
@@ -246,18 +269,11 @@ def _without_wrapper_frame(error: Exception) -> Exception:
 
 
 def _as_fault(error: Exception) -> "Fault":
-    """ The Fout that an exception is: a Fault as it is, Telegram not responding as a Storing of Telegram, and
-    anything else as a Bug that came from it """
-    from src.faults import Fault
-    from src.telegram_out import telegram_disruption
+    """ The Fout that an exception is, by faults.as_fault: imported when a wrapper runs, as src.faults imports this
+    module """
+    from src.faults import as_fault
 
-    if isinstance(error, Fault):
-        return error
-    fault = telegram_disruption(error)
-    if fault is None:
-        fault = Fault.bug(what="Unexpected exception")
-    fault.__cause__ = error
-    return fault
+    return as_fault(error)
 
 
 async def _report_and_tell(fault: "Fault", update: object, faults: "FaultReporter", send: Send,
