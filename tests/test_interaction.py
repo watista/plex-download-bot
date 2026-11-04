@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import tempfile
 import unittest
 import warnings
@@ -21,7 +22,7 @@ from telegram.warnings import PTBUserWarning
 from src.bot import Bot
 from src.faults import Fault, FaultKind
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, current_code, guard,
-                             guard_job, new_code)
+                             guard_job, guard_task, new_code)
 from src.log import get_logger, setup_logging
 from src.telegram_out import DELIVERED, Delivery
 from test_log import DEBUG, MAIN, LogFolder
@@ -671,6 +672,172 @@ class ErrorHandlerTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("fault", line)
         # Only the standby bot tells the Beheerder
         self.assertEqual(self.bot.telegram.send.messages, [])
+
+
+class GuardTaskTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ guard_task: the heartbeat, which a Bug does not stop for good """
+
+    def setUp(self):
+        super().setUp()
+        setup_logging("dev", "INFO", str(self.folder), False)
+        self.faults = FakeFaults()
+        self.slept = []
+
+    async def sleep(self, seconds: float) -> None:
+        """ asyncio.sleep, without waiting """
+        self.slept.append(seconds)
+
+    async def test_the_heartbeat_starts_again_60_seconds_after_a_bug(self):
+        error = OverflowError("port must be 0-65535.")
+        starts = []
+
+        async def heartbeat() -> None:
+            starts.append(list(self.slept))
+            if len(starts) < 3:
+                raise error
+
+        await guard_task(heartbeat, self.faults, sleep=self.sleep)
+
+        self.assertEqual(starts, [[], [60], [60, 60]])
+        # A Bug outside an Interaction: its Code is one of its own, which the meldfunctie gives it
+        self.assertEqual([(report.fault.kind, report.fault.what, report.user_told, report.code)
+                          for report in self.faults.reports], [(FaultKind.BUG, "Unexpected exception", False, None)] * 2)
+        self.assertIs(self.faults.reports[0].fault.__cause__, error)
+        # The Fout is that of the heartbeat, not of the wrapper
+        self.assertEqual(error.__traceback__.tb_frame.f_code.co_name, "heartbeat")
+
+    async def test_a_fault_in_the_heartbeat_goes_to_the_meldfunctie_as_it_is(self):
+        fault = Fault.disruption(service="fallback", what="The fallback host is not responding")
+        starts = []
+
+        async def heartbeat() -> None:
+            starts.append(None)
+            if len(starts) == 1:
+                raise fault
+
+        await guard_task(heartbeat, self.faults, sleep=self.sleep)
+
+        [report] = self.faults.reports
+        self.assertIs(report.fault, fault)
+
+    async def test_a_heartbeat_that_ends_is_not_started_again(self):
+        async def heartbeat() -> None:
+            """ Like a heartbeat without HEARTBEAT_TARGET_HOST """
+
+        await guard_task(heartbeat, self.faults, sleep=self.sleep)
+
+        self.assertEqual((self.slept, self.faults.reports), ([], []))
+
+    async def test_cancelling_it_is_no_fout(self):
+        started = asyncio.Event()
+
+        async def heartbeat() -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(guard_task(heartbeat, self.faults))
+        await started.wait()
+        task.cancel()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(self.faults.reports, [])
+
+
+class HeartbeatTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ The heartbeat to the watcher on the fallback host, which takes over when it stops coming """
+
+    def setUp(self):
+        super().setUp()
+        setup_logging("dev", "INFO", str(self.folder), False)
+        self.enterContext(self.at("2026-11-03T14:05:12+01:00"))
+        self.bot = Bot.__new__(Bot)
+        self.bot.faults = FakeFaults()
+
+    async def watcher(self) -> int:
+        """ The port of a watcher on this host, which takes heartbeats """
+        server = await asyncio.start_server(lambda reader, writer: writer.close(), "127.0.0.1", 0)
+        self.addAsyncCleanup(server.wait_closed)
+        self.addCleanup(server.close)
+        return server.sockets[0].getsockname()[1]
+
+    async def no_watcher(self) -> int:
+        """ A port on this host that nothing listens on """
+        server = await asyncio.start_server(lambda reader, writer: writer.close(), "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        server.close()
+        await server.wait_closed()
+        return port
+
+    async def test_a_heartbeat_that_arrives_ends_a_disruption_of_the_fallback_host(self):
+        await self.bot._heartbeat("127.0.0.1", await self.watcher())
+
+        self.assertEqual((self.bot.faults.oks, self.bot.faults.reports), (["fallback"], []))
+
+    async def test_a_heartbeat_that_fails_is_an_attempt_of_a_disruption_of_the_fallback_host(self):
+        await self.bot._heartbeat("127.0.0.1", await self.no_watcher())
+
+        [report] = self.bot.faults.reports
+        self.assertEqual((report.fault.kind, report.fault.service, report.fault.what, report.code),
+                         (FaultKind.DISRUPTION, "fallback", "The fallback host is not responding", None))
+        self.assertIsInstance(report.fault.__cause__, ConnectionRefusedError)
+        self.assertEqual(self.bot.faults.oks, [])
+        # The meldfunctie writes the line of every attempt, short after the first
+        self.assertEqual(self.read(MAIN), [])
+
+    async def test_without_heartbeat_target_host_the_heartbeat_is_off_with_a_line(self):
+        with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": ""}):
+            self.assertIsNone(await self.bot._heartbeat_target())
+
+        [line] = self.read(MAIN)
+        self.assertEqual((line["level"], line["msg"]), ("INFO", "heartbeat off: HEARTBEAT_TARGET_HOST is not set"))
+        self.assertEqual((self.bot.faults.reports, self.bot.faults.fixes), ([], []))
+
+    async def test_a_wrong_heartbeat_target_port_is_an_inrichtingsfout(self):
+        for port in "98x76", "0", "65536":
+            with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": "fallback.example.com", "HEARTBEAT_TARGET_PORT": port}):
+                self.assertIsNone(await self.bot._heartbeat_target())
+
+        self.assertEqual([(report.fault.kind, report.fault.service, report.fault.check, report.fault.item,
+                           report.fault.reason, report.continued) for report in self.bot.faults.reports], [
+            (FaultKind.SETUP, "fallback", "setting", "HEARTBEAT_TARGET_PORT", f"{port!r} is not a port number",
+             "the bot runs without a heartbeat") for port in ("98x76", "0", "65536")])
+        self.assertEqual(self.bot.faults.reports[0].fault.what, "HEARTBEAT_TARGET_PORT is not a port number")
+        self.assertEqual(self.bot.faults.fixes, [])
+
+    async def test_a_right_heartbeat_target_port_sets_the_inrichtingsfout_right(self):
+        with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": "fallback.example.com", "HEARTBEAT_TARGET_PORT": "9876",
+                                     "HEARTBEAT_INTERVAL": "5"}):
+            self.assertEqual(await self.bot._heartbeat_target(), ("fallback.example.com", 9876, 5))
+
+        self.assertEqual(self.bot.faults.reports, [])
+        [fixed] = self.bot.faults.fixes
+        self.assertEqual((fixed.service, fixed.check, fixed.item, fixed.msg),
+                         ("fallback", "setting", "HEARTBEAT_TARGET_PORT", "HEARTBEAT_TARGET_PORT is a port number again"))
+
+    async def test_stopping_the_bot_reports_an_exception_that_stopped_the_heartbeat(self):
+        bot = self.bot
+        bot.args = SimpleNamespace(env="dev")
+        bot.mode = "normal"
+        bot.primary_name, bot.fallback_name = "primary", "fallback"
+        bot.telegram = SimpleNamespace(send_admin_message=AsyncMock(return_value=DELIVERED))
+        error = PermissionError("faults.json")
+
+        async def heartbeat() -> None:
+            # Like guard_task when the meldfunctie itself fails
+            raise error
+
+        bot._heartbeat_task = asyncio.create_task(heartbeat())
+        await asyncio.sleep(0)
+        with patch.dict(os.environ, {"HEARTBEAT_TARGET_HOST": ""}):
+            await bot._post_stop(MagicMock())
+
+        [report] = bot.faults.reports
+        self.assertEqual((report.fault.kind, report.continued), (FaultKind.BUG, "went on stopping the bot"))
+        self.assertIs(report.fault.__cause__, error)
+        # The rest of the stop goes on
+        bot.telegram.send_admin_message.assert_awaited_once()
+        self.assertEqual([line["event"] for line in self.read(MAIN)], ["bot_stopped"])
 
 
 class AccountForTest(unittest.IsolatedAsyncioTestCase):

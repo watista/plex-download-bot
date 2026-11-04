@@ -2,6 +2,7 @@
 
 """ Interactie: one update or one run of a job, with a Code that every line of it carries """
 
+import asyncio
 import functools
 import html
 import json
@@ -36,6 +37,9 @@ Send = Callable[..., Awaitable["Delivery"]]
 # The characters of a Code: no 0 o 1 l i, which look alike
 ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
 CODE_LENGTH = 6
+
+# The seconds after a Bug in the heartbeat before guard_task starts it again
+RESTART_AFTER = 60
 
 
 @dataclass(frozen=True)
@@ -228,6 +232,25 @@ def guard_job(callback: Callable[[CallbackContext], Awaitable[T]],
             return None
 
     return guarded
+
+
+async def guard_task(coro_fn: Callable[[], Awaitable[None]], faults: "FaultReporter",
+                     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
+    """ Runs coro_fn, the heartbeat, which is no handler and no job: asyncio.create_task(guard_task(...)).
+
+    A Fout in it goes to faults, the meldfunctie, like in guard: any exception but a Fault is a Bug. It is outside an
+    Interaction, so a Bug gets a Code of its own there. RESTART_AFTER seconds later coro_fn starts again, because
+    without the heartbeat the watcher takes the home server for down and starts the fallback bot, and then two bots
+    poll. The throttle of a Bug keeps one that comes back at one admin message per 24 hours. When coro_fn ends by
+    itself, so does this.
+    """
+    while True:
+        try:
+            await coro_fn()
+            return
+        except Exception as error:
+            await faults.report(_as_fault(_without_wrapper_frame(error)))
+        await sleep(RESTART_AFTER)
 
 
 async def report_outside_wrapper(update: object, error: Exception, faults: "FaultReporter", send: Send) -> None:

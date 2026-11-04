@@ -5,15 +5,18 @@ import inspect
 import json
 import os
 import re
+import sys
 import unittest
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from telegram.error import NetworkError
+from telegram.error import NetworkError, TimedOut
 
-from src.faults import Fault, FaultKind, FaultReporter, admin_message_html
-from src.interaction import Interaction, InteractionProcessor, current_code, guard, guard_job, working_on
+from src.faults import Fault, FaultKind, FaultReporter, admin_message_html, install_excepthook
+from src.interaction import (Interaction, InteractionProcessor, current_code, guard, guard_job, guard_task,
+                             working_on)
 from src.log import PROJECT_DIR, setup_logging
 from src.services.arr import media_link
 from src.telegram_out import DELIVERED, Delivery
@@ -92,6 +95,22 @@ def unexpected(text: str) -> Fault:
             raise Fault.bug(what="Unexpected exception") from e
     except Fault as fault:
         return fault
+
+
+def crashed() -> ValueError:
+    """ An exception that crashes the bot: from own code down to a library """
+    try:
+        choose("not json")
+    except ValueError as e:
+        return e
+
+
+def raised(error: Exception) -> Exception:
+    """ The exception with a traceback, as when it was raised """
+    try:
+        raise error
+    except Exception as e:
+        return e
 
 
 def radarr_not_responding(reason: str = "Unable to communicate with RadarrAPI", http_status: int = 503) -> Fault:
@@ -1216,6 +1235,155 @@ class SetupFaultTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
         first, fixed = self.send.messages
         self.assertEqual(fixed.text.splitlines()[:2], ["✅ <b>Fixed</b> · A disk has 150 GB free again",
                                                        "Failing: 06:27 – 07:27 (1 h), 2×"])
+
+
+class CrashTest(ReporterCase, unittest.TestCase):
+    """ report_crash: the line bot_crashed, and an admin message about a Bug, in a new event loop on a new Bot.
+
+    Not an asynchronous test: the excepthook runs after the Application closed its event loop, with none running.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.new_bot = FakeSend()
+        self.new_bots = 0
+
+    @asynccontextmanager
+    async def new_send(self):
+        """ The verzendfunctie on a new Bot """
+        self.new_bots += 1
+        yield self.new_bot
+
+    def crash(self, error: BaseException) -> None:
+        """ A crash of the bot, each in a process of its own: systemd starts the bot again after 10 seconds """
+        self.reporter().report_crash(error, self.new_send)
+
+    def test_a_crash_by_a_bug_alerts_the_beheerder_on_a_new_bot(self):
+        self.crash(crashed())
+
+        [line] = self.faults()
+        self.assertEqual((line["level"], line["event"], line["msg"], line["fault"], line["exc_type"]),
+                         ("ERROR", "bot_crashed", "The bot crashed: JSONDecodeError: Expecting value: line 1 column 1 "
+                                                  "(char 0)", "bug", "JSONDecodeError"))
+        self.assertRegex(line["interaction_id"], CODE)
+        self.assertRegex(line["src"], r"^tests/test_faults\.py:\d+ in parse$")
+        self.assertIn("json.decoder.JSONDecodeError", line["exc"])
+
+        # Not on the Bot of the Application, which is shut down with its event loop
+        self.assertEqual(self.send.messages, [])
+        [message] = self.new_bot.messages
+        self.assertEqual(message.text.splitlines()[:2], [
+            "🐞 <b>Bug</b> · The bot crashed",
+            "Exception: <code>JSONDecodeError</code>: Expecting value: line 1 column 1 (char 0)"])
+        self.assertTrue(message.text.endswith(f"\nCode: <code>{line['interaction_id']}</code>"))
+        [sent] = self.lines("admin_message_sent")
+        self.assertEqual(sent["interaction_id"], line["interaction_id"])
+
+    def test_a_crash_loop_alerts_once_per_24_hours_and_each_crash_has_a_code_of_its_own(self):
+        for seconds in 0, 10, 10:
+            self.clock.advance(seconds=seconds)
+            self.crash(crashed())
+        self.clock.advance(hours=24)
+        self.crash(crashed())
+
+        lines = self.faults()
+        self.assertEqual([(line["event"], line.get("repeat")) for line in lines],
+                         [("bot_crashed", None), ("bot_crashed", 1), ("bot_crashed", 2), ("bot_crashed", None)])
+        self.assertNotIn("exc", lines[1])
+        self.assertEqual(len({line["interaction_id"] for line in lines}), 4)
+
+        # Each message shows the Code of the crash that it is about
+        first, again = self.new_bot.messages
+        self.assertTrue(first.text.endswith(f"<code>{lines[0]['interaction_id']}</code>"))
+        self.assertTrue(again.text.endswith(f"<code>{lines[3]['interaction_id']}</code>"))
+        self.assertIn("Repeat: 3× since the last alert (3 Nov 14:05)", again.text.splitlines())
+
+    def test_a_crash_by_telegram_not_responding_only_counts_an_attempt_of_its_disruption(self):
+        # Like the crashes of 20 and 22 October, when get_me at the start could not reach Telegram
+        self.crash(raised(NetworkError("httpx.ConnectError: [Errno -3] Temporary failure in name resolution")))
+        self.clock.advance(seconds=10)
+        self.crash(raised(TimedOut()))
+
+        lines = self.faults()
+        self.assertEqual([(line["level"], line["event"], line["fault"], line["service"], line["exc_type"],
+                           line.get("repeat")) for line in lines], [
+            ("WARNING", "bot_crashed", "disruption", "telegram", "NetworkError", None),
+            ("WARNING", "bot_crashed", "disruption", "telegram", "TimedOut", 1),
+        ])
+        self.assertEqual(lines[0]["msg"], "Telegram is not responding: httpx.ConnectError: [Errno -3] Temporary failure "
+                                          "in name resolution")
+        # A Storing outside an Interaction has no Code, and only the text of its exception
+        for line in lines:
+            self.assertFalse({"interaction_id", "exc"} & line.keys())
+        self.assertEqual((self.send.messages, self.new_bot.messages), ([], []))
+        # The Herstelmelding after the next start tells it, when the Storing persisted
+        state = json.loads(self.state_file.read_text(encoding="utf-8"))
+        self.assertEqual(state["disruptions"]["telegram"]["attempts"], 2)
+
+    def test_the_excepthook_reports_the_crash_and_hands_it_to_the_standard_hook(self):
+        standard = MagicMock()
+        self.enterContext(patch("sys.excepthook", standard))
+        install_excepthook(self.reporter(), self.new_send)
+        error = crashed()
+
+        sys.excepthook(type(error), error, error.__traceback__)
+
+        [line] = self.lines("bot_crashed")
+        self.assertEqual(line["exc_type"], "JSONDecodeError")
+        self.assertEqual(len(self.new_bot.messages), 1)
+        # So it is in the journal too
+        standard.assert_called_once_with(type(error), error, error.__traceback__)
+
+    def test_a_keyboard_interrupt_is_no_crash(self):
+        standard = MagicMock()
+        self.enterContext(patch("sys.excepthook", standard))
+        install_excepthook(self.reporter(), self.new_send)
+        interrupt = KeyboardInterrupt()
+
+        sys.excepthook(KeyboardInterrupt, interrupt, None)
+
+        self.assertEqual(self.read(MAIN), [])
+        self.assertEqual(self.new_bots, 0)
+        standard.assert_called_once_with(KeyboardInterrupt, interrupt, None)
+
+    def test_the_crash_reaches_the_standard_hook_also_when_reporting_it_fails(self):
+        standard = MagicMock()
+        self.enterContext(patch("sys.excepthook", standard))
+        self.new_bot = FakeSend(RuntimeError("the new bot broke"))
+        install_excepthook(self.reporter(), self.new_send)
+        error = crashed()
+
+        sys.excepthook(type(error), error, error.__traceback__)
+
+        crash, failed = self.read(MAIN)
+        self.assertEqual(crash["event"], "bot_crashed")
+        self.assertEqual((failed["level"], failed["msg"], failed["exc_type"]),
+                         ("ERROR", "could not report the crash: the new bot broke", "RuntimeError"))
+        standard.assert_called_once_with(type(error), error, error.__traceback__)
+
+
+class HeartbeatBugTest(ReporterCase, unittest.IsolatedAsyncioTestCase):
+    """ A Bug in the heartbeat, which runs outside every Interaction """
+
+    async def test_it_gets_a_code_of_its_own(self):
+        reporter = self.reporter()
+        starts = []
+
+        async def heartbeat() -> None:
+            starts.append(None)
+            if len(starts) == 1:
+                raise OverflowError("port must be 0-65535.")
+
+        async def sleep(seconds: float) -> None:
+            pass
+
+        await guard_task(heartbeat, reporter, sleep=sleep)
+
+        [line] = self.faults()
+        self.assertEqual((line["level"], line["fault"], line["exc_type"]), ("ERROR", "bug", "OverflowError"))
+        self.assertRegex(line["interaction_id"], CODE)
+        [message] = self.send.messages
+        self.assertTrue(message.text.endswith(f"\nCode: <code>{line['interaction_id']}</code>"))
 
 
 if __name__ == "__main__":

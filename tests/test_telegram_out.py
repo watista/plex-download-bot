@@ -3,6 +3,8 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
+from urllib.parse import parse_qs
 
 import httpx
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
@@ -347,6 +349,38 @@ class TelegramRequestTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         message = await ExtBot(TOKEN, request=request).send_message(555, "hunter2")
 
         self.assertEqual(message.message_id, 2)
+
+
+class OnNewBotTest(LogFolder, unittest.IsolatedAsyncioTestCase):
+    """ TelegramOut.on_new_bot: the verzendfunctie on a new Bot, for the report of a crash """
+
+    async def test_it_sends_on_a_new_bot_that_waits_5_seconds_and_is_closed_after(self):
+        setup_logging("dev", "INFO", str(self.folder), False)
+        sent = []
+        made = []
+
+        def telegram(request: httpx.Request) -> httpx.Response:
+            sent.append((request.url.path, parse_qs(request.content.decode())))
+            return answer(200, {**SENT, "chat": {"id": -1001234, "type": "group"}})(request)
+
+        def new_request(**timeouts) -> TelegramRequest:
+            made.append((timeouts, TelegramRequest(httpx_kwargs={"transport": httpx.MockTransport(telegram)},
+                                                   **timeouts)))
+            return made[-1][1]
+
+        with patch("src.telegram_out.TelegramRequest", new_request):
+            async with TelegramOut.on_new_bot(TOKEN, ADMIN_CHAT, fake_account_for) as send:
+                delivery = await send(ADMIN_CHAT, f"🐞 <b>Bug</b> · The bot crashed: {SECRETS['BOT_TOKEN']}", "HTML")
+
+        self.assertTrue(delivery.delivered)
+        [(path, fields)] = sent
+        self.assertEqual(path, f"/bot{TOKEN}/sendMessage")
+        self.assertEqual((fields["chat_id"], fields["text"], fields["parse_mode"]),
+                         ([ADMIN_CHAT], ["🐞 <b>Bug</b> · The bot crashed: ***"], ["HTML"]))
+        [(timeouts, request)] = made
+        self.assertEqual(timeouts, {"connect_timeout": 5, "read_timeout": 5, "write_timeout": 5, "pool_timeout": 5})
+        with self.assertRaisesRegex(RuntimeError, "not initialized"):
+            await request.do_request(f"https://api.telegram.org/bot{TOKEN}/getMe", "POST")
 
 
 if __name__ == "__main__":

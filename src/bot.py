@@ -25,9 +25,9 @@ from src.conversation import Conversation, command_or_choice_line
 from src.services.sonarr import Sonarr
 from src.services.radarr import Radarr
 from src.services.arr import media_link
-from src.faults import FaultReporter
+from src.faults import Fault, FaultReporter, install_excepthook
 from src.interaction import (InteractionProcessor, JobQueueOutsideInteractions, account_for, guard, guard_job,
-                             report_outside_wrapper)
+                             guard_task, report_outside_wrapper)
 from src.log import get_logger
 from src.telegram_out import TelegramOut, TelegramRequest, telegram_disruption
 
@@ -49,6 +49,9 @@ from telegram.ext import (
 
 
 log = get_logger(__name__)
+
+# The setting of the port of the watcher on the fallback host, which takes the heartbeats
+PORT_SETTING = "HEARTBEAT_TARGET_PORT"
 
 
 @contextmanager
@@ -132,6 +135,9 @@ class Bot:
         # The meldfunctie: the line of every Fout, and an admin message when one is due. Its state is next to data.json.
         self.faults = FaultReporter(self.telegram.send, admin_chat_id, faults_json, media_link=media_link)
         request.faults = polling.faults = self.faults
+
+        # From here on a crash is a Fout too, reported on a new Bot: the Bot of the Application stops with run_polling
+        install_excepthook(self.faults, partial(TelegramOut.on_new_bot, token, admin_chat_id, self.account_for))
 
         self.function = Functions(logger)
         self.privacy = Privacy(logger, self.function)
@@ -385,11 +391,12 @@ class Bot:
 
         On the primary (normal mode) this starts the outbound heartbeat
         pusher so the fallback's watcher can tell the bot process is alive.
-        The fallback (maintenance mode) does not push.
+        The fallback (maintenance mode) does not push. A Bug in the heartbeat
+        does not stop it for good: guard_task starts it again.
         """
         log.info(f"bot started: {self.args.env}, {self.mode} mode", event="bot_started")
         if self.mode == "normal":
-            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+            self._heartbeat_task = asyncio.create_task(guard_task(self._heartbeat_loop, self.faults))
 
     async def _post_stop(self, application: Application) -> None:
         """PTB hook that runs after polling stops.
@@ -405,8 +412,14 @@ class Bot:
             self._heartbeat_task.cancel()
             try:
                 await self._heartbeat_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
+            except Exception as error:
+                # guard_task reports a Fout in the heartbeat itself, so this one is in guard_task, like a meldfunctie
+                # that failed. Reported and not raised: the rest of the stop still has to happen.
+                fault = Fault.bug(what="The heartbeat stopped")
+                fault.__cause__ = error
+                await self.faults.report(fault, continued="went on stopping the bot")
             self._heartbeat_task = None
 
         # Fast path first: get the fallback going before we spend time on
@@ -445,70 +458,70 @@ class Bot:
         enough — the fallback records the timestamp and treats prolonged
         silence as a primary outage.
 
-        Misconfiguration is logged on the first failure and otherwise quietly
-        retried; a broken heartbeat must not crash the bot.
+        A heartbeat that fails is a failed attempt of a Storing of the
+        fallback host; the meldfunctie gives every attempt a line, short
+        after the first. Runs in guard_task, which reports any other
+        exception as a Bug and starts the heartbeat again.
         """
-        target_host = os.getenv("HEARTBEAT_TARGET_HOST")
-        if not target_host:
-            await self.log.logger(
-                "HEARTBEAT_TARGET_HOST not set; outbound heartbeat disabled.",
-                False, "warning", False,
-            )
+        target = await self._heartbeat_target()
+        if target is None:
             return
+        host, port, interval = target
+        log.info(f"heartbeat started: to {host}:{port} every {interval} s")
+        while True:
+            await self._heartbeat(host, port)
+            await asyncio.sleep(interval)
 
+    async def _heartbeat_target(self) -> tuple[str, int, int] | None:
+        """The host, port and interval of the heartbeat from dot-env, None
+        when it is off.
+
+        Without HEARTBEAT_TARGET_HOST it is off on purpose, as on dev: only
+        a line. A HEARTBEAT_TARGET_PORT that is not a port number is an
+        Inrichtingsfout, and a right one sets it right.
+        """
+        host = os.getenv("HEARTBEAT_TARGET_HOST")
+        if not host:
+            log.info("heartbeat off: HEARTBEAT_TARGET_HOST is not set")
+            return None
+
+        setting = os.getenv(PORT_SETTING, "9876")
         try:
-            target_port = int(os.getenv("HEARTBEAT_TARGET_PORT", "9876"))
-        except ValueError as e:
-            await self.log.logger(
-                f"Invalid HEARTBEAT_TARGET_PORT: {e}; outbound heartbeat disabled.",
-                False, "warning", False,
-            )
-            return
+            port = int(setting)
+        except ValueError:
+            port = 0
+        if not 0 < port < 65536:
+            await self.faults.report(Fault.setup(service="fallback", what=f"{PORT_SETTING} is not a port number",
+                                                 check="setting", item=PORT_SETTING,
+                                                 reason=f"{setting!r} is not a port number"),
+                                     continued="the bot runs without a heartbeat")
+            return None
+        await self.faults.fixed("fallback", "setting", PORT_SETTING, msg=f"{PORT_SETTING} is a port number again")
 
         try:
             interval = max(1, int(os.getenv("HEARTBEAT_INTERVAL", "10")))
         except ValueError:
             interval = 10
+        return host, port, interval
 
-        await self.log.logger(
-            f"Heartbeat pusher started; sending to {target_host}:{target_port} every {interval}s.",
-            False, "info", False,
-        )
-
-        consecutive_failures = 0
-        while True:
-            try:
-                _reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(target_host, target_port),
-                    timeout=5,
-                )
-                writer.close()
-                try:
-                    await writer.wait_closed()
-                except Exception:
-                    pass
-                if consecutive_failures:
-                    await self.log.logger(
-                        f"Heartbeat to {target_host}:{target_port} recovered after {consecutive_failures} failures.",
-                        False, "info", False,
-                    )
-                consecutive_failures = 0
-            except asyncio.CancelledError:
-                raise
-            except (OSError, asyncio.TimeoutError) as e:
-                consecutive_failures += 1
-                # Only log the first failure and then every 30th to avoid log
-                # flooding when the fallback host is genuinely unreachable.
-                if consecutive_failures == 1 or consecutive_failures % 30 == 0:
-                    await self.log.logger(
-                        f"Heartbeat to {target_host}:{target_port} failed ({consecutive_failures}x): {e}",
-                        False, "warning", False,
-                    )
-
-            try:
-                await asyncio.sleep(interval)
-            except asyncio.CancelledError:
-                raise
+    async def _heartbeat(self, host: str, port: int) -> None:
+        """One heartbeat: a connection to the watcher that is closed at
+        once. It ends a Storing of the fallback host, or is a failed attempt
+        of one."""
+        try:
+            _reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=5)
+        except (OSError, asyncio.TimeoutError) as error:
+            fault = Fault.disruption(service="fallback", what="The fallback host is not responding")
+            fault.__cause__ = error
+            await self.faults.report(fault)
+            return
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            # The watcher already has the heartbeat; how it closes does not matter
+            pass
+        await self.faults.ok("fallback")
 
     async def _send_goodbye_to_fallback(self) -> None:
         """Best-effort 'I'm shutting down' notice to the fallback's watcher.
