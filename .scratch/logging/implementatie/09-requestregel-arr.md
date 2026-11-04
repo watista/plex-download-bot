@@ -1,6 +1,6 @@
 # 09 Requestregel met Radarr en Sonarr
 
-Status: open
+Status: bezig (branch `logging/09-requestregel-arr`, sinds 2026-11-04)
 Blocked by: 07, 08
 Niet tegelijk met: 04, 10, 13 (`media.py`, `serie.py`, `subscribe.py`, `schedule.py`)
 
