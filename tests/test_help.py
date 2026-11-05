@@ -58,6 +58,19 @@ class HelpTest(LogFolder, unittest.IsolatedAsyncioTestCase):
             "help: other",
         ])
 
+    async def test_how_to_use_names_the_commands_for_updates(self):
+        await self.help.usage(press("help_use"), MagicMock())
+
+        sent = [call.args for call in self.functions.send_message.await_args_list]
+        for title, commands in [("4. Aan- en afmelden serie updates", ("/aanmelden_serie", "/afmelden_serie")),
+                                ("5. Aan- en afmelden algemene updates", ("/aanmelden_updates", "/afmelden_updates"))]:
+            with self.subTest(title=title):
+                [args] = [args for args in sent if title in args[0]]
+                # Not MarkdownV2: there the underscores of the commands would start italics
+                self.assertEqual(args[4:], ("HTML",))
+                for command in commands:
+                    self.assertIn(f"<b>{command}</b>", args[0])
+
     async def test_a_question_is_logged_as_it_was_typed(self):
         state = await self.help.other_reply(message("Kan *Dune* in 4K?\nGroet, Piet"), MagicMock())
 
