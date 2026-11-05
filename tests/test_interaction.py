@@ -640,8 +640,33 @@ class BotJobsTest(LogFolder, unittest.IsolatedAsyncioTestCase):
         """ Runs every job once; per name of a job, the callback that ran """
         for job in bot.application.job_queue.jobs():
             await job.run(bot.application)
+        return self.ran()
+
+    def ran(self) -> dict[str, str]:
+        """ Per name of a job, the callback that ran """
         # Only the lines of the jobs: asyncio in debug mode may warn that building the application was slow
         return {line["job"]: line["msg"].removeprefix("ran ") for line in self.read(MAIN) if line["logger"] == "bot"}
+
+    async def test_every_job_runs_at_the_start_of_the_job_queue_also_when_that_is_late(self):
+        bot = self.bot("normal")
+
+        # run_polling starts the job queue only once it has set up the bot, which took 3 s on dev once. APScheduler
+        # skips a run that is more than 1 s late.
+        await asyncio.sleep(1.1)
+        await bot.application.job_queue.start()
+        self.addAsyncCleanup(bot.application.job_queue.stop)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 1
+        while len(self.ran()) < 6 and loop.time() < deadline:
+            await asyncio.sleep(0.01)
+
+        self.assertEqual(set(self.ran()), {"publish_command_list", "notify_admin_startup", "check_notify_list",
+                                           "check_transmission", "scan_missing_sonarr", "scan_missing_radarr"})
+        self.assertEqual([line["msg"] for line in self.read(MAIN) if line["logger"].startswith("apscheduler")], [])
+        # A repeating job runs again one interval after the start
+        check_notify_list = bot.application.job_queue.get_jobs_by_name("check_notify_list")[0]
+        self.assertAlmostEqual((check_notify_list.next_t - datetime.now(check_notify_list.next_t.tzinfo)).total_seconds(),
+                               1800, delta=5)
 
     async def test_every_job_runs_under_its_own_name(self):
         self.assertEqual(await self.run_jobs(self.bot("normal")), {
