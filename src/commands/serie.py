@@ -127,7 +127,8 @@ class Serie(Media):
                         InlineKeyboardButton("Nee", callback_data="no")
                     ]
                 ])
-                await self.function.send_message(f"Wil je updates ontvangen zodra er nieuwe afleveringen online komen? Je kan je hiervoor later altijd afmelden door /afmelden te sturen.", update, context, reply_markup)
+                # In HTML, as in MarkdownV2 the underscore of /afmelden_serie would start italics
+                await self.function.send_message("Wil je updates ontvangen zodra er nieuwe afleveringen online komen? Je kan je hiervoor later altijd afmelden door /afmelden_serie te sturen.", update, context, reply_markup, "HTML")
                 return AANMELDEN_SERIE
             else:
                 await self.function.send_message(f"Oke, bedankt voor het gebruiken van deze bot. Wil je nog iets anders downløaden? Stuur dan /start", update, context)
