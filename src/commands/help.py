@@ -113,9 +113,10 @@ class Help:
         await asyncio.sleep(1)
         await self.function.send_message("*3. Nieuwe serie(s) aanvragen*\n\nPrecies hetzelfde als bij het aanvragen van een film, alleen in dit geval klik je op de knop *📺 Serie*.", update, context)
         await asyncio.sleep(1)
-        await self.function.send_message("*4. Aan- en afmelden serie updates*\n\nWil je op de hoogte blijven zodra er een nieuwe aflevering online staat van je favoriete serie? Meld je dan aan door */aanmelden_serie* te sturen. Tijdens het aanvragen van een nieuwe serie krijg je ook de vraag om je aan te melden voor updates. Liever geen updates meer ontvangen? Stuur dan */afmelden_serie*.", update, context)
+        # Points 4 and 5 in HTML, as in MarkdownV2 the underscores of the commands would start italics
+        await self.function.send_message("<b>4. Aan- en afmelden serie updates</b>\n\nWil je op de hoogte blijven zodra er een nieuwe aflevering online staat van je favoriete serie? Meld je dan aan door <b>/aanmelden_serie</b> te sturen. Tijdens het aanvragen van een nieuwe serie krijg je ook de vraag om je aan te melden voor updates. Liever geen updates meer ontvangen? Stuur dan <b>/afmelden_serie</b>.", update, context, None, "HTML")
         await asyncio.sleep(1)
-        await self.function.send_message("*5. Aan- en afmelden algemene updates*\n\nWil je op de hoogte blijven van algemene updates zoals nieuwe feature of wanneer Plęx tijdelijk onbereikbar is? Meld je dan aan door */aanmelden_update* te sturen. Liever geen updates meer ontvangen? Stuur dan */afmelden_updates*.", update, context)
+        await self.function.send_message("<b>5. Aan- en afmelden algemene updates</b>\n\nWil je op de hoogte blijven van algemene updates zoals nieuwe feature of wanneer Plęx tijdelijk onbereikbar is? Meld je dan aan door <b>/aanmelden_updates</b> te sturen. Liever geen updates meer ontvangen? Stuur dan <b>/afmelden_updates</b>.", update, context, None, "HTML")
         await asyncio.sleep(1)
         await self.function.send_message("*🙅 Error*\n\nGaat er tijdens het proces iets fout of wil je graag opnieuw beginnen? Dan kan je altijd op elk moment */stop* sturen, de bot stopt dan en kan opnieuw gestart worden door */start* te sturen.", update, context)
         await asyncio.sleep(1)
