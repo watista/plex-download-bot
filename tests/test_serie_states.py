@@ -3,7 +3,7 @@
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from telegram.ext import ConversationHandler
 
@@ -143,6 +143,21 @@ class SerieTest(MovieTest):
             ("quality request for The Bear (2022): missing", "missing", None),
             ("quality request for The Bear (2022): missing: 'S02E03'", "missing", "S02E03"),
         ])
+
+    async def test_the_question_about_updates_names_the_command_to_unsubscribe(self):
+
+        # After "notify me" for a serie that still runs, and after a request without a quality upgrade
+        with patch("src.commands.media.asyncio.sleep", AsyncMock()):
+            await self.serie.stay_notified(self.update("serie_notify_yes"), self.context(media_data=dict(THE_BEAR)))
+        await self.serie.media_upgrade(self.update("serie_upgrade_no"), self.context(media_data=dict(THE_BEAR)))
+
+        questions = [call for call in self.functions.send_message.await_args_list
+                     if "nieuwe afleveringen" in call.args[0]]
+        self.assertEqual(len(questions), 2)
+        for question in questions:
+            self.assertIn("door /afmelden_serie te sturen", question.args[0])
+            # Not MarkdownV2: there the underscore would start italics that never end, and Telegram refuses that
+            self.assertEqual(question.args[4], "HTML")
 
 
 if __name__ == "__main__":
