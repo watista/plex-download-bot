@@ -69,12 +69,12 @@ class Subscribe:
 
         # End conversation if no results are found
         if not found:
-            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de serie *{sanitize_message}*. Misschien heb je een typfout gemaakt in de titel? Stuur /aanmelden om het nogmaals te proberen.", update, context)
+            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de serie *{sanitize_message}*. Misschien heb je een typfout gemaakt in de titel? Stuur /start om het nogmaals te proberen.", update, context)
             return ConversationHandler.END
 
         # End conversation if no results are found
         if not options:
-            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de serie *{sanitize_message}*. Het kan zijn dat de serie nog niet gedownløad is of dat deze al is afgelopen. Stuur /aanmelden om het nogmaals te proberen.", update, context)
+            await self.function.send_message(f"Er zijn geen resultaten gevonden voor de serie *{sanitize_message}*. Het kan zijn dat de serie nog niet gedownløad is of dat deze al is afgelopen. Stuur /start om het nogmaals te proberen.", update, context)
             return ConversationHandler.END
 
         await self.function.send_message(f"De volgende opties zijn gevonden met de term *{sanitize_message}*:", update, context)
