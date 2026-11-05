@@ -6,7 +6,7 @@ import socket
 import time
 import warnings
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import partial
 from typing import Optional
 
@@ -213,24 +213,34 @@ class Bot:
         """Registers the jobs, each with its name for the field job and
         guarded so every run is an Interaction of its own, which ends with
         the line job_finished: with the counts of the job, or with what a run
-        that finished did."""
+        that finished did.
+
+        Every job runs as soon as the job queue starts, which run_polling
+        only does after it has set up the bot: that can take seconds. Without
+        at_start, APScheduler skips a run that is more than 1 s late, and
+        gives a repeating job whose first run lies in the past its first run
+        one interval later. A later run that is late also still runs.
+        """
         job_queue = self.application.job_queue
+        at_start = {"next_run_time": datetime.now(timezone.utc), "misfire_grace_time": None}
 
         # Once at the start
-        job_queue.run_once(guard_job(self.publish_command_list, self.faults), when=0, name="publish_command_list")
-        job_queue.run_once(guard_job(self.notify_admin_startup, self.faults), when=0, name="notify_admin_startup")
+        job_queue.run_once(guard_job(self.publish_command_list, self.faults), when=0, name="publish_command_list",
+                           job_kwargs=at_start)
+        job_queue.run_once(guard_job(self.notify_admin_startup, self.faults), when=0, name="notify_admin_startup",
+                           job_kwargs=at_start)
 
         # Recurring jobs need Plex/Sonarr/Radarr/Transmission — only in normal mode
         if self.mode == "normal":
             job_queue.run_repeating(guard_job(self.schedule.check_notify_list, self.faults, counts=NOTIFY_COUNTS),
-                                    interval=1800, first=0, name="check_notify_list")
+                                    interval=1800, first=0, name="check_notify_list", job_kwargs=at_start)
             job_queue.run_repeating(guard_job(self.schedule.check_transmission, self.faults,
                                               done="Transmission reachable"),
-                                    interval=1800, first=0, name="check_transmission")
+                                    interval=1800, first=0, name="check_transmission", job_kwargs=at_start)
             job_queue.run_repeating(guard_job(self.sonarr.scan_missing_media, self.faults, done="missing search started"),
-                                    interval=21600, first=0, name="scan_missing_sonarr")
+                                    interval=21600, first=0, name="scan_missing_sonarr", job_kwargs=at_start)
             job_queue.run_repeating(guard_job(self.radarr.scan_missing_media, self.faults, done="missing search started"),
-                                    interval=21600, first=0, name="scan_missing_radarr")
+                                    interval=21600, first=0, name="scan_missing_radarr", job_kwargs=at_start)
 
     def _welcome_button_handlers(self) -> list:
         """CallbackQueryHandlers for the buttons on the /start welcome message.
